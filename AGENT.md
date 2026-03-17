@@ -23,7 +23,9 @@
 # 実行環境
 
 - cargo build / test / doc / fmt を必ず使用する
+- optimize 速度重視 サイズ重視（Web用）
 - 必要な実行権限は最初に要求すること
+- cargo build --releaseベースでベンチマークを取ること bench.mdでバージョン管理
 
 # 実装ルール
 
