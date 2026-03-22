@@ -9,7 +9,9 @@ VM
            ├─ ResourceManager
            ├─ StateManager
            ├─ Audio/Image/UI
+           ├─ Font
            └─ AsyncIO / JobSystem
+           
 
 Scheduler
  ├─ runnable worker を回す
@@ -81,6 +83,8 @@ Resource
 Render/UI
 
 Audio
+
+Font
 
 State
 
