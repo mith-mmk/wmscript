@@ -7,7 +7,7 @@
 //! egui or WebGL can translate these commands into pixels later.
 
 use core::fmt;
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use wmlplatform::PlatformProfile;
 
@@ -106,6 +106,69 @@ impl Default for UiCursor {
     }
 }
 
+/// Slot used to place an image on screen.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum UiImageSlot {
+    Background,
+    Portrait,
+    Foreground,
+    Overlay,
+    Named(String),
+}
+
+/// Image payload made available to a backend.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiImageSource {
+    pub resource_id: u32,
+    pub label: String,
+    pub bytes: Vec<u8>,
+}
+
+impl UiImageSource {
+    pub fn new(resource_id: u32, label: impl Into<String>, bytes: impl Into<Vec<u8>>) -> Self {
+        Self {
+            resource_id,
+            label: label.into(),
+            bytes: bytes.into(),
+        }
+    }
+}
+
+/// Choice shown in a message window.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiChoice {
+    pub id: String,
+    pub label: String,
+    pub enabled: bool,
+}
+
+impl UiChoice {
+    pub fn new(id: impl Into<String>, label: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            label: label.into(),
+            enabled: true,
+        }
+    }
+}
+
+/// State of the message window.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct UiMessageWindowState {
+    pub visible: bool,
+    pub speaker: Option<String>,
+    pub text: String,
+    pub backlog: Vec<String>,
+    pub choices: Vec<UiChoice>,
+}
+
+/// State of the active scene.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct UiSceneState {
+    pub images: BTreeMap<UiImageSlot, UiImageSource>,
+    pub message_window: UiMessageWindowState,
+}
+
 /// State maintained by the outer window shell.
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiWindowState {
@@ -153,6 +216,7 @@ pub struct UiState {
     pub platform: PlatformProfile,
     pub window: UiWindowState,
     pub input: UiInputState,
+    pub scene: UiSceneState,
 }
 
 impl UiState {
@@ -161,6 +225,7 @@ impl UiState {
             platform,
             window: UiWindowState::default(),
             input: UiInputState::default(),
+            scene: UiSceneState::default(),
         }
     }
 }
@@ -210,8 +275,24 @@ pub enum UiCommand {
     RequestRepaint,
     ClipboardWrite(String),
     OpenUrl(String),
-    Log { level: UiLogLevel, message: String },
+    Log {
+        level: UiLogLevel,
+        message: String,
+    },
     CloseWindow,
+    SetImage {
+        slot: UiImageSlot,
+        image: UiImageSource,
+    },
+    ClearImage(UiImageSlot),
+    ShowMessageWindow {
+        speaker: Option<String>,
+        text: String,
+    },
+    AppendMessageLine(String),
+    SetMessageChoices(Vec<UiChoice>),
+    HideMessageWindow,
+    ResetScene,
 }
 
 /// Logging levels that backends may forward to a host log sink.
@@ -297,6 +378,51 @@ impl<'a> UiContext<'a> {
     pub fn close_window(&mut self) {
         self.state.window.close_requested = true;
         self.emit(UiCommand::CloseWindow);
+    }
+
+    pub fn set_image(&mut self, slot: UiImageSlot, image: UiImageSource) {
+        self.state.scene.images.insert(slot.clone(), image.clone());
+        self.emit(UiCommand::SetImage { slot, image });
+    }
+
+    pub fn clear_image(&mut self, slot: UiImageSlot) {
+        self.state.scene.images.remove(&slot);
+        self.emit(UiCommand::ClearImage(slot));
+    }
+
+    pub fn show_message_window(&mut self, speaker: Option<String>, text: impl Into<String>) {
+        self.state.scene.message_window.visible = true;
+        self.state.scene.message_window.speaker = speaker.clone();
+        self.state.scene.message_window.text = text.into();
+        self.emit(UiCommand::ShowMessageWindow {
+            speaker,
+            text: self.state.scene.message_window.text.clone(),
+        });
+    }
+
+    pub fn append_message_line(&mut self, line: impl Into<String>) {
+        let line = line.into();
+        if !self.state.scene.message_window.text.is_empty() {
+            self.state.scene.message_window.text.push('\n');
+        }
+        self.state.scene.message_window.text.push_str(&line);
+        self.state.scene.message_window.backlog.push(line.clone());
+        self.emit(UiCommand::AppendMessageLine(line));
+    }
+
+    pub fn set_message_choices(&mut self, choices: Vec<UiChoice>) {
+        self.state.scene.message_window.choices = choices.clone();
+        self.emit(UiCommand::SetMessageChoices(choices));
+    }
+
+    pub fn hide_message_window(&mut self) {
+        self.state.scene.message_window.visible = false;
+        self.emit(UiCommand::HideMessageWindow);
+    }
+
+    pub fn reset_scene(&mut self) {
+        self.state.scene = UiSceneState::default();
+        self.emit(UiCommand::ResetScene);
     }
 
     pub fn log(&mut self, level: UiLogLevel, message: impl Into<String>) {
@@ -517,6 +643,21 @@ mod tests {
         }
     }
 
+    struct MessageApp;
+
+    impl UiApp for MessageApp {
+        fn initialize(&mut self, ctx: &mut UiContext<'_>) {
+            ctx.reset_scene();
+            ctx.show_message_window(Some("Narrator".to_owned()), "Hello");
+            ctx.set_image(
+                UiImageSlot::Background,
+                UiImageSource::new(7, "bg", vec![1, 2, 3]),
+            );
+            ctx.append_message_line("World");
+            ctx.set_message_choices(vec![UiChoice::new("next", "Next")]);
+        }
+    }
+
     #[test]
     fn session_tracks_input_and_window_state() {
         let mut session = UiSession::new(PlatformProfile::native(), DemoApp::new());
@@ -569,6 +710,35 @@ mod tests {
                 .commands
                 .iter()
                 .any(|command| matches!(command, UiCommand::SetTitle(title) if title == "frame 1"))
+        );
+    }
+
+    #[test]
+    fn message_window_and_images_are_captured_in_state() {
+        let mut session = UiSession::new(PlatformProfile::native(), MessageApp);
+        let outcome = session.step();
+
+        assert!(
+            outcome
+                .commands
+                .iter()
+                .any(|command| matches!(command, UiCommand::ResetScene))
+        );
+        assert!(matches!(
+            session.state().scene.message_window.speaker.as_deref(),
+            Some("Narrator")
+        ));
+        assert!(session.state().scene.message_window.visible);
+        assert!(
+            session
+                .state()
+                .scene
+                .images
+                .contains_key(&UiImageSlot::Background)
+        );
+        assert_eq!(
+            session.state().scene.message_window.choices[0].label,
+            "Next"
         );
     }
 }

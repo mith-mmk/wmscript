@@ -142,6 +142,7 @@ cargo run -p wmlruntime --example input_link
 cargo run -p wmlruntime --example worker_comm
 cargo run -p wmlruntime --example asset_load
 cargo run -p wmlruntime --example easynovel
+cargo run -p wmlfrontend -- samples/easynovel/main.wml --platform egui
 ```
 
 ## Toolchain
@@ -152,7 +153,7 @@ bundle assets into the output.
 Command line:
 
 ```bash
-wmltoolchain <script.wml> [--package NAME] [--out FILE] [--step-limit N] [--platform native|wasm|egui] [--release] [--asset NAME=PATH]
+wmltoolchain <script.wml> [--package NAME] [--out FILE] [--step-limit N] [--platform native|wasm|egui] [--release] [--asset NAME=PATH] [--image NAME=PATH]
 ```
 
 Behavior:
@@ -167,6 +168,8 @@ Behavior:
 - `--release` enables release mode in the toolchain config.
 - `--asset NAME=PATH` adds a packaged asset. Pass the flag multiple times to
   include more than one asset.
+- `--image NAME=PATH` adds a packaged image asset. Use this when the frontend
+  should receive image bytes for message windows, portraits, or scene art.
 
 Examples:
 
@@ -175,6 +178,7 @@ cargo run -p wmltoolchain -- samples/helloworld/main.wml
 cargo run -p wmltoolchain -- samples/helloworld/main.wml --out samples/helloworld/main.warc
 cargo run -p wmltoolchain -- samples/easynovel/main.wml --package easynovel --platform native --step-limit 256
 cargo run -p wmltoolchain -- samples/easynovel/main.wml --package easynovel --out build/easynovel.warc --asset ui/title=assets/title.bin
+cargo run -p wmltoolchain -- samples/easynovel/main.wml --package easynovel --out build/easynovel.warc --image ui/background=assets/background.png
 ```
 
 ## Host Function Example

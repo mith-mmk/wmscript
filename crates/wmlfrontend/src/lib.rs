@@ -6,13 +6,16 @@ use core::fmt;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+mod gui;
+
 use wmlplatform::PlatformProfile;
 use wmlruntime::Runtime;
 use wmltoolchain::{
     BuildArtifact, ExecutionReport, GameProject, Toolchain, ToolchainConfig, ToolchainError,
 };
 use wmlui::{
-    UiApp, UiBackend, UiCommand, UiContext, UiError, UiEvent, UiLogLevel, UiSession, UiTheme,
+    UiApp, UiBackend, UiChoice, UiCommand, UiContext, UiError, UiEvent, UiImageSlot, UiImageSource,
+    UiLogLevel, UiSession, UiState, UiTheme,
 };
 
 /// Configuration for the frontend shell.
@@ -50,6 +53,7 @@ impl FrontendConfig {
 pub enum FrontendError {
     Toolchain(ToolchainError),
     Ui(UiError),
+    Gui(String),
     MissingReport,
 }
 
@@ -58,6 +62,7 @@ impl fmt::Display for FrontendError {
         match self {
             Self::Toolchain(error) => write!(f, "{error}"),
             Self::Ui(error) => write!(f, "{error}"),
+            Self::Gui(message) => write!(f, "{message}"),
             Self::MissingReport => f.write_str("frontend finished without producing a report"),
         }
     }
@@ -77,12 +82,18 @@ impl From<UiError> for FrontendError {
     }
 }
 
+/// Launches the GUI frontend for a finished report.
+pub fn launch_frontend_gui(report: FrontendReport) -> Result<(), FrontendError> {
+    gui::run_gui(report)
+}
+
 /// Summary returned after running the frontend.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FrontendReport {
     pub build: BuildArtifact,
     pub execution: ExecutionReport,
     pub log_lines: Vec<String>,
+    pub ui_state: UiState,
 }
 
 /// Console backend that prints the frontend's UI commands.
@@ -111,6 +122,27 @@ impl UiBackend for ConsoleBackend {
                 self.closed = true;
                 println!("[ui] close requested");
             }
+            UiCommand::SetImage { slot, image } => println!(
+                "[ui] image: slot={slot:?} resource={} bytes={} label={}",
+                image.resource_id,
+                image.bytes.len(),
+                image.label
+            ),
+            UiCommand::ClearImage(slot) => println!("[ui] clear image: slot={slot:?}"),
+            UiCommand::ShowMessageWindow { speaker, text } => {
+                println!("[ui] message window: speaker={speaker:?} text={text}")
+            }
+            UiCommand::AppendMessageLine(line) => println!("[ui] message line: {line}"),
+            UiCommand::SetMessageChoices(choices) => println!(
+                "[ui] message choices: {}",
+                choices
+                    .iter()
+                    .map(|choice| choice.label.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            UiCommand::HideMessageWindow => println!("[ui] hide message window"),
+            UiCommand::ResetScene => println!("[ui] reset scene"),
         }
         Ok(())
     }
@@ -121,6 +153,7 @@ struct FrontendApp {
     toolchain: Toolchain,
     runtime: Runtime,
     report_slot: Rc<RefCell<Option<FrontendReport>>>,
+    error_slot: Rc<RefCell<Option<FrontendError>>>,
     log_lines: Rc<RefCell<Vec<String>>>,
     started: bool,
 }
@@ -129,6 +162,7 @@ impl FrontendApp {
     fn new(
         config: FrontendConfig,
         report_slot: Rc<RefCell<Option<FrontendReport>>>,
+        error_slot: Rc<RefCell<Option<FrontendError>>>,
         log_lines: Rc<RefCell<Vec<String>>>,
     ) -> Self {
         let toolchain = Toolchain::new(
@@ -142,6 +176,7 @@ impl FrontendApp {
             toolchain,
             runtime,
             report_slot,
+            error_slot,
             log_lines,
             started: false,
         }
@@ -155,6 +190,7 @@ impl UiApp for FrontendApp {
             self.config.project.package_name
         ));
         ctx.set_theme(UiTheme::System);
+        ctx.reset_scene();
         ctx.log(
             UiLogLevel::Info,
             format!("loaded project {}", self.config.project.script_path),
@@ -187,22 +223,42 @@ impl UiApp for FrontendApp {
                 let build = execution.build.clone();
                 let log_lines = collect_lines(&build, &execution);
                 *self.log_lines.borrow_mut() = log_lines.clone();
-                *self.report_slot.borrow_mut() = Some(FrontendReport {
-                    build,
-                    execution,
-                    log_lines,
-                });
+                ctx.show_message_window(
+                    Some(self.config.project.package_name.clone()),
+                    "runtime completed",
+                );
                 for line in self.log_lines.borrow().iter() {
+                    ctx.append_message_line(line.clone());
                     ctx.log(UiLogLevel::Info, line.clone());
+                }
+                for asset in &self.config.project.assets {
+                    if matches!(asset.resource_type, wmlresource::ResourceType::Image) {
+                        ctx.set_image(
+                            UiImageSlot::Named(asset.name.clone()),
+                            UiImageSource::new(
+                                asset.resource_id,
+                                asset.name.clone(),
+                                asset.payload.clone(),
+                            ),
+                        );
+                    }
                 }
                 ctx.set_title(format!(
                     "WML Frontend - done ({})",
                     self.config.project.package_name
                 ));
+                ctx.set_message_choices(vec![UiChoice::new("close", "Close")]);
                 ctx.close_window();
+                *self.report_slot.borrow_mut() = Some(FrontendReport {
+                    build,
+                    execution,
+                    log_lines,
+                    ui_state: ctx.state().clone(),
+                });
             }
             Err(error) => {
                 ctx.log(UiLogLevel::Error, error.to_string());
+                *self.error_slot.borrow_mut() = Some(FrontendError::from(error));
                 ctx.close_window();
             }
         }
@@ -220,6 +276,8 @@ fn collect_lines(build: &BuildArtifact, execution: &ExecutionReport) -> Vec<Stri
         "loaded resources: {}",
         execution.loaded_archive.resources_loaded
     ));
+    let image_count = execution.build.manifest.resource_map.iter().count();
+    lines.push(format!("resource map entries: {}", image_count));
     lines.push(format!("worker {} finished", execution.worker_id));
     if let Some((_, outcome)) = execution.outcomes.last() {
         lines.push(format!("final outcome: {outcome:?}"));
@@ -230,13 +288,22 @@ fn collect_lines(build: &BuildArtifact, execution: &ExecutionReport) -> Vec<Stri
 /// Runs a project through the frontend shell and returns the execution report.
 pub fn run_frontend(config: FrontendConfig) -> Result<FrontendReport, FrontendError> {
     let report_slot = Rc::new(RefCell::new(None));
+    let error_slot = Rc::new(RefCell::new(None));
     let log_lines = Rc::new(RefCell::new(Vec::new()));
-    let app = FrontendApp::new(config.clone(), report_slot.clone(), log_lines);
+    let app = FrontendApp::new(
+        config.clone(),
+        report_slot.clone(),
+        error_slot.clone(),
+        log_lines,
+    );
     let mut session = UiSession::new(config.platform, app);
     session.push_event(UiEvent::Frame { dt_seconds: 0.0 });
     session.push_event(UiEvent::TextInput(config.project.script_path.clone()));
     let mut backend = ConsoleBackend::default();
     let _ = session.drive_backend(&mut backend)?;
+    if let Some(error) = error_slot.borrow_mut().take() {
+        return Err(error);
+    }
     report_slot
         .borrow_mut()
         .take()
@@ -247,7 +314,6 @@ pub fn run_frontend(config: FrontendConfig) -> Result<FrontendReport, FrontendEr
 mod tests {
     use super::*;
     use wmlplatform::PlatformProfile;
-    use wmlresource::ResourceType;
     use wmltoolchain::{GameAsset, GameProject};
 
     #[test]
@@ -261,17 +327,22 @@ export func main() {
 }
 "#,
         )
-        .push_asset(GameAsset::new(
-            "ui/title",
-            10,
-            42,
-            ResourceType::ScriptData,
-            b"title".to_vec(),
-        ));
+        .push_asset(GameAsset::image("ui/title", 10, 42, b"title".to_vec()));
         let config = FrontendConfig::new(PlatformProfile::native(), project);
 
         let report = run_frontend(config).expect("frontend run");
         assert_eq!(report.execution.worker_id, 1);
         assert!(!report.log_lines.is_empty());
+        assert_eq!(
+            report.ui_state.scene.message_window.speaker.as_deref(),
+            Some("demo-game")
+        );
+        assert!(
+            report
+                .ui_state
+                .scene
+                .images
+                .contains_key(&UiImageSlot::Named("ui/title".to_owned()))
+        );
     }
 }

@@ -143,6 +143,7 @@ cargo run -p wmlruntime --example input_link
 cargo run -p wmlruntime --example worker_comm
 cargo run -p wmlruntime --example asset_load
 cargo run -p wmlruntime --example easynovel
+cargo run -p wmlfrontend -- samples/easynovel/main.wml --platform egui
 ```
 
 ## Toolchain
@@ -153,7 +154,7 @@ cargo run -p wmlruntime --example easynovel
 ### コマンドライン
 
 ```bash
-wmltoolchain <script.wml> [--package NAME] [--out FILE] [--step-limit N] [--platform native|wasm|egui] [--release] [--asset NAME=PATH]
+wmltoolchain <script.wml> [--package NAME] [--out FILE] [--step-limit N] [--platform native|wasm|egui] [--release] [--asset NAME=PATH] [--image NAME=PATH]
 ```
 
 ### 動作
@@ -167,6 +168,8 @@ wmltoolchain <script.wml> [--package NAME] [--out FILE] [--step-limit N] [--plat
 - `--platform native|wasm|egui` はプラットフォームプロファイルを選びます。
 - `--release` は toolchain 設定の release モードを有効にします。
 - `--asset NAME=PATH` はパッケージ化するアセットを追加します。複数回指定できます。
+- `--image NAME=PATH` は画像アセットを追加します。メッセージウィンドウ、立ち絵、
+  背景などに使う画像をフロントエンドへ渡したいときに使います。
 
 ### 実行例
 
@@ -175,6 +178,7 @@ cargo run -p wmltoolchain -- samples/helloworld/main.wml
 cargo run -p wmltoolchain -- samples/helloworld/main.wml --out samples/helloworld/main.warc
 cargo run -p wmltoolchain -- samples/easynovel/main.wml --package easynovel --platform native --step-limit 256
 cargo run -p wmltoolchain -- samples/easynovel/main.wml --package easynovel --out build/easynovel.warc --asset ui/title=assets/title.bin
+cargo run -p wmltoolchain -- samples/easynovel/main.wml --package easynovel --out build/easynovel.warc --image ui/background=assets/background.png
 ```
 
 ## ホスト関数の例

@@ -34,13 +34,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let payload = fs::read(&asset.path)?;
         let section_id = 10 + project.assets.len() as u32;
         let resource_id = 100 + project.assets.len() as u32;
-        project = project.push_asset(GameAsset::new(
-            asset.name.clone(),
-            section_id,
-            resource_id,
-            asset.resource_type,
-            payload,
-        ));
+        project = project.push_asset(match asset.resource_type {
+            ResourceType::Image => {
+                GameAsset::image(asset.name.clone(), section_id, resource_id, payload)
+            }
+            _ => GameAsset::script_data(asset.name.clone(), section_id, resource_id, payload),
+        });
     }
 
     let toolchain = Toolchain::new(
@@ -95,6 +94,7 @@ impl CliArgs {
                 "--platform" => platform = parse_platform(&next_value(&mut args, "--platform")?)?,
                 "--release" => release = true,
                 "--asset" => assets.push(parse_asset_spec(&next_value(&mut args, "--asset")?)?),
+                "--image" => assets.push(parse_image_spec(&next_value(&mut args, "--image")?)?),
                 "--help" | "-h" => {
                     print_usage();
                     std::process::exit(0);
@@ -142,6 +142,17 @@ fn parse_asset_spec(spec: &str) -> Result<CliAsset, Box<dyn std::error::Error>> 
     })
 }
 
+fn parse_image_spec(spec: &str) -> Result<CliAsset, Box<dyn std::error::Error>> {
+    let (name, path) = spec
+        .split_once('=')
+        .ok_or("image must be specified as NAME=PATH")?;
+    Ok(CliAsset {
+        name: name.to_owned(),
+        path: PathBuf::from(path),
+        resource_type: ResourceType::Image,
+    })
+}
+
 fn next_value(
     args: &mut impl Iterator<Item = String>,
     flag: &'static str,
@@ -161,6 +172,6 @@ fn parse_platform(value: &str) -> Result<PlatformProfile, Box<dyn std::error::Er
 
 fn print_usage() {
     eprintln!(
-        "usage: wmltoolchain <script.wml> [--package NAME] [--out FILE] [--step-limit N] [--platform native|wasm|egui] [--release] [--asset NAME=PATH]"
+        "usage: wmltoolchain <script.wml> [--package NAME] [--out FILE] [--step-limit N] [--platform native|wasm|egui] [--release] [--asset NAME=PATH] [--image NAME=PATH]"
     );
 }
