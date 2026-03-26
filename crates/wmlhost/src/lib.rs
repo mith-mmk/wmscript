@@ -27,6 +27,9 @@ pub const CAP_GUI: CapabilityMask = 1 << 2;
 /// Capability bit used for web-compat behavior.
 pub const CAP_WEB_COMPAT: CapabilityMask = 1 << 3;
 
+/// Capability bit used for network access.
+pub const CAP_NETWORK: CapabilityMask = 1 << 4;
+
 /// Metadata attached to a host function.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct HostFunction {

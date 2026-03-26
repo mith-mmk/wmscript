@@ -388,36 +388,29 @@ Toolchain
 
  [+] ext.fs
 
- ext.net // ネットワークダウンロード, ネットワークアクセス
+ [+] ext.net // ネットワークダウンロード, ネットワークアクセス
 
- ext.debug
+ [+] ext.debug
 
- ext.llm  llama-cpp +  0.6B-0.8Bの軽量LLM([qwen3](https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/blob/main/Qwen3.5-0.8B-Q8_0.gguf))で人工無能
+ [+] ext.llm  llama-cpp +  0.6B-0.8Bの軽量LLM([qwen3](https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/blob/main/Qwen3.5-0.8B-Q8_0.gguf))で人工無能
 
 12. 総合サンプル
 12.1 フロント
-
- メニューUI（セーブ/ロード）
+ [+] メニューUI（セーブ/ロード）
 
 12.2 スクリプト
-
- 分岐スクリプト
+ [+] 分岐スクリプト
 
 12.3 バックエンド
-
- タイマー
+ [+] タイマー
 
 12.4 リソース
-
- ダミー画像
-
- UI素材
+ [+] ダミー画像
+ [+] UI素材
 
 12.5 結合テスト
-
- 全フロー通し実行
-
- セーブ/ロード整合確認
+ [+] 全フロー通し実行
+ [+] セーブ/ロード整合確認
 
 13．拡張機能
 13.1 FFIラッパー

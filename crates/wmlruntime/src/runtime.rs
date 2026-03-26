@@ -8,7 +8,9 @@ use std::rc::Rc;
 
 use wmlarchive::{Archive, ArchiveError, Manifest};
 use wmlext::{ExtError, ExtensionFunctionSpec, ExtensionRegistry};
-use wmlhost::{CAP_FILE_SYSTEM, CapabilityMask, HostFunction, HostId, HostRegistry};
+use wmlhost::{
+    CAP_ASYNC_IO, CAP_FILE_SYSTEM, CAP_NETWORK, CapabilityMask, HostFunction, HostId, HostRegistry,
+};
 use wmlplatform::PlatformProfile;
 use wmlresource::{ResourceError, ResourceManager};
 use wmlverifier::{VerificationError, verify_program};
@@ -205,6 +207,9 @@ pub struct Runtime {
     resources: ResourceManager,
     host: Rc<RefCell<HostDispatcher>>,
     extensions: ExtensionRegistry,
+    debug_log: Rc<RefCell<Vec<String>>>,
+    net_backend: Rc<RefCell<Box<dyn NetBackend>>>,
+    llm_backend: Rc<RefCell<Box<dyn LlmBackend>>>,
     loaded_archives: Vec<Manifest>,
 }
 
@@ -218,6 +223,9 @@ impl Runtime {
                 config.capability_mask,
             ))),
             extensions: ExtensionRegistry::new(),
+            debug_log: Rc::new(RefCell::new(Vec::new())),
+            net_backend: Rc::new(RefCell::new(Box::new(DisabledNetBackend))),
+            llm_backend: Rc::new(RefCell::new(Box::new(DisabledLlmBackend))),
             loaded_archives: Vec::new(),
             config,
         }
@@ -233,6 +241,18 @@ impl Runtime {
 
     pub fn extension_registry(&self) -> &ExtensionRegistry {
         &self.extensions
+    }
+
+    pub fn debug_log(&self) -> Vec<String> {
+        self.debug_log.borrow().clone()
+    }
+
+    pub fn set_net_backend<B: NetBackend + 'static>(&mut self, backend: B) {
+        *self.net_backend.borrow_mut() = Box::new(backend);
+    }
+
+    pub fn set_llm_backend<B: LlmBackend + 'static>(&mut self, backend: B) {
+        *self.llm_backend.borrow_mut() = Box::new(backend);
     }
 
     pub fn register_host_function(
@@ -292,6 +312,121 @@ impl Runtime {
             read_host_id,
             write_host_id,
             exists_host_id,
+        })
+    }
+
+    pub fn install_debug_extension(&mut self) -> Result<DebugExtension, RuntimeError> {
+        let log_host_id = 110;
+        let inspect_host_id = 111;
+        let log_sink = self.debug_log.clone();
+
+        let _ = self.register_host_function(HostFunction::new(log_host_id, 1, 1, 0), move |args| {
+            let message = render_value(args.first().unwrap_or(&Value::Nil));
+            log_sink.borrow_mut().push(message);
+            Ok(Value::Nil)
+        });
+        let _ = self.register_host_function(HostFunction::new(inspect_host_id, 1, 1, 0), |args| {
+            Ok(Value::String(render_value(
+                args.first().unwrap_or(&Value::Nil),
+            )))
+        });
+
+        let ids = self.extensions.register_extension(
+            "ext.debug",
+            &[
+                ExtensionFunctionSpec::new("log", log_host_id, 1, 1, 0),
+                ExtensionFunctionSpec::new("inspect", inspect_host_id, 1, 1, 0),
+            ],
+        )?;
+
+        Ok(DebugExtension {
+            log_ext_id: ids[0],
+            inspect_ext_id: ids[1],
+            log_host_id,
+            inspect_host_id,
+        })
+    }
+
+    pub fn install_net_extension(&mut self) -> Result<NetExtension, RuntimeError> {
+        let get_host_id = 120;
+        let post_host_id = 121;
+        let net_backend = self.net_backend.clone();
+
+        let _ = self.register_host_function(
+            HostFunction::new(get_host_id, 1, 1, CAP_NETWORK),
+            move |args| {
+                let url = expect_string_arg(args, 0, "url")?;
+                net_backend.borrow_mut().get(&url).map(Value::String)
+            },
+        );
+
+        let net_backend = self.net_backend.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(post_host_id, 2, 2, CAP_NETWORK),
+            move |args| {
+                let url = expect_string_arg(args, 0, "url")?;
+                let body = expect_string_arg(args, 1, "body")?;
+                net_backend
+                    .borrow_mut()
+                    .post(&url, &body)
+                    .map(Value::String)
+            },
+        );
+
+        let ids = self.extensions.register_extension(
+            "ext.net",
+            &[
+                ExtensionFunctionSpec::new("get", get_host_id, 1, 1, CAP_NETWORK),
+                ExtensionFunctionSpec::new("post", post_host_id, 2, 2, CAP_NETWORK),
+            ],
+        )?;
+
+        Ok(NetExtension {
+            get_ext_id: ids[0],
+            post_ext_id: ids[1],
+            get_host_id,
+            post_host_id,
+        })
+    }
+
+    pub fn install_llm_extension(&mut self) -> Result<LlmExtension, RuntimeError> {
+        let generate_host_id = 130;
+        let llm_backend = self.llm_backend.clone();
+
+        let _ = self.register_host_function(
+            HostFunction::new(generate_host_id, 1, 1, CAP_ASYNC_IO),
+            move |args| {
+                let prompt = expect_string_arg(args, 0, "prompt")?;
+                llm_backend
+                    .borrow_mut()
+                    .generate(&prompt)
+                    .map(Value::String)
+            },
+        );
+
+        let ids = self.extensions.register_extension(
+            "ext.llm",
+            &[ExtensionFunctionSpec::new(
+                "generate",
+                generate_host_id,
+                1,
+                1,
+                CAP_ASYNC_IO,
+            )],
+        )?;
+
+        Ok(LlmExtension {
+            generate_ext_id: ids[0],
+            generate_host_id,
+        })
+    }
+
+    pub fn install_standard_extensions(&mut self) -> Result<StandardExtensions, RuntimeError> {
+        Ok(StandardExtensions {
+            fs: self.install_fs_extension()?,
+            debug: self.install_debug_extension()?,
+            net: self.install_net_extension()?,
+            llm: self.install_llm_extension()?,
         })
     }
 
@@ -360,6 +495,80 @@ pub struct FsExtension {
     pub exists_host_id: HostId,
 }
 
+/// Stable ids assigned to the built-in debug extension.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DebugExtension {
+    pub log_ext_id: u32,
+    pub inspect_ext_id: u32,
+    pub log_host_id: HostId,
+    pub inspect_host_id: HostId,
+}
+
+/// Stable ids assigned to the built-in net extension.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NetExtension {
+    pub get_ext_id: u32,
+    pub post_ext_id: u32,
+    pub get_host_id: HostId,
+    pub post_host_id: HostId,
+}
+
+/// Stable ids for the runtime's standard extension set.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StandardExtensions {
+    pub fs: FsExtension,
+    pub debug: DebugExtension,
+    pub net: NetExtension,
+    pub llm: LlmExtension,
+}
+
+/// Stable ids assigned to the built-in llm extension.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LlmExtension {
+    pub generate_ext_id: u32,
+    pub generate_host_id: HostId,
+}
+
+/// Backend interface for `ext.net`.
+pub trait NetBackend {
+    fn get(&mut self, url: &str) -> Result<String, HostError>;
+
+    fn post(&mut self, url: &str, body: &str) -> Result<String, HostError>;
+}
+
+/// Backend interface for `ext.llm`.
+pub trait LlmBackend {
+    fn generate(&mut self, prompt: &str) -> Result<String, HostError>;
+}
+
+struct DisabledNetBackend;
+
+impl NetBackend for DisabledNetBackend {
+    fn get(&mut self, url: &str) -> Result<String, HostError> {
+        Err(HostError::Failed(format!(
+            "network backend disabled for GET {url}"
+        )))
+    }
+
+    fn post(&mut self, url: &str, body: &str) -> Result<String, HostError> {
+        Err(HostError::Failed(format!(
+            "network backend disabled for POST {url} with {} bytes",
+            body.len()
+        )))
+    }
+}
+
+struct DisabledLlmBackend;
+
+impl LlmBackend for DisabledLlmBackend {
+    fn generate(&mut self, prompt: &str) -> Result<String, HostError> {
+        Err(HostError::Failed(format!(
+            "llm backend disabled for prompt length {}",
+            prompt.len()
+        )))
+    }
+}
+
 fn read_text_file(args: &[Value]) -> Result<Value, HostError> {
     let path = expect_string_arg(args, 0, "path")?;
     let contents = std::fs::read_to_string(&path)
@@ -396,12 +605,91 @@ fn expect_string_arg(
     }
 }
 
+fn render_value(value: &Value) -> String {
+    match value {
+        Value::Nil => "nil".to_owned(),
+        Value::Bool(v) => v.to_string(),
+        Value::Integer(v) => v.to_string(),
+        Value::Float(v) => v.to_string(),
+        Value::String(v) => v.clone(),
+        Value::Array(values) => format!("array(len={})", values.len()),
+        Value::Table(values) => format!("table(len={})", values.len()),
+        Value::Handle(v) => format!("handle({v})"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
     use wmlvm::{Function, Program, RunOutcome, Value};
+
+    #[derive(Default)]
+    struct MockNetBackend {
+        get_responses: BTreeMap<String, String>,
+        post_responses: BTreeMap<(String, String), String>,
+        requests: Vec<String>,
+    }
+
+    impl MockNetBackend {
+        fn with_get(mut self, url: &str, body: &str) -> Self {
+            self.get_responses.insert(url.to_owned(), body.to_owned());
+            self
+        }
+
+        fn with_post(mut self, url: &str, body: &str, response: &str) -> Self {
+            self.post_responses
+                .insert((url.to_owned(), body.to_owned()), response.to_owned());
+            self
+        }
+    }
+
+    #[derive(Default)]
+    struct MockLlmBackend {
+        responses: BTreeMap<String, String>,
+        prompts: Vec<String>,
+    }
+
+    impl MockLlmBackend {
+        fn with_response(mut self, prompt: &str, response: &str) -> Self {
+            self.responses
+                .insert(prompt.to_owned(), response.to_owned());
+            self
+        }
+    }
+
+    impl LlmBackend for MockLlmBackend {
+        fn generate(&mut self, prompt: &str) -> Result<String, HostError> {
+            self.prompts.push(prompt.to_owned());
+            self.responses.get(prompt).cloned().ok_or_else(|| {
+                HostError::Failed(format!("missing mock response for prompt {prompt}"))
+            })
+        }
+    }
+
+    impl NetBackend for MockNetBackend {
+        fn get(&mut self, url: &str) -> Result<String, HostError> {
+            self.requests.push(format!("GET {url}"));
+            self.get_responses
+                .get(url)
+                .cloned()
+                .ok_or_else(|| HostError::Failed(format!("missing mock response for GET {url}")))
+        }
+
+        fn post(&mut self, url: &str, body: &str) -> Result<String, HostError> {
+            self.requests.push(format!("POST {url} {body}"));
+            self.post_responses
+                .get(&(url.to_owned(), body.to_owned()))
+                .cloned()
+                .ok_or_else(|| {
+                    HostError::Failed(format!(
+                        "missing mock response for POST {url} with body {body}"
+                    ))
+                })
+        }
+    }
 
     #[test]
     fn runtime_can_spawn_and_run_program() {
@@ -509,5 +797,162 @@ mod tests {
         let contents = fs::read_to_string(&path).expect("fs write");
         assert_eq!(contents, "hello fs");
         fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn runtime_installs_and_executes_debug_extension() {
+        let mut runtime = Runtime::new(RuntimeConfig::new(PlatformProfile::native()));
+        let extension = runtime.install_debug_extension().expect("install debug");
+
+        let mut program = Program::new();
+        let message_idx = program.push_constant(Value::String("debug me".to_owned()));
+        let code = vec![
+            0x10,
+            message_idx as u8,
+            (message_idx >> 8) as u8,
+            0x71,
+            (extension.log_host_id & 0xFF) as u8,
+            (extension.log_host_id >> 8) as u8,
+            0x01,
+            0x10,
+            message_idx as u8,
+            (message_idx >> 8) as u8,
+            0x71,
+            (extension.inspect_host_id & 0xFF) as u8,
+            (extension.inspect_host_id >> 8) as u8,
+            0x01,
+            0x72,
+        ];
+        program.insert_function(Function::new(1, code, 0, 0));
+        program.set_entry(1);
+
+        let worker_id = runtime.spawn_program(program).expect("spawn");
+        let outcomes = runtime.run_until_idle(8);
+
+        assert_eq!(worker_id, 1);
+        assert!(!outcomes.is_empty());
+        assert_eq!(
+            runtime.extension_registry().resolve_id("ext.debug.log"),
+            Ok(extension.log_ext_id)
+        );
+        assert_eq!(
+            runtime.extension_registry().resolve_id("ext.debug.inspect"),
+            Ok(extension.inspect_ext_id)
+        );
+        assert_eq!(runtime.debug_log(), vec!["debug me".to_owned()]);
+        assert!(matches!(
+            outcomes.last(),
+            Some((
+                _,
+                RunOutcome::Halted {
+                    value: Some(Value::String(text)),
+                    ..
+                }
+            )) if text == "debug me"
+        ));
+    }
+
+    #[test]
+    fn runtime_installs_and_executes_net_extension() {
+        let mut runtime = Runtime::new(RuntimeConfig::new(PlatformProfile::native()));
+        let extension = runtime.install_net_extension().expect("install net");
+        runtime.set_net_backend(
+            MockNetBackend::default()
+                .with_get("https://example.test/api", "net body")
+                .with_post("https://example.test/api", "payload", "posted response"),
+        );
+
+        let mut program = Program::new();
+        let url_idx = program.push_constant(Value::String("https://example.test/api".to_owned()));
+        let body_idx = program.push_constant(Value::String("payload".to_owned()));
+        let code = vec![
+            0x10,
+            url_idx as u8,
+            (url_idx >> 8) as u8,
+            0x71,
+            (extension.get_host_id & 0xFF) as u8,
+            (extension.get_host_id >> 8) as u8,
+            0x01,
+            0x10,
+            url_idx as u8,
+            (url_idx >> 8) as u8,
+            0x10,
+            body_idx as u8,
+            (body_idx >> 8) as u8,
+            0x71,
+            (extension.post_host_id & 0xFF) as u8,
+            (extension.post_host_id >> 8) as u8,
+            0x02,
+            0x72,
+        ];
+        program.insert_function(Function::new(1, code, 0, 0));
+        program.set_entry(1);
+
+        let worker_id = runtime.spawn_program(program).expect("spawn");
+        let outcomes = runtime.run_until_idle(8);
+
+        assert_eq!(worker_id, 1);
+        assert!(!outcomes.is_empty());
+        assert_eq!(
+            runtime.extension_registry().resolve_id("ext.net.get"),
+            Ok(extension.get_ext_id)
+        );
+        assert_eq!(
+            runtime.extension_registry().resolve_id("ext.net.post"),
+            Ok(extension.post_ext_id)
+        );
+        assert!(matches!(
+            outcomes.last(),
+            Some((
+                _,
+                RunOutcome::Halted {
+                    value: Some(Value::String(text)),
+                    ..
+                }
+            )) if text == "posted response"
+        ));
+    }
+
+    #[test]
+    fn runtime_installs_and_executes_llm_extension() {
+        let mut runtime = Runtime::new(RuntimeConfig::new(PlatformProfile::native()));
+        let extension = runtime.install_llm_extension().expect("install llm");
+        runtime
+            .set_llm_backend(MockLlmBackend::default().with_response("hello model", "model reply"));
+
+        let mut program = Program::new();
+        let prompt_idx = program.push_constant(Value::String("hello model".to_owned()));
+        let code = vec![
+            0x10,
+            prompt_idx as u8,
+            (prompt_idx >> 8) as u8,
+            0x71,
+            (extension.generate_host_id & 0xFF) as u8,
+            (extension.generate_host_id >> 8) as u8,
+            0x01,
+            0x72,
+        ];
+        program.insert_function(Function::new(1, code, 0, 0));
+        program.set_entry(1);
+
+        let worker_id = runtime.spawn_program(program).expect("spawn");
+        let outcomes = runtime.run_until_idle(8);
+
+        assert_eq!(worker_id, 1);
+        assert!(!outcomes.is_empty());
+        assert_eq!(
+            runtime.extension_registry().resolve_id("ext.llm.generate"),
+            Ok(extension.generate_ext_id)
+        );
+        assert!(matches!(
+            outcomes.last(),
+            Some((
+                _,
+                RunOutcome::Halted {
+                    value: Some(Value::String(text)),
+                    ..
+                }
+            )) if text == "model reply"
+        ));
     }
 }
