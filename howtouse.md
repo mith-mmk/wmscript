@@ -142,8 +142,11 @@ cargo run -p wmlruntime --example input_link
 cargo run -p wmlruntime --example worker_comm
 cargo run -p wmlruntime --example asset_load
 cargo run -p wmlruntime --example easynovel
-cargo run -p wmlfrontend -- samples/easynovel/main.wml --platform egui
+cargo run -p wmlfrontend -- samples/easynovel/main.wml --platform egui --font noto
 ```
+
+The egui frontend defaults to Noto Sans for Japanese-friendly rendering. Use
+`--font default`, `--font noto`, or `--font mono` to switch presets.
 
 ## Toolchain
 

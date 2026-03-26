@@ -82,9 +82,34 @@ impl From<UiError> for FrontendError {
     }
 }
 
+/// Font preset used by the egui frontend.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GuiFontPreset {
+    NotoSans,
+    EguiDefault,
+    Monospace,
+}
+
+impl GuiFontPreset {
+    pub const fn default_preset() -> Self {
+        Self::NotoSans
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::NotoSans => "Noto Sans",
+            Self::EguiDefault => "Egui Default",
+            Self::Monospace => "Monospace",
+        }
+    }
+}
+
 /// Launches the GUI frontend for a finished report.
-pub fn launch_frontend_gui(report: FrontendReport) -> Result<(), FrontendError> {
-    gui::run_gui(report)
+pub fn launch_frontend_gui(
+    report: FrontendReport,
+    font_preset: GuiFontPreset,
+) -> Result<(), FrontendError> {
+    gui::run_gui(report, font_preset)
 }
 
 /// Summary returned after running the frontend.

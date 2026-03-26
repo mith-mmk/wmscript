@@ -2,7 +2,7 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 
-use wmlfrontend::{FrontendConfig, launch_frontend_gui, run_frontend};
+use wmlfrontend::{FrontendConfig, GuiFontPreset, launch_frontend_gui, run_frontend};
 use wmlplatform::{PlatformKind, PlatformProfile};
 use wmlresource::ResourceType;
 use wmltoolchain::{GameAsset, GameProject};
@@ -47,7 +47,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let egui_mode = matches!(args.platform.kind, PlatformKind::Egui);
     let report = run_frontend(config)?;
     if egui_mode {
-        launch_frontend_gui(report.clone())?;
+        launch_frontend_gui(report.clone(), args.font)?;
     }
 
     println!("=== frontend summary ===");
@@ -72,6 +72,7 @@ struct CliArgs {
     step_limit: Option<usize>,
     platform: PlatformProfile,
     assets: Vec<CliAsset>,
+    font: GuiFontPreset,
 }
 
 impl CliArgs {
@@ -81,6 +82,7 @@ impl CliArgs {
         let mut step_limit = None;
         let mut platform = PlatformProfile::native();
         let mut assets = Vec::new();
+        let mut font = GuiFontPreset::default_preset();
 
         while let Some(arg) = args.next() {
             match arg.as_str() {
@@ -103,6 +105,10 @@ impl CliArgs {
                 "--image" => {
                     let value = args.next().ok_or("--image requires a value")?;
                     assets.push(parse_asset_spec(&value, ResourceType::Image)?);
+                }
+                "--font" => {
+                    let value = args.next().ok_or("--font requires a value")?;
+                    font = parse_font(&value)?;
                 }
                 "--help" | "-h" => {
                     print_usage();
@@ -127,6 +133,7 @@ impl CliArgs {
             step_limit,
             platform,
             assets,
+            font,
         })
     }
 }
@@ -161,8 +168,17 @@ fn parse_platform(value: &str) -> Result<PlatformProfile, Box<dyn std::error::Er
     }
 }
 
+fn parse_font(value: &str) -> Result<GuiFontPreset, Box<dyn std::error::Error>> {
+    match value {
+        "noto" | "noto-sans" | "noto-sans-jp" => Ok(GuiFontPreset::NotoSans),
+        "default" | "egui" => Ok(GuiFontPreset::EguiDefault),
+        "mono" | "monospace" => Ok(GuiFontPreset::Monospace),
+        other => Err(format!("unknown font preset: {other}").into()),
+    }
+}
+
 fn print_usage() {
     eprintln!(
-        "usage: wmlfrontend <script.wml> [--package NAME] [--step-limit N] [--platform native|wasm|egui] [--asset NAME=PATH] [--image NAME=PATH]"
+        "usage: wmlfrontend <script.wml> [--package NAME] [--step-limit N] [--platform native|wasm|egui] [--font noto|default|mono] [--asset NAME=PATH] [--image NAME=PATH]"
     );
 }

@@ -143,8 +143,11 @@ cargo run -p wmlruntime --example input_link
 cargo run -p wmlruntime --example worker_comm
 cargo run -p wmlruntime --example asset_load
 cargo run -p wmlruntime --example easynovel
-cargo run -p wmlfrontend -- samples/easynovel/main.wml --platform egui
+cargo run -p wmlfrontend -- samples/easynovel/main.wml --platform egui --font noto
 ```
+
+egui フロントエンドの既定フォントは、日本語表示を優先して Noto Sans 系にしています。
+`--font default`、`--font noto`、`--font mono` で切り替えられます。
 
 ## Toolchain
 
