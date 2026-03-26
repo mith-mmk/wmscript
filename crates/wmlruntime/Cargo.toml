@@ -11,3 +11,4 @@ wmlplatform = { path = "../wmlplatform" }
 wmlresource = { path = "../wmlresource" }
 wmlverifier = { path = "../wmlverifier" }
 wmlvm = { path = "../wmlvm" }
+wmlcompiler = { path = "../wmlcompiler" }

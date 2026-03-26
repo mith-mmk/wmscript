@@ -1,0 +1,39 @@
+use std::env;
+
+use wmlcompiler::{Compiler, CompilerConfig, ModuleCatalog};
+use wmlplatform::PlatformProfile;
+use wmlruntime::{Runtime, RuntimeConfig};
+
+fn main() {
+    let source = include_str!("../../../samples/easynovel/main.wml");
+    let compiler = Compiler::new(CompilerConfig::new(PlatformProfile::native()));
+    let mut catalog = ModuleCatalog::new();
+    let program = compiler
+        .compile_program("samples/easynovel/main.wml", source, &mut catalog)
+        .expect("compile easynovel sample");
+
+    let selected = env::args().nth(1).unwrap_or_else(|| "main".to_owned());
+    let entry = match selected.as_str() {
+        "prologue" => 1,
+        "chapter_1" => 2,
+        "chapter_2" => 3,
+        "main" => 4,
+        other => {
+            eprintln!("unknown chapter `{other}`, defaulting to `main`");
+            4
+        }
+    };
+
+    let mut program = program;
+    program.set_entry(entry);
+
+    let mut runtime =
+        Runtime::new(RuntimeConfig::new(PlatformProfile::native()).with_step_limit(16));
+    let worker_id = runtime.spawn_program(program).expect("spawn program");
+    let outcomes = runtime.run_until_idle(4);
+
+    println!(
+        "easynovel worker {worker_id} chapter `{selected}` => {:?}",
+        outcomes.last()
+    );
+}

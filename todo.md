@@ -303,6 +303,8 @@ Toolchain
 
  [+] assetロード例
 
+ [+] easynovel
+
 6. スクリプトコンパイラ
 6.1 フロントエンド
 

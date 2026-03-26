@@ -9,4 +9,4 @@
 - `assetload/`
   - Runtime archive and resource loading sample.
 - `easynovel/`
-  - Placeholder for a larger story-driven sample.
+  - Small story-driven sample with chapters and narration.

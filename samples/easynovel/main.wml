@@ -1,0 +1,18 @@
+export let protagonist = "Aki";
+export let setting = "last train platform";
+
+export func prologue() {
+    return "Aki arrives at the last train platform.";
+}
+
+export func chapter_1() {
+    return "A lantern lights the stairs down to the station.";
+}
+
+export func chapter_2() {
+    return "Aki chooses the quiet route home.";
+}
+
+export func main() {
+    return "Prologue";
+}
