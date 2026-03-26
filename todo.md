@@ -137,19 +137,19 @@ Toolchain
      - 入力: `Op`, `Vm`, `HostRegistry`
      - 出力: `run_frame`、`CALL/RETURN/JUMP/CALL_HOST` の実装
      - 完了条件: 基本命令列の実行テストが通る
-   - [ ] worker と scheduler
+   - [+] worker と scheduler
      - 入力: `Vm`, message queue, sleep/request state
      - 出力: worker state machine、step budget scheduler
      - 完了条件: `spawn/run/destroy` と `yield/sleep/recv` の遷移が確認できる
-   - [ ] Host API ブリッジ
+   - [+] Host API ブリッジ
      - 入力: host_id table、capability table
      - 出力: host dispatch、権限制御、mock interface
      - 完了条件: `CALL_HOST` のモックテストが書ける
-   - [ ] Verifier
+   - [+] Verifier
      - 入力: bytecode module、func table、const table、jump targets、host_id table
      - 出力: 検証結果、エラー分類
      - 完了条件: 不正 opcode / 範囲外 jump / 無効 host_id を検出できる
-   - [ ] VMテスト
+   - [+] VMテスト
      - 入力: 命令列、VM状態、host mock
      - 出力: opcode 単体テスト、実行テスト、worker テスト
      - 完了条件: `cargo test --workspace` が安定して通る
@@ -219,21 +219,21 @@ Toolchain
 
 2.5 ワーカーモデル
 
- workerインスタンス分離
+ [+] workerインスタンス分離
 
- メッセージキュー実装
+ [+] メッセージキュー実装
 
- 状態管理（running/waiting/sleeping）
+ [+] 状態管理（running/waiting/sleeping）
 
 2.6 スケジューラ
 
- 協調スケジューリング
+ [+] 協調スケジューリング
 
- yield対応
+ [+] yield対応
 
- sleep対応
+ [+] sleep対応
 
- step制限
+ [+] step制限
 
 2.7 Host API
 

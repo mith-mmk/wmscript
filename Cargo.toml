@@ -7,6 +7,7 @@ members = [
     "crates/wmlhost",
     "crates/wmlplatform",
     "crates/wmlresource",
+    "crates/wmlverifier",
     "crates/wmlvm",
 ]
 
@@ -14,4 +15,3 @@ members = [
 edition = "2024"
 license = "MIT"
 publish = false
-

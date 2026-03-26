@@ -2,7 +2,7 @@
 
 //! Virtual machine crate for WML scripts.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::rc::Rc;
 
 use wmlbytecode::{BytecodeError, Op, Opcode, decode_at};
@@ -256,6 +256,14 @@ impl Program {
         self.functions.get(&func_id)
     }
 
+    pub fn function_ids(&self) -> impl Iterator<Item = u16> + '_ {
+        self.functions.keys().copied()
+    }
+
+    pub fn function_count(&self) -> usize {
+        self.functions.len()
+    }
+
     pub fn push_constant(&mut self, value: Value) -> u16 {
         self.constants.push(value);
         (self.constants.len() - 1) as u16
@@ -263,6 +271,10 @@ impl Program {
 
     pub fn constant(&self, index: u16) -> Option<&Value> {
         self.constants.get(index as usize)
+    }
+
+    pub fn constant_count(&self) -> usize {
+        self.constants.len()
     }
 }
 
@@ -1115,6 +1127,167 @@ impl Default for Vm {
     }
 }
 
+/// Worker-facing scheduler state.
+#[derive(Clone, Debug, PartialEq)]
+pub enum WorkerState {
+    Runnable,
+    WaitingMessage,
+    Sleeping,
+    Halted,
+    Error(VmError),
+}
+
+/// Cooperative scheduler for VM workers.
+pub struct Scheduler {
+    workers: BTreeMap<WorkerId, Vm>,
+    runnable: VecDeque<WorkerId>,
+    waiting: BTreeSet<WorkerId>,
+    sleeping: BTreeSet<WorkerId>,
+    halted: BTreeSet<WorkerId>,
+    errors: BTreeMap<WorkerId, VmError>,
+    next_worker_id: WorkerId,
+}
+
+impl Scheduler {
+    /// Creates an empty scheduler.
+    pub fn new() -> Self {
+        Self {
+            workers: BTreeMap::new(),
+            runnable: VecDeque::new(),
+            waiting: BTreeSet::new(),
+            sleeping: BTreeSet::new(),
+            halted: BTreeSet::new(),
+            errors: BTreeMap::new(),
+            next_worker_id: 1,
+        }
+    }
+
+    /// Spawns a worker VM and returns its id.
+    pub fn spawn(&mut self, mut vm: Vm) -> WorkerId {
+        let worker_id = self.next_worker_id;
+        self.next_worker_id = self.next_worker_id.saturating_add(1);
+        vm.set_worker_id(worker_id);
+        self.workers.insert(worker_id, vm);
+        self.runnable.push_back(worker_id);
+        worker_id
+    }
+
+    /// Returns a worker VM by id.
+    pub fn worker(&self, worker_id: WorkerId) -> Option<&Vm> {
+        self.workers.get(&worker_id)
+    }
+
+    /// Returns a mutable worker VM by id.
+    pub fn worker_mut(&mut self, worker_id: WorkerId) -> Option<&mut Vm> {
+        self.workers.get_mut(&worker_id)
+    }
+
+    /// Returns the current state of a worker.
+    pub fn worker_state(&self, worker_id: WorkerId) -> Option<WorkerState> {
+        self.workers.get(&worker_id).map(|vm| match vm.state() {
+            VmState::Idle | VmState::Running => {
+                if self.runnable.contains(&worker_id) {
+                    WorkerState::Runnable
+                } else {
+                    WorkerState::Runnable
+                }
+            }
+            VmState::WaitingMessage => WorkerState::WaitingMessage,
+            VmState::Sleeping => WorkerState::Sleeping,
+            VmState::Halted => WorkerState::Halted,
+            VmState::Error(error) => WorkerState::Error(error.clone()),
+        })
+    }
+
+    /// Wakes a worker that is waiting or sleeping.
+    pub fn wake(&mut self, worker_id: WorkerId) {
+        self.waiting.remove(&worker_id);
+        self.sleeping.remove(&worker_id);
+        self.halted.remove(&worker_id);
+        self.errors.remove(&worker_id);
+        if self.workers.contains_key(&worker_id) && !self.runnable.contains(&worker_id) {
+            self.runnable.push_back(worker_id);
+        }
+    }
+
+    /// Delivers a message to the target worker.
+    pub fn deliver(&mut self, message: Message) {
+        if let Some(worker) = self.workers.get_mut(&message.to) {
+            worker.push_message(message);
+            if self.waiting.remove(&worker.worker_id()) {
+                self.runnable.push_back(worker.worker_id());
+            }
+        }
+    }
+
+    /// Runs one scheduling round over the currently runnable workers.
+    pub fn run_round(&mut self, step_limit: usize) -> Vec<(WorkerId, RunOutcome)> {
+        let mut outcomes = Vec::new();
+        let runnable_count = self.runnable.len();
+        for _ in 0..runnable_count {
+            let Some(worker_id) = self.runnable.pop_front() else {
+                break;
+            };
+            let Some(vm) = self.workers.get_mut(&worker_id) else {
+                continue;
+            };
+
+            let outcome = vm.run_frame(step_limit);
+            self.route_outbox(worker_id);
+            self.reconcile(worker_id, &outcome);
+            outcomes.push((worker_id, outcome));
+        }
+        outcomes
+    }
+
+    fn reconcile(&mut self, worker_id: WorkerId, outcome: &RunOutcome) {
+        self.waiting.remove(&worker_id);
+        self.sleeping.remove(&worker_id);
+        self.halted.remove(&worker_id);
+        self.errors.remove(&worker_id);
+
+        match outcome {
+            RunOutcome::StepLimitReached { .. } | RunOutcome::Yielded { .. } => {
+                self.runnable.push_back(worker_id);
+            }
+            RunOutcome::WaitingMessage { .. } => {
+                self.waiting.insert(worker_id);
+            }
+            RunOutcome::Sleeping { .. } => {
+                self.sleeping.insert(worker_id);
+            }
+            RunOutcome::Halted { .. } => {
+                self.halted.insert(worker_id);
+            }
+            RunOutcome::Error { error, .. } => {
+                self.errors.insert(worker_id, error.clone());
+            }
+        }
+    }
+
+    fn route_outbox(&mut self, worker_id: WorkerId) {
+        let messages = self
+            .workers
+            .get_mut(&worker_id)
+            .map(Vm::drain_outbox)
+            .unwrap_or_default();
+        for message in messages {
+            self.deliver(message);
+        }
+    }
+
+    /// Returns `true` when no worker is runnable.
+    pub fn is_idle(&self) -> bool {
+        self.runnable.is_empty()
+    }
+}
+
+impl Default for Scheduler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1252,5 +1425,63 @@ mod tests {
         assert!(matches!(outcome, RunOutcome::Halted { .. }));
         assert_eq!(vm.outbox().len(), 1);
         assert_eq!(vm.last_return(), Some(&Value::Integer(42)));
+    }
+
+    #[test]
+    fn scheduler_routes_messages_between_workers() {
+        let mut sender_program = Program::new();
+        sender_program.push_constant(Value::Integer(7));
+        sender_program.insert_function(Function::new(
+            1,
+            vec![
+                0x10, 0x00, 0x00, // push const 0
+                0x90, 0x02, 0x00, 0x01, // send to worker 2
+                0x72, // return
+            ],
+            0,
+            0,
+        ));
+        sender_program.set_entry(1);
+
+        let mut receiver_program = Program::new();
+        receiver_program.insert_function(Function::new(1, vec![0x91, 0x72], 0, 0));
+        receiver_program.set_entry(1);
+
+        let sender = Vm::with_program(
+            VmConfig::new(
+                PlatformProfile::native(),
+                HostRegistry::new(PlatformProfile::native()),
+                128,
+            ),
+            sender_program,
+        );
+        let receiver = Vm::with_program(
+            VmConfig::new(
+                PlatformProfile::native(),
+                HostRegistry::new(PlatformProfile::native()),
+                128,
+            ),
+            receiver_program,
+        );
+
+        let mut scheduler = Scheduler::new();
+        let sender_id = scheduler.spawn(sender);
+        let receiver_id = scheduler.spawn(receiver);
+
+        let outcomes = scheduler.run_round(32);
+
+        assert_eq!(sender_id, 1);
+        assert_eq!(receiver_id, 2);
+        assert!(outcomes.len() >= 2);
+        assert!(matches!(
+            scheduler
+                .worker(receiver_id)
+                .and_then(|vm| vm.last_return()),
+            Some(Value::Integer(7))
+        ));
+        assert!(matches!(
+            scheduler.worker_state(receiver_id),
+            Some(WorkerState::Halted)
+        ));
     }
 }
