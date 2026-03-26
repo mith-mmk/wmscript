@@ -331,6 +331,17 @@ pub fn standard_extension_registry() -> Result<ExtensionRegistry> {
         )],
     )?;
     registry.register_extension(
+        "ext.message",
+        &[
+            ExtensionFunctionSpec::new("show", 135, 1, 2, CAP_GUI),
+            ExtensionFunctionSpec::new("append", 136, 1, 1, CAP_GUI),
+            ExtensionFunctionSpec::new("choices", 137, 1, 16, CAP_GUI),
+            ExtensionFunctionSpec::new("prompt", 138, 1, 1, CAP_GUI),
+            ExtensionFunctionSpec::new("hide", 139, 0, 0, CAP_GUI),
+            ExtensionFunctionSpec::new("clear", 149, 0, 0, CAP_GUI),
+        ],
+    )?;
+    registry.register_extension(
         "ext.image",
         &[
             ExtensionFunctionSpec::new("load", 140, 1, 1, CAP_GUI),

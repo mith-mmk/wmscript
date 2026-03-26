@@ -106,7 +106,20 @@ export func main() {
 | --- | --- | --- | --- |
 | `ext.llm.generate` | `generate(prompt: string)` | `string` | 設定済みの LLM バックエンドへプロンプトを送信します。 |
 
-### 3.5 `ext.image`
+### 3.5 `ext.message`
+
+必要 capability: `CAP_GUI`
+
+| 関数 | シグネチャ | 戻り値 | 説明 |
+| --- | --- | --- | --- |
+| `ext.message.show` | `show(text: string)` または `show(speaker: string, text: string)` | `bool` | メッセージ窓に本文と任意の話者名を表示します。 |
+| `ext.message.append` | `append(line: string)` | `bool` | 現在の本文とバックログに 1 行を追加します。 |
+| `ext.message.choices` | `choices(label1, label2, ...)` | `bool` | メッセージ窓の選択肢一覧を更新します。 |
+| `ext.message.prompt` | `prompt(text: string)` | `bool` | プレイヤー入力欄の上に表示するプロンプトを設定します。 |
+| `ext.message.hide` | `hide()` | `bool` | メッセージ窓を隠します。 |
+| `ext.message.clear` | `clear()` | `bool` | メッセージ窓の本文、プロンプト、選択肢を消去します。 |
+
+### 3.6 `ext.image`
 
 必要 capability: `CAP_GUI`
 
@@ -122,7 +135,7 @@ export func main() {
 | `ext.image.set_icon_sheet` | `set_icon_sheet(handle, cell_w, cell_h)` | `bool` | スプライトシートのセル情報を保存します。 |
 | `ext.image.draw_icon` | `draw_icon(handle, index, x, y)` | `bool` | 設定済みのアイコンシートからスプライトを描画します。 |
 
-### 3.6 `ext.audio`
+### 3.7 `ext.audio`
 
 必要 capability: `CAP_ASYNC_IO`
 
@@ -138,7 +151,7 @@ export func main() {
 | `ext.audio.status` | `status(handle)` | `int` | 現在の再生状態コードを返します。 |
 | `ext.audio.release` | `release(handle)` | `bool` | 音声 handle を解放します。 |
 
-### 3.7 `ext.vm`
+### 3.8 `ext.vm`
 
 必要 capability: なし
 
@@ -147,7 +160,7 @@ export func main() {
 | `ext.vm.save` | `save(slot: int)` | `bool` | ランタイムのチェックポイントをメモリに保存します。 |
 | `ext.vm.load` | `load(slot: int)` | `bool` | 以前保存したチェックポイントを復元します。 |
 
-### 3.8 `state`
+### 3.9 `state`
 
 必要 capability: なし
 

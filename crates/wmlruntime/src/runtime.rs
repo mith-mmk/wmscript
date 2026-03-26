@@ -143,6 +143,23 @@ pub struct IconSheetState {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
+pub struct MessageChoiceState {
+    pub id: String,
+    pub label: String,
+    pub enabled: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MessageWindowState {
+    pub visible: bool,
+    pub speaker: Option<String>,
+    pub text: String,
+    pub backlog: Vec<String>,
+    pub choices: Vec<MessageChoiceState>,
+    pub input_prompt: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct ImageDrawState {
     pub handle: u64,
     pub resource_id: u32,
@@ -164,6 +181,7 @@ struct RuntimeCheckpoint {
     loaded_archives: Vec<Manifest>,
     image_draws: Vec<ImageDrawState>,
     icon_sheets: BTreeMap<u64, IconSheetState>,
+    message_window: MessageWindowState,
     debug_log: Vec<String>,
     audio_states: BTreeMap<u64, AudioPlaybackState>,
     state_manager: StateManager,
@@ -306,6 +324,7 @@ pub struct Runtime {
     loaded_archives: Rc<RefCell<Vec<Manifest>>>,
     image_draws: Rc<RefCell<Vec<ImageDrawState>>>,
     icon_sheets: Rc<RefCell<BTreeMap<u64, IconSheetState>>>,
+    message_window: Rc<RefCell<MessageWindowState>>,
     audio_states: Rc<RefCell<BTreeMap<u64, AudioPlaybackState>>>,
     state_manager: Rc<RefCell<StateManager>>,
     checkpoints: Rc<RefCell<BTreeMap<u32, RuntimeCheckpoint>>>,
@@ -328,6 +347,7 @@ impl Runtime {
             loaded_archives: Rc::new(RefCell::new(Vec::new())),
             image_draws: Rc::new(RefCell::new(Vec::new())),
             icon_sheets: Rc::new(RefCell::new(BTreeMap::new())),
+            message_window: Rc::new(RefCell::new(MessageWindowState::default())),
             audio_states: Rc::new(RefCell::new(BTreeMap::new())),
             state_manager: Rc::new(RefCell::new(StateManager::default())),
             checkpoints: Rc::new(RefCell::new(BTreeMap::new())),
@@ -608,6 +628,136 @@ impl Runtime {
         Ok(LlmExtension {
             generate_ext_id: ids[0],
             generate_host_id,
+        })
+    }
+
+    pub fn install_message_extension(&mut self) -> Result<MessageExtension, RuntimeError> {
+        let show_host_id = 135;
+        let append_host_id = 136;
+        let choices_host_id = 137;
+        let prompt_host_id = 138;
+        let hide_host_id = 139;
+        let clear_host_id = 149;
+        let message_window = self.message_window.clone();
+
+        let _ = self.register_host_function(
+            HostFunction::new(show_host_id, 1, 2, CAP_GUI),
+            move |args| {
+                let (speaker, text) = match args.len() {
+                    1 => (None, expect_string_arg(args, 0, "text")?),
+                    2 => (
+                        Some(expect_string_arg(args, 0, "speaker")?),
+                        expect_string_arg(args, 1, "text")?,
+                    ),
+                    other => {
+                        return Err(HostError::InvalidArguments(format!(
+                            "message.show expected 1..=2 args, got {other}"
+                        )));
+                    }
+                };
+                let mut window = message_window.borrow_mut();
+                window.visible = true;
+                window.speaker = speaker;
+                window.text = text.clone();
+                window
+                    .backlog
+                    .extend(text.lines().map(|line| line.to_owned()));
+                window.input_prompt = None;
+                window.choices.clear();
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let message_window = self.message_window.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(append_host_id, 1, 1, CAP_GUI),
+            move |args| {
+                let line = expect_string_arg(args, 0, "line")?;
+                let mut window = message_window.borrow_mut();
+                if !window.text.is_empty() {
+                    window.text.push('\n');
+                }
+                window.text.push_str(&line);
+                window.backlog.push(line);
+                window.visible = true;
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let message_window = self.message_window.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(choices_host_id, 1, 16, CAP_GUI),
+            move |args| {
+                let mut window = message_window.borrow_mut();
+                window.visible = true;
+                window.choices = args
+                    .iter()
+                    .enumerate()
+                    .map(|(index, value)| MessageChoiceState {
+                        id: format!("choice-{}", index + 1),
+                        label: render_value(value),
+                        enabled: true,
+                    })
+                    .collect();
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let message_window = self.message_window.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(prompt_host_id, 1, 1, CAP_GUI),
+            move |args| {
+                let prompt = expect_string_arg(args, 0, "prompt")?;
+                let mut window = message_window.borrow_mut();
+                window.visible = true;
+                window.input_prompt = Some(prompt);
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let message_window = self.message_window.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(hide_host_id, 0, 0, CAP_GUI),
+            move |_args| {
+                message_window.borrow_mut().visible = false;
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let message_window = self.message_window.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(clear_host_id, 0, 0, CAP_GUI),
+            move |_args| {
+                *message_window.borrow_mut() = MessageWindowState::default();
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let ids = self.extensions.register_extension(
+            "ext.message",
+            &[
+                ExtensionFunctionSpec::new("show", show_host_id, 1, 2, CAP_GUI),
+                ExtensionFunctionSpec::new("append", append_host_id, 1, 1, CAP_GUI),
+                ExtensionFunctionSpec::new("choices", choices_host_id, 1, 16, CAP_GUI),
+                ExtensionFunctionSpec::new("prompt", prompt_host_id, 1, 1, CAP_GUI),
+                ExtensionFunctionSpec::new("hide", hide_host_id, 0, 0, CAP_GUI),
+                ExtensionFunctionSpec::new("clear", clear_host_id, 0, 0, CAP_GUI),
+            ],
+        )?;
+
+        Ok(MessageExtension {
+            show_ext_id: ids[0],
+            append_ext_id: ids[1],
+            choices_ext_id: ids[2],
+            prompt_ext_id: ids[3],
+            hide_ext_id: ids[4],
+            clear_ext_id: ids[5],
+            show_host_id,
+            append_host_id,
+            choices_host_id,
+            prompt_host_id,
+            hide_host_id,
+            clear_host_id,
         })
     }
 
@@ -1159,6 +1309,7 @@ impl Runtime {
         let loaded_archives = self.loaded_archives.clone();
         let image_draws = self.image_draws.clone();
         let icon_sheets = self.icon_sheets.clone();
+        let message_window = self.message_window.clone();
         let audio_states = self.audio_states.clone();
         let state_manager = self.state_manager.clone();
         let checkpoints = self.checkpoints.clone();
@@ -1175,6 +1326,7 @@ impl Runtime {
                         loaded_archives: loaded_archives.borrow().clone(),
                         image_draws: image_draws.borrow().clone(),
                         icon_sheets: icon_sheets.borrow().clone(),
+                        message_window: message_window.borrow().clone(),
                         debug_log: debug_log.borrow().clone(),
                         audio_states: audio_states.borrow().clone(),
                         state_manager: state_manager.borrow().clone(),
@@ -1189,6 +1341,7 @@ impl Runtime {
         let loaded_archives = self.loaded_archives.clone();
         let image_draws = self.image_draws.clone();
         let icon_sheets = self.icon_sheets.clone();
+        let message_window = self.message_window.clone();
         let audio_states = self.audio_states.clone();
         let audio_backend = self.audio_backend.clone();
         let state_manager = self.state_manager.clone();
@@ -1207,6 +1360,7 @@ impl Runtime {
                 *loaded_archives.borrow_mut() = checkpoint.loaded_archives;
                 *image_draws.borrow_mut() = checkpoint.image_draws;
                 *icon_sheets.borrow_mut() = checkpoint.icon_sheets;
+                *message_window.borrow_mut() = checkpoint.message_window;
                 *debug_log.borrow_mut() = checkpoint.debug_log;
                 *audio_states.borrow_mut() = checkpoint.audio_states;
                 *state_manager.borrow_mut() = checkpoint.state_manager;
@@ -1256,6 +1410,7 @@ impl Runtime {
             debug: self.install_debug_extension()?,
             net: self.install_net_extension()?,
             llm: self.install_llm_extension()?,
+            message: self.install_message_extension()?,
             image: self.install_image_extension()?,
             audio: self.install_audio_extension()?,
             vm: self.install_vm_extension()?,
@@ -1316,6 +1471,10 @@ impl Runtime {
 
     pub fn image_draws(&self) -> Vec<ImageDrawState> {
         self.image_draws.borrow().clone()
+    }
+
+    pub fn message_window_state(&self) -> MessageWindowState {
+        self.message_window.borrow().clone()
     }
 
     pub fn audio_playback_states(&self) -> BTreeMap<u64, AudioPlaybackState> {
@@ -1397,6 +1556,23 @@ pub struct LlmExtension {
     pub generate_host_id: HostId,
 }
 
+/// Stable ids assigned to the built-in message extension.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MessageExtension {
+    pub show_ext_id: u32,
+    pub append_ext_id: u32,
+    pub choices_ext_id: u32,
+    pub prompt_ext_id: u32,
+    pub hide_ext_id: u32,
+    pub clear_ext_id: u32,
+    pub show_host_id: HostId,
+    pub append_host_id: HostId,
+    pub choices_host_id: HostId,
+    pub prompt_host_id: HostId,
+    pub hide_host_id: HostId,
+    pub clear_host_id: HostId,
+}
+
 /// Stable ids assigned to the built-in image extension.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ImageExtension {
@@ -1476,6 +1652,7 @@ pub struct StandardExtensions {
     pub debug: DebugExtension,
     pub net: NetExtension,
     pub llm: LlmExtension,
+    pub message: MessageExtension,
     pub image: ImageExtension,
     pub audio: AudioExtension,
     pub vm: VmExtension,
@@ -2031,6 +2208,82 @@ mod tests {
                 }
             )) if text == "model reply"
         ));
+    }
+
+    #[test]
+    fn runtime_installs_and_executes_message_extension() {
+        let mut runtime = Runtime::new(RuntimeConfig::new(PlatformProfile::native()));
+        let extension = runtime
+            .install_message_extension()
+            .expect("install message");
+
+        let mut program = Program::new();
+        let speaker_idx = program.push_constant(Value::String("Narrator".to_owned()));
+        let text_idx = program.push_constant(Value::String("Hello world".to_owned()));
+        let choice_a_idx = program.push_constant(Value::String("Continue".to_owned()));
+        let choice_b_idx = program.push_constant(Value::String("Back".to_owned()));
+        let prompt_idx = program.push_constant(Value::String("Your name?".to_owned()));
+        let code = vec![
+            0x10,
+            speaker_idx as u8,
+            (speaker_idx >> 8) as u8,
+            0x10,
+            text_idx as u8,
+            (text_idx >> 8) as u8,
+            0x71,
+            (extension.show_host_id & 0xFF) as u8,
+            (extension.show_host_id >> 8) as u8,
+            0x02,
+            0x10,
+            choice_a_idx as u8,
+            (choice_a_idx >> 8) as u8,
+            0x10,
+            choice_b_idx as u8,
+            (choice_b_idx >> 8) as u8,
+            0x71,
+            (extension.choices_host_id & 0xFF) as u8,
+            (extension.choices_host_id >> 8) as u8,
+            0x02,
+            0x10,
+            prompt_idx as u8,
+            (prompt_idx >> 8) as u8,
+            0x71,
+            (extension.prompt_host_id & 0xFF) as u8,
+            (extension.prompt_host_id >> 8) as u8,
+            0x01,
+            0x72,
+        ];
+        program.insert_function(Function::new(1, code, 0, 0));
+        program.set_entry(1);
+
+        let worker_id = runtime.spawn_program(program).expect("spawn");
+        let outcomes = runtime.run_until_idle(8);
+
+        assert_eq!(worker_id, 1);
+        assert!(!outcomes.is_empty());
+        assert_eq!(
+            runtime.extension_registry().resolve_id("ext.message.show"),
+            Ok(extension.show_ext_id)
+        );
+        assert_eq!(
+            runtime
+                .extension_registry()
+                .resolve_id("ext.message.choices"),
+            Ok(extension.choices_ext_id)
+        );
+        assert_eq!(
+            runtime
+                .extension_registry()
+                .resolve_id("ext.message.prompt"),
+            Ok(extension.prompt_ext_id)
+        );
+        let message = runtime.message_window_state();
+        assert!(message.visible);
+        assert_eq!(message.speaker.as_deref(), Some("Narrator"));
+        assert_eq!(message.text, "Hello world");
+        assert_eq!(message.choices.len(), 2);
+        assert_eq!(message.choices[0].label, "Continue");
+        assert_eq!(message.input_prompt.as_deref(), Some("Your name?"));
     }
 
     #[test]

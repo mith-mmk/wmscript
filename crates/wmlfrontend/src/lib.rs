@@ -13,7 +13,9 @@ mod gui;
 use wmlplatform::PlatformProfile;
 use wmlruntime::{
     AudioPlaybackState as RuntimeAudioPlaybackState, IconSheetState, ImageDrawState,
-    ImageSourceRect, Runtime, SharedAudioBackend, create_default_audio_backend,
+    ImageSourceRect, MessageChoiceState as RuntimeMessageChoiceState,
+    MessageWindowState as RuntimeMessageWindowState, Runtime, SharedAudioBackend,
+    create_default_audio_backend,
 };
 use wmltoolchain::{
     BuildArtifact, ExecutionReport, GameProject, Toolchain, ToolchainConfig, ToolchainError,
@@ -183,6 +185,7 @@ impl UiBackend for ConsoleBackend {
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
+            UiCommand::SetInputPrompt(prompt) => println!("[ui] input prompt: {prompt:?}"),
             UiCommand::HideMessageWindow => println!("[ui] hide message window"),
             UiCommand::ResetScene => println!("[ui] reset scene"),
         }
@@ -267,16 +270,40 @@ impl UiApp for FrontendApp {
                 let log_lines = collect_lines(&build, &execution);
                 let story_text = final_story_text(&execution);
                 *self.log_lines.borrow_mut() = log_lines.clone();
-                ctx.show_message_window(
-                    Some(self.config.project.package_name.clone()),
-                    story_text
-                        .clone()
-                        .unwrap_or_else(|| "runtime completed".to_owned()),
-                );
-                ctx.state_mut().scene.message_window.backlog = story_text
-                    .as_deref()
-                    .map(|text| text.lines().map(|line| line.to_owned()).collect())
-                    .unwrap_or_default();
+                let runtime_message = self.runtime.message_window_state();
+                let ui_message = to_ui_message_window_state(runtime_message);
+                if ui_message.visible
+                    || ui_message.speaker.is_some()
+                    || !ui_message.text.is_empty()
+                    || !ui_message.choices.is_empty()
+                    || ui_message.input_prompt.is_some()
+                {
+                    if ui_message.visible {
+                        ctx.show_message_window(
+                            ui_message.speaker.clone(),
+                            ui_message.text.clone(),
+                        );
+                    } else {
+                        ctx.hide_message_window();
+                        ctx.state_mut().scene.message_window.speaker = ui_message.speaker.clone();
+                        ctx.state_mut().scene.message_window.text = ui_message.text.clone();
+                    }
+                    ctx.state_mut().scene.message_window.backlog = ui_message.backlog.clone();
+                    ctx.state_mut().scene.message_window.choices = ui_message.choices.clone();
+                    ctx.set_message_choices(ui_message.choices.clone());
+                    ctx.set_input_prompt(ui_message.input_prompt.clone());
+                } else {
+                    ctx.show_message_window(
+                        Some(self.config.project.package_name.clone()),
+                        story_text
+                            .clone()
+                            .unwrap_or_else(|| "runtime completed".to_owned()),
+                    );
+                    ctx.state_mut().scene.message_window.backlog = story_text
+                        .as_deref()
+                        .map(|text| text.lines().map(|line| line.to_owned()).collect())
+                        .unwrap_or_default();
+                }
                 for line in &log_lines {
                     ctx.log(UiLogLevel::Info, line.clone());
                 }
@@ -310,7 +337,9 @@ impl UiApp for FrontendApp {
                     "WML Frontend - done ({})",
                     self.config.project.package_name
                 ));
-                ctx.set_message_choices(vec![UiChoice::new("close", "Close")]);
+                if ctx.state().scene.message_window.choices.is_empty() {
+                    ctx.set_message_choices(vec![UiChoice::new("close", "Close")]);
+                }
                 ctx.close_window();
                 *self.report_slot.borrow_mut() = Some(FrontendReport {
                     build,
@@ -391,6 +420,25 @@ fn to_ui_audio_state(state: RuntimeAudioPlaybackState) -> UiAudioPlaybackState {
         looped: state.looped,
         position_ms: state.position_ms,
         volume: state.volume,
+    }
+}
+
+fn to_ui_message_window_state(state: RuntimeMessageWindowState) -> wmlui::UiMessageWindowState {
+    wmlui::UiMessageWindowState {
+        visible: state.visible,
+        speaker: state.speaker,
+        text: state.text,
+        backlog: state.backlog,
+        choices: state.choices.into_iter().map(to_ui_choice).collect(),
+        input_prompt: state.input_prompt,
+    }
+}
+
+fn to_ui_choice(choice: RuntimeMessageChoiceState) -> UiChoice {
+    UiChoice {
+        id: choice.id,
+        label: choice.label,
+        enabled: choice.enabled,
     }
 }
 

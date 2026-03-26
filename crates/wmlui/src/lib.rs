@@ -238,6 +238,7 @@ pub struct UiMessageWindowState {
     pub text: String,
     pub backlog: Vec<String>,
     pub choices: Vec<UiChoice>,
+    pub input_prompt: Option<String>,
 }
 
 /// State of the active scene.
@@ -371,6 +372,7 @@ pub enum UiCommand {
     },
     AppendMessageLine(String),
     SetMessageChoices(Vec<UiChoice>),
+    SetInputPrompt(Option<String>),
     HideMessageWindow,
     ResetScene,
 }
@@ -501,6 +503,11 @@ impl<'a> UiContext<'a> {
     pub fn set_message_choices(&mut self, choices: Vec<UiChoice>) {
         self.state.scene.message_window.choices = choices.clone();
         self.emit(UiCommand::SetMessageChoices(choices));
+    }
+
+    pub fn set_input_prompt(&mut self, prompt: Option<String>) {
+        self.state.scene.message_window.input_prompt = prompt.clone();
+        self.emit(UiCommand::SetInputPrompt(prompt));
     }
 
     pub fn hide_message_window(&mut self) {

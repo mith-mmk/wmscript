@@ -412,9 +412,14 @@ impl eframe::App for ReportApp {
                     });
 
                 ui.add_space(10.0);
+                let window = self.report.ui_state.scene.message_window.clone();
+                let input_prompt = window.input_prompt.clone();
                 ui.group(|ui| {
                     ui.vertical(|ui| {
                         ui.label(egui::RichText::new("Input").strong());
+                        if let Some(prompt) = input_prompt.as_deref() {
+                            ui.label(prompt);
+                        }
                         ui.horizontal(|ui| {
                             let response = ui.add(
                                 egui::TextEdit::singleline(&mut self.player_input)
@@ -433,8 +438,6 @@ impl eframe::App for ReportApp {
                 });
 
                 ui.add_space(10.0);
-
-                let window = self.report.ui_state.scene.message_window.clone();
                 let visible = window.visible;
                 let speaker = window
                     .speaker
