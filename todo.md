@@ -153,11 +153,11 @@ Toolchain
      - 入力: 命令列、VM状態、host mock
      - 出力: opcode 単体テスト、実行テスト、worker テスト
      - 完了条件: `cargo test --workspace` が安定して通る
-   - [ ] Ext API 基盤
+   - [+] Ext API 基盤
      - 入力: host registry、namespace policy
      - 出力: ext_id 割当、namespace 管理
      - 完了条件: `ext.*` の名前解決がコンパイル時 ID に落ちる
-   - [ ] コンパイラ基盤
+   - [+] コンパイラ基盤
      - 入力: AST/IR 方針、import 解決規則
      - 出力: parser、resolver、IR の骨格
      - 完了条件: 静的 import 解決と symbol table の流れが作れる
@@ -277,11 +277,11 @@ Toolchain
 4. VM Extender（ext API）
 4.1 拡張基盤
 
- extension登録API
+ [+] extension登録API
 
- ext_id割当
+ [+] ext_id割当
 
- namespace管理
+ [+] namespace管理
 
 4.2 サンプル実装
 
@@ -306,27 +306,27 @@ Toolchain
 6. スクリプトコンパイラ
 6.1 フロントエンド
 
- parser
+ [+] parser
 
- AST生成
+ [+] AST生成
 
 6.2 中間処理
 
- import解決
+ [+] import解決
 
- シンボル解決
+ [+] シンボル解決
 
  型タグ付け
 
 6.3 バックエンド
 
- IR生成
+ [+] IR生成
 
  最適化
 
  bytecode生成
 
- ID割当
+ [+] ID割当
 
 7. 逆コンパイラ
 

@@ -4,6 +4,7 @@ members = [
     "crates/wmlarchive",
     "crates/wmlbytecode",
     "crates/wmlcompiler",
+    "crates/wmlext",
     "crates/wmlhost",
     "crates/wmlplatform",
     "crates/wmlresource",
