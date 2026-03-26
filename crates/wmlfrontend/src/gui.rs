@@ -382,13 +382,22 @@ fn font_definitions(preset: GuiFontPreset) -> egui::FontDefinitions {
 }
 
 fn load_noto_sans_bytes() -> Option<Vec<u8>> {
-    let candidates = [
-        r"C:\Windows\Fonts\NotoSansJP-VF.ttf",
-        r"C:\Windows\Fonts\NotoSansCJKjp-Regular.otf",
-        r"C:\Windows\Fonts\NotoSansJP-Regular.otf",
-    ];
+    let mut candidates = Vec::new();
+    if let Ok(path) = std::env::var("WML_FRONTEND_FONT_PATH") {
+        candidates.push(path);
+    }
+    candidates.extend([
+        r"C:\Windows\Fonts\NotoSansJP-VF.ttf".to_owned(),
+        r"C:\Windows\Fonts\NotoSansCJKjp-Regular.otf".to_owned(),
+        r"C:\Windows\Fonts\NotoSansJP-Regular.otf".to_owned(),
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc".to_owned(),
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc".to_owned(),
+        "/usr/share/fonts/truetype/noto/NotoSansJP-Regular.ttf".to_owned(),
+        "/System/Library/Fonts/Supplemental/NotoSansCJK.ttc".to_owned(),
+        "/Library/Fonts/NotoSansJP-Regular.otf".to_owned(),
+    ]);
     for path in candidates {
-        if let Ok(bytes) = std::fs::read(path) {
+        if let Ok(bytes) = std::fs::read(&path) {
             return Some(bytes);
         }
     }
