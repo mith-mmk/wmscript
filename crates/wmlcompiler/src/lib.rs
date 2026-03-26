@@ -6,10 +6,12 @@
 //! parse -> resolve imports and symbols -> lower to a declaration IR.
 
 use std::collections::BTreeMap;
+use std::convert::TryFrom;
 use std::fmt;
 
-use wmlbytecode::Opcode;
+use wmlbytecode::{Op, Opcode, encode_op};
 use wmlplatform::PlatformProfile;
+use wmlvm::{Function as VmFunction, Program as VmProgram, Value as VmValue};
 
 /// Compiler configuration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -55,6 +57,8 @@ pub enum CompileError {
     Parse(ParseError),
     UnknownModule { path: String },
     DuplicateSymbol { name: String },
+    UnsupportedExpression { source: String },
+    BytecodeOverflow { what: &'static str, value: u32 },
 }
 
 impl fmt::Display for CompileError {
@@ -66,6 +70,12 @@ impl fmt::Display for CompileError {
             Self::Parse(error) => write!(f, "{error}"),
             Self::UnknownModule { path } => write!(f, "unknown module: {path}"),
             Self::DuplicateSymbol { name } => write!(f, "duplicate symbol: {name}"),
+            Self::UnsupportedExpression { source } => {
+                write!(f, "unsupported expression: {source}")
+            }
+            Self::BytecodeOverflow { what, value } => {
+                write!(f, "{what} does not fit in target bytecode type: {value}")
+            }
         }
     }
 }
@@ -309,6 +319,63 @@ impl Compiler {
         let resolved = self.resolve_module(ast.clone(), catalog)?;
         let ir = self.lower_to_ir(resolved.clone());
         Ok(CompiledModule { ast, resolved, ir })
+    }
+
+    /// Lowers an IR module to a runnable VM program.
+    pub fn lower_to_program(&self, ir: &IrModule) -> Result<VmProgram> {
+        let mut program = VmProgram::new();
+
+        for global in &ir.globals {
+            let value = parse_literal_value(&global.value)?;
+            let _ = program.push_constant(value);
+        }
+
+        let mut entry = None;
+        for function in &ir.functions {
+            let func_id = u16::try_from(function.function_id).map_err(|_| {
+                CompileError::BytecodeOverflow {
+                    what: "function id",
+                    value: function.function_id,
+                }
+            })?;
+            let arg_count = u8::try_from(function.params.len()).map_err(|_| {
+                CompileError::BytecodeOverflow {
+                    what: "argument count",
+                    value: function.params.len() as u32,
+                }
+            })?;
+            let local_count = u8::try_from(function.locals.iter().count()).map_err(|_| {
+                CompileError::BytecodeOverflow {
+                    what: "local count",
+                    value: function.locals.iter().count() as u32,
+                }
+            })?;
+            let code = lower_function_body(&function.body, &mut program)?;
+            program.insert_function(VmFunction::new(func_id, code, arg_count, local_count));
+            if entry.is_none() && function.name == "main" {
+                entry = Some(func_id);
+            }
+        }
+
+        if entry.is_none() {
+            entry = program.function_ids().next();
+        }
+        if let Some(entry) = entry {
+            program.set_entry(entry);
+        }
+
+        Ok(program)
+    }
+
+    /// Compiles source text all the way down to a runnable VM program.
+    pub fn compile_program(
+        &self,
+        path: impl Into<String>,
+        source: impl Into<String>,
+        catalog: &mut ModuleCatalog,
+    ) -> Result<VmProgram> {
+        let compiled = self.compile(path, source, catalog)?;
+        self.lower_to_program(&compiled.ir)
     }
 }
 
@@ -891,9 +958,105 @@ fn last_path_segment(path: &str) -> &str {
     path.rsplit(['/', '.']).next().unwrap_or(path)
 }
 
+fn lower_function_body(body: &str, program: &mut VmProgram) -> Result<Vec<u8>> {
+    let statement = body
+        .trim()
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with("//"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let statement = statement.trim().trim_end_matches(';').trim();
+    if statement.is_empty() || statement == "return" {
+        return Ok(vec![Opcode::Return as u8]);
+    }
+    if let Some(expr) = statement.strip_prefix("return") {
+        let expr = expr.trim();
+        if expr.is_empty() {
+            return Ok(vec![Opcode::Return as u8]);
+        }
+        let value = parse_literal_value(expr)?;
+        let const_id = program.push_constant(value);
+        let mut code = Vec::new();
+        encode_op(&Op::PushConst(const_id), &mut code);
+        encode_op(&Op::Return, &mut code);
+        return Ok(code);
+    }
+
+    Err(CompileError::UnsupportedExpression {
+        source: statement.to_owned(),
+    })
+}
+
+fn parse_literal_value(source: &str) -> Result<VmValue> {
+    let trimmed = source.trim();
+    if trimmed.is_empty() || trimmed == "nil" {
+        return Ok(VmValue::Nil);
+    }
+    if trimmed == "true" {
+        return Ok(VmValue::Bool(true));
+    }
+    if trimmed == "false" {
+        return Ok(VmValue::Bool(false));
+    }
+    if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() >= 2 {
+        let inner = &trimmed[1..trimmed.len() - 1];
+        return Ok(VmValue::String(unescape_string(inner)?));
+    }
+    if let Ok(value) = trimmed.parse::<i64>() {
+        return Ok(VmValue::Integer(value));
+    }
+    if looks_like_float_literal(trimmed) {
+        if let Ok(value) = trimmed.parse::<f64>() {
+            return Ok(VmValue::Float(value));
+        }
+    }
+
+    Err(CompileError::UnsupportedExpression {
+        source: trimmed.to_owned(),
+    })
+}
+
+fn looks_like_float_literal(source: &str) -> bool {
+    source.contains('.') || source.contains('e') || source.contains('E')
+}
+
+fn unescape_string(source: &str) -> Result<String> {
+    let mut out = String::with_capacity(source.len());
+    let mut chars = source.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            out.push(ch);
+            continue;
+        }
+
+        let escaped = chars
+            .next()
+            .ok_or_else(|| CompileError::UnsupportedExpression {
+                source: source.to_owned(),
+            })?;
+        match escaped {
+            '\\' => out.push('\\'),
+            '"' => out.push('"'),
+            'n' => out.push('\n'),
+            'r' => out.push('\r'),
+            't' => out.push('\t'),
+            '0' => out.push('\0'),
+            other => {
+                return Err(CompileError::UnsupportedExpression {
+                    source: format!("\\{other}"),
+                });
+            }
+        }
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wmlhost::HostRegistry;
+    use wmlvm::{RunOutcome, Vm, VmConfig};
 
     #[test]
     fn compiler_keeps_config() {
@@ -964,5 +1127,43 @@ mod tests {
         );
         assert!(Compiler::supports_opcode(Opcode::PushConst));
         let _ = module;
+    }
+
+    #[test]
+    fn compiler_emits_program_for_literal_return() {
+        let compiler = Compiler::new(CompilerConfig::new(PlatformProfile::native()));
+        let source = r#"
+            export func main() {
+                return 42;
+            }
+        "#;
+        let mut catalog = ModuleCatalog::new();
+        let program = compiler
+            .compile_program("main", source, &mut catalog)
+            .expect("compile program");
+        assert_eq!(program.entry(), Some(1));
+        assert_eq!(program.constant_count(), 1);
+        let function = program.function(1).expect("function");
+        assert_eq!(
+            function.code,
+            vec![Opcode::PushConst as u8, 0, 0, Opcode::Return as u8]
+        );
+
+        let mut vm = Vm::with_program(
+            VmConfig::new(
+                PlatformProfile::native(),
+                HostRegistry::new(PlatformProfile::native()),
+                32,
+            ),
+            program,
+        );
+        let outcome = vm.run_frame(32);
+        assert!(matches!(
+            outcome,
+            RunOutcome::Halted {
+                value: Some(wmlvm::Value::Integer(42)),
+                ..
+            }
+        ));
     }
 }

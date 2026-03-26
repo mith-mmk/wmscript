@@ -385,6 +385,114 @@ pub fn instruction_len(opcode: u8) -> usize {
     }
 }
 
+/// Encodes one decoded instruction into a byte buffer.
+pub fn encode_op(op: &Op, out: &mut Vec<u8>) {
+    match op {
+        Op::Nop => out.push(Opcode::Nop as u8),
+        Op::Halt => out.push(Opcode::Halt as u8),
+        Op::PushConst(index) => {
+            out.push(Opcode::PushConst as u8);
+            append_u16(out, *index);
+        }
+        Op::PushNil => out.push(Opcode::PushNil as u8),
+        Op::PushTrue => out.push(Opcode::PushTrue as u8),
+        Op::PushFalse => out.push(Opcode::PushFalse as u8),
+        Op::LoadLocal(index) => {
+            out.push(Opcode::LoadLocal as u8);
+            out.push(*index);
+        }
+        Op::StoreLocal(index) => {
+            out.push(Opcode::StoreLocal as u8);
+            out.push(*index);
+        }
+        Op::LoadGlobal(index) => {
+            out.push(Opcode::LoadGlobal as u8);
+            append_u16(out, *index);
+        }
+        Op::StoreGlobal(index) => {
+            out.push(Opcode::StoreGlobal as u8);
+            append_u16(out, *index);
+        }
+        Op::LoadField(index) => {
+            out.push(Opcode::LoadField as u8);
+            append_u16(out, *index);
+        }
+        Op::StoreField(index) => {
+            out.push(Opcode::StoreField as u8);
+            append_u16(out, *index);
+        }
+        Op::LoadIndex => out.push(Opcode::LoadIndex as u8),
+        Op::StoreIndex => out.push(Opcode::StoreIndex as u8),
+        Op::Pop => out.push(Opcode::Pop as u8),
+        Op::Dup => out.push(Opcode::Dup as u8),
+        Op::Add => out.push(Opcode::Add as u8),
+        Op::Sub => out.push(Opcode::Sub as u8),
+        Op::Mul => out.push(Opcode::Mul as u8),
+        Op::Div => out.push(Opcode::Div as u8),
+        Op::Mod => out.push(Opcode::Mod as u8),
+        Op::Neg => out.push(Opcode::Neg as u8),
+        Op::Eq => out.push(Opcode::Eq as u8),
+        Op::Ne => out.push(Opcode::Ne as u8),
+        Op::Lt => out.push(Opcode::Lt as u8),
+        Op::Le => out.push(Opcode::Le as u8),
+        Op::Gt => out.push(Opcode::Gt as u8),
+        Op::Ge => out.push(Opcode::Ge as u8),
+        Op::Not => out.push(Opcode::Not as u8),
+        Op::Jump(target) => {
+            out.push(Opcode::Jump as u8);
+            append_u32(out, *target);
+        }
+        Op::JumpIfFalse(target) => {
+            out.push(Opcode::JumpIfFalse as u8);
+            append_u32(out, *target);
+        }
+        Op::JumpIfTrue(target) => {
+            out.push(Opcode::JumpIfTrue as u8);
+            append_u32(out, *target);
+        }
+        Op::Call(func_id, argc) => {
+            out.push(Opcode::Call as u8);
+            append_u16(out, *func_id);
+            out.push(*argc);
+        }
+        Op::CallHost(host_id, argc) => {
+            out.push(Opcode::CallHost as u8);
+            append_u16(out, *host_id);
+            out.push(*argc);
+        }
+        Op::Return => out.push(Opcode::Return as u8),
+        Op::NewArray(size_hint) => {
+            out.push(Opcode::NewArray as u8);
+            append_u16(out, *size_hint);
+        }
+        Op::NewTable(size_hint) => {
+            out.push(Opcode::NewTable as u8);
+            append_u16(out, *size_hint);
+        }
+        Op::Send(worker_id, argc) => {
+            out.push(Opcode::Send as u8);
+            append_u16(out, *worker_id);
+            out.push(*argc);
+        }
+        Op::Recv => out.push(Opcode::Recv as u8),
+        Op::TryRecv => out.push(Opcode::TryRecv as u8),
+        Op::Yield => out.push(Opcode::Yield as u8),
+        Op::Sleep => out.push(Opcode::Sleep as u8),
+    }
+}
+
+/// Encodes a sequence of instructions into a byte buffer.
+pub fn encode_ops<I>(ops: I) -> Vec<u8>
+where
+    I: IntoIterator<Item = Op>,
+{
+    let mut out = Vec::new();
+    for op in ops {
+        encode_op(&op, &mut out);
+    }
+    out
+}
+
 fn read_u8_at(code: &[u8], pc: usize) -> Result<u8> {
     code.get(pc).copied().ok_or(BytecodeError::UnexpectedEof)
 }
@@ -401,6 +509,18 @@ fn read_u32_at(code: &[u8], pc: usize) -> Result<u32> {
     let b2 = read_u8_at(code, pc + 2)? as u32;
     let b3 = read_u8_at(code, pc + 3)? as u32;
     Ok(b0 | (b1 << 8) | (b2 << 16) | (b3 << 24))
+}
+
+fn append_u16(out: &mut Vec<u8>, value: u16) {
+    out.push((value & 0xFF) as u8);
+    out.push((value >> 8) as u8);
+}
+
+fn append_u32(out: &mut Vec<u8>, value: u32) {
+    out.push((value & 0xFF) as u8);
+    out.push(((value >> 8) & 0xFF) as u8);
+    out.push(((value >> 16) & 0xFF) as u8);
+    out.push(((value >> 24) & 0xFF) as u8);
 }
 
 #[cfg(test)]
@@ -430,5 +550,17 @@ mod tests {
         let (op, len) = decode_at(&[0x70, 0x34, 0x12, 0x05], 0).expect("decode");
         assert_eq!(op, Op::Call(0x1234, 5));
         assert_eq!(len, 4);
+    }
+
+    #[test]
+    fn encode_roundtrip_matches_decode() {
+        let ops = vec![Op::PushConst(0x1234), Op::Call(7, 2), Op::Return];
+        let encoded = encode_ops(ops.clone());
+        let mut cursor = BytecodeCursor::new(&encoded);
+
+        for expected in ops {
+            assert_eq!(cursor.read_op().expect("read op"), expected);
+        }
+        assert!(cursor.is_end());
     }
 }

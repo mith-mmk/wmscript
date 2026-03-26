@@ -8,6 +8,7 @@ members = [
     "crates/wmlhost",
     "crates/wmlplatform",
     "crates/wmlresource",
+    "crates/wmlruntime",
     "crates/wmlverifier",
     "crates/wmlvm",
 ]

@@ -125,15 +125,15 @@ Toolchain
      - 入力: `SPEC/language.md`, `SPEC/vm.md`, `SPEC/op.md`, `SPEC/hostapi.md`, `SPEC/resource.md`, `SPEC/archive.md`, `SPEC/scheduler.md`
      - 出力: 仕様間リンクと依存関係が明文化された状態
      - 完了条件: 仕様の矛盾が `SPEC/issue.md` に切り出され、実装前提が確定する
-   - [ ] VMコア最小型の定義
+   - [+] VMコア最小型の定義
      - 入力: `SPEC/vm.md`, `SPEC/op.md`
      - 出力: `Value`, `Stack`, `Frame`, `VmConfig`, `Vm`
      - 完了条件: 型定義だけで `cargo check` が通り、VMの骨格が共有できる
-   - [ ] バイトコードデコード層
+   - [+] バイトコードデコード層
      - 入力: opcode表、bytecode buffer
      - 出力: `Op` enum への decode 関数、little endian 読み取りヘルパ
      - 完了条件: invalid opcode / eof / endian の単体テストが揃う
-   - [ ] VM実行ループ
+   - [+] VM実行ループ
      - 入力: `Op`, `Vm`, `HostRegistry`
      - 出力: `run_frame`、`CALL/RETURN/JUMP/CALL_HOST` の実装
      - 完了条件: 基本命令列の実行テストが通る
@@ -165,7 +165,7 @@ Toolchain
      - 入力: manifest、section table、resource id policy
      - 出力: archive encode/decode、verify、resource handle の橋渡し
      - 完了条件: bundle load までの経路が仕様で閉じる
-   - [ ] UI / サンプル / ランタイム
+   - [+] UI / サンプル / ランタイム
      - 入力: host UI/audio/image API、VM と compiler の成果物
      - 出力: サンプルスクリプト、総合サンプル、runtime wrapper
      - 完了条件: end-to-end の最小例が説明できる
@@ -295,7 +295,7 @@ Toolchain
 
 5. スクリプトサンプル
 
- Hello World
+ [+] Hello World
 
  input連動スクリプト
 
@@ -324,7 +324,7 @@ Toolchain
 
  最適化
 
- bytecode生成
+ [+] bytecode生成
 
  [+] ID割当
 
@@ -379,7 +379,7 @@ Toolchain
 
  JS bridge
 
-10.4 paintcore+WML実装
+10.4 paintcore+WML実装 環境非依存
 - https://github.com/mith-mmk/wasm-paint
 
 11. ext APIサンプル
@@ -433,7 +433,7 @@ Toolchain
 ```
 
 13.2.  ランタイムの作成
-    - ランタイムは素のランタイムと有料ランタイムを作る
+    - [+] ランタイムは素のランタイムと有料ランタイムを作る
 
 14.1 ランタイムは以下の追加機能を追加させる。そのための薄いラッパーを被せること
     - アーカイブ分割 （ファイル境界をまたがない様に分割）

@@ -1,10 +1,12 @@
 [package]
-name = "wmlcompiler"
+name = "wmlruntime"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-wmlbytecode = { path = "../wmlbytecode" }
+wmlarchive = { path = "../wmlarchive" }
 wmlhost = { path = "../wmlhost" }
 wmlplatform = { path = "../wmlplatform" }
+wmlresource = { path = "../wmlresource" }
+wmlverifier = { path = "../wmlverifier" }
 wmlvm = { path = "../wmlvm" }
