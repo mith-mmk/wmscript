@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 use wmlbytecode::{Op, Opcode, encode_op};
+use wmlext::ExtensionRegistry;
 use wmlvm::{Program as VmProgram, Value as VmValue};
 
 use super::{CompileError, Result, parse_literal_value};
@@ -8,6 +9,7 @@ use super::{CompileError, Result, parse_literal_value};
 /// Type tags used by the compiler's expression analyzer.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TypeTag {
+    Unknown,
     Nil,
     Bool,
     Integer,
@@ -32,12 +34,17 @@ enum Expr {
         left: Box<Expr>,
         right: Box<Expr>,
     },
+    Call {
+        path: Vec<String>,
+        args: Vec<Expr>,
+    },
 }
 
 /// Compiles a `return` statement body into bytecode and a type tag.
 pub(crate) fn compile_return_body(
     body: &str,
     program: &mut VmProgram,
+    extension_registry: Option<&ExtensionRegistry>,
 ) -> Result<(Vec<u8>, TypeTag)> {
     let mut parser = ExprParser::new(body);
     let expr = match parser.parse_return_statement()? {
@@ -51,7 +58,7 @@ pub(crate) fn compile_return_body(
 
     let optimized = optimize_expr(expr)?;
     let type_tag = infer_type(&optimized)?;
-    let code = emit_expr(&optimized, program)?;
+    let code = emit_expr(&optimized, program, extension_registry)?;
     Ok((code, type_tag))
 }
 
@@ -76,6 +83,13 @@ fn optimize_expr(expr: Expr) -> Result<Expr> {
                 right: Box::new(right),
             })
         }
+        Expr::Call { path, args } => Ok(Expr::Call {
+            path,
+            args: args
+                .into_iter()
+                .map(optimize_expr)
+                .collect::<Result<Vec<_>>>()?,
+        }),
         literal => Ok(literal),
     }
 }
@@ -178,11 +192,15 @@ fn infer_type(expr: &Expr) -> Result<TypeTag> {
             let right = infer_type(right)?;
             infer_binary_type(*op, left, right)
         }
+        Expr::Call { .. } => Ok(TypeTag::Unknown),
     }
 }
 
 fn infer_binary_type(op: BinaryOp, left: TypeTag, right: TypeTag) -> Result<TypeTag> {
     match (left, right) {
+        (TypeTag::Unknown, _) | (_, TypeTag::Unknown) => Err(unsupported_expression(
+            "binary operator requires statically known numeric operands",
+        )),
         (TypeTag::Integer, TypeTag::Integer) if matches!(op, BinaryOp::Div) => Ok(TypeTag::Integer),
         (TypeTag::Integer, TypeTag::Integer) => Ok(TypeTag::Integer),
         (TypeTag::Integer, TypeTag::Float)
@@ -196,41 +214,73 @@ fn infer_binary_type(op: BinaryOp, left: TypeTag, right: TypeTag) -> Result<Type
 
 fn type_of_value(value: &VmValue) -> TypeTag {
     match value {
+        VmValue::Array(_) | VmValue::Table(_) | VmValue::Handle(_) => TypeTag::Unknown,
         VmValue::Nil => TypeTag::Nil,
         VmValue::Bool(_) => TypeTag::Bool,
         VmValue::Integer(_) => TypeTag::Integer,
         VmValue::Float(_) => TypeTag::Float,
         VmValue::String(_) => TypeTag::String,
-        VmValue::Array(_) | VmValue::Table(_) | VmValue::Handle(_) => TypeTag::String,
     }
 }
 
-fn emit_expr(expr: &Expr, program: &mut VmProgram) -> Result<Vec<u8>> {
+fn emit_expr(
+    expr: &Expr,
+    program: &mut VmProgram,
+    extension_registry: Option<&ExtensionRegistry>,
+) -> Result<Vec<u8>> {
     let mut code = Vec::new();
-    emit_expr_into(expr, program, &mut code)?;
+    emit_expr_into(expr, program, extension_registry, &mut code)?;
     encode_op(&Op::Return, &mut code);
     Ok(code)
 }
 
-fn emit_expr_into(expr: &Expr, program: &mut VmProgram, out: &mut Vec<u8>) -> Result<()> {
+fn emit_expr_into(
+    expr: &Expr,
+    program: &mut VmProgram,
+    extension_registry: Option<&ExtensionRegistry>,
+    out: &mut Vec<u8>,
+) -> Result<()> {
     match expr {
         Expr::Literal(value) => {
             let const_id = program.push_constant(value.clone());
             encode_op(&Op::PushConst(const_id), out);
         }
         Expr::UnaryNeg(inner) => {
-            emit_expr_into(inner, program, out)?;
+            emit_expr_into(inner, program, extension_registry, out)?;
             encode_op(&Op::Neg, out);
         }
         Expr::Binary { op, left, right } => {
-            emit_expr_into(left, program, out)?;
-            emit_expr_into(right, program, out)?;
+            emit_expr_into(left, program, extension_registry, out)?;
+            emit_expr_into(right, program, extension_registry, out)?;
             match op {
                 BinaryOp::Add => encode_op(&Op::Add, out),
                 BinaryOp::Sub => encode_op(&Op::Sub, out),
                 BinaryOp::Mul => encode_op(&Op::Mul, out),
                 BinaryOp::Div => encode_op(&Op::Div, out),
             }
+        }
+        Expr::Call { path, args } => {
+            let Some(extension_registry) = extension_registry else {
+                return Err(unsupported_expression(
+                    "extension calls require an extension registry",
+                ));
+            };
+            let full_name = path.join(".");
+            let ext = extension_registry.resolve(&full_name).map_err(|error| {
+                unsupported_expression(format!("unknown extension call `{full_name}`: {error}"))
+            })?;
+            if args.len() < ext.min_args as usize || args.len() > ext.max_args as usize {
+                return Err(unsupported_expression(format!(
+                    "extension call `{full_name}` expected {}..={} args, got {}",
+                    ext.min_args,
+                    ext.max_args,
+                    args.len()
+                )));
+            }
+            for arg in args {
+                emit_expr_into(arg, program, Some(extension_registry), out)?;
+            }
+            encode_op(&Op::CallHost(ext.host_id, args.len() as u8), out);
         }
     }
     Ok(())
@@ -352,19 +402,47 @@ impl<'a> ExprParser<'a> {
                 Ok(Expr::Literal(parse_literal_value(&literal)?))
             }
             Some(byte) if is_literal_start(byte) => {
-                let literal = self.read_simple_literal_source()?;
-                Ok(Expr::Literal(parse_literal_value(&literal)?))
+                let ident = self.read_identifier_source()?;
+                let mut path = vec![ident];
+                while self.consume_byte(b'.') {
+                    path.push(self.read_identifier_source()?);
+                }
+                self.skip_ws_and_comments();
+                if self.consume_byte(b'(') {
+                    let mut args = Vec::new();
+                    self.skip_ws_and_comments();
+                    if !self.consume_byte(b')') {
+                        loop {
+                            args.push(self.parse_expression()?);
+                            self.skip_ws_and_comments();
+                            if self.consume_byte(b')') {
+                                break;
+                            }
+                            self.expect_byte(b',')?;
+                        }
+                    }
+                    Ok(Expr::Call { path, args })
+                } else if path.len() == 1 {
+                    Ok(Expr::Literal(parse_literal_value(&path[0])?))
+                } else {
+                    Err(unsupported_expression(format!(
+                        "unexpected path expression `{}`",
+                        path.join(".")
+                    )))
+                }
             }
             Some(_) => Err(unsupported_expression("unexpected token in expression")),
             None => Err(unsupported_expression("unexpected end of expression")),
         }
     }
 
-    fn read_simple_literal_source(&mut self) -> Result<String> {
+    fn read_identifier_source(&mut self) -> Result<String> {
         let start = self.index;
         while let Some(byte) = self.peek_byte() {
             if byte.is_ascii_whitespace()
                 || matches!(byte, b'+' | b'-' | b'*' | b'/' | b'(' | b')' | b';')
+                || byte == b','
+                || byte == b'.'
             {
                 break;
             }
@@ -490,7 +568,7 @@ mod tests {
     fn optimizer_folds_constant_return_expression() {
         let mut program = VmProgram::new();
         let (code, type_tag) =
-            compile_return_body("return 1 + 2 * 3;", &mut program).expect("compile body");
+            compile_return_body("return 1 + 2 * 3;", &mut program, None).expect("compile body");
         assert_eq!(type_tag, TypeTag::Integer);
         assert_eq!(program.constant_count(), 1);
         assert_eq!(
@@ -503,7 +581,7 @@ mod tests {
     fn type_tag_tracks_string_literal() {
         let mut program = VmProgram::new();
         let (code, type_tag) =
-            compile_return_body(r#"return "hello";"#, &mut program).expect("compile body");
+            compile_return_body(r#"return "hello";"#, &mut program, None).expect("compile body");
         assert_eq!(type_tag, TypeTag::String);
         assert_eq!(program.constant_count(), 1);
         assert_eq!(
@@ -515,7 +593,8 @@ mod tests {
     #[test]
     fn bare_return_emits_empty_frame_return() {
         let mut program = VmProgram::new();
-        let (code, type_tag) = compile_return_body("return;", &mut program).expect("compile body");
+        let (code, type_tag) =
+            compile_return_body("return;", &mut program, None).expect("compile body");
         assert_eq!(type_tag, TypeTag::Nil);
         assert_eq!(program.constant_count(), 0);
         assert_eq!(code, vec![Opcode::Return as u8]);

@@ -4,18 +4,23 @@
 
 use core::fmt;
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::rc::Rc;
 
 mod gui;
 
 use wmlplatform::PlatformProfile;
-use wmlruntime::Runtime;
+use wmlruntime::{
+    AudioPlaybackState as RuntimeAudioPlaybackState, IconSheetState, ImageDrawState,
+    ImageSourceRect, Runtime, create_default_audio_backend,
+};
 use wmltoolchain::{
     BuildArtifact, ExecutionReport, GameProject, Toolchain, ToolchainConfig, ToolchainError,
 };
 use wmlui::{
-    UiApp, UiBackend, UiChoice, UiCommand, UiContext, UiError, UiEvent, UiImageSlot, UiImageSource,
-    UiLogLevel, UiSession, UiState, UiTheme,
+    UiApp, UiAudioPlaybackState, UiBackend, UiChoice, UiCommand, UiContext, UiError, UiEvent,
+    UiIconSheet, UiImageDrawCall, UiImageRect, UiImageSlot, UiImageSource, UiLogLevel, UiSession,
+    UiState, UiTheme,
 };
 
 /// Configuration for the frontend shell.
@@ -193,9 +198,10 @@ impl FrontendApp {
         let toolchain = Toolchain::new(
             ToolchainConfig::new(config.platform).with_step_limit(config.step_limit),
         );
-        let runtime = Runtime::new(
+        let mut runtime = Runtime::new(
             wmlruntime::RuntimeConfig::new(config.platform).with_step_limit(config.step_limit),
         );
+        runtime.set_audio_backend(create_default_audio_backend());
         Self {
             config,
             toolchain,
@@ -268,6 +274,20 @@ impl UiApp for FrontendApp {
                         );
                     }
                 }
+                let draw_calls = self
+                    .runtime
+                    .image_draws()
+                    .into_iter()
+                    .map(to_ui_draw_call)
+                    .collect::<Vec<_>>();
+                ctx.set_draw_calls(draw_calls);
+                let audio_playback = self
+                    .runtime
+                    .audio_playback_states()
+                    .into_iter()
+                    .map(|(handle, state)| (handle, to_ui_audio_state(state)))
+                    .collect::<BTreeMap<_, _>>();
+                ctx.set_audio_playback(audio_playback);
                 ctx.set_title(format!(
                     "WML Frontend - done ({})",
                     self.config.project.package_name
@@ -308,6 +328,40 @@ fn collect_lines(build: &BuildArtifact, execution: &ExecutionReport) -> Vec<Stri
         lines.push(format!("final outcome: {outcome:?}"));
     }
     lines
+}
+
+fn to_ui_draw_call(draw: ImageDrawState) -> UiImageDrawCall {
+    UiImageDrawCall {
+        resource_id: draw.resource_id,
+        x: draw.x,
+        y: draw.y,
+        width: draw.width,
+        height: draw.height,
+        source: draw.source.map(to_ui_image_rect),
+        icon_sheet: draw
+            .icon_sheet
+            .map(|sheet| to_ui_icon_sheet(sheet, draw.icon_index.unwrap_or(0))),
+        rotation_degrees: draw.rotation_degrees,
+        opacity: draw.opacity,
+    }
+}
+
+fn to_ui_image_rect(rect: ImageSourceRect) -> UiImageRect {
+    UiImageRect::new(rect.x, rect.y, rect.width, rect.height)
+}
+
+fn to_ui_icon_sheet(sheet: IconSheetState, index: u32) -> UiIconSheet {
+    UiIconSheet::new(sheet.cell_width, sheet.cell_height, index)
+}
+
+fn to_ui_audio_state(state: RuntimeAudioPlaybackState) -> UiAudioPlaybackState {
+    UiAudioPlaybackState {
+        resource_id: state.resource_id,
+        playing: state.playing,
+        looped: state.looped,
+        position_ms: state.position_ms,
+        volume: state.volume,
+    }
 }
 
 /// Runs a project through the frontend shell and returns the execution report.

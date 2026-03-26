@@ -116,6 +116,11 @@ Requires: `CAP_GUI`
 | `ext.image.info` | `info(handle)` | `table` | Returns resource id, type, size, and state metadata. |
 | `ext.image.status` | `status(handle)` | `int` | Returns a numeric resource state code. |
 | `ext.image.release` | `release(handle)` | `bool` | Releases the image handle. |
+| `ext.image.draw` | `draw(handle, x, y)` | `bool` | Records an image draw call for the frontend renderer. |
+| `ext.image.draw_part` | `draw_part(handle, sx, sy, sw, sh, dx, dy)` | `bool` | Records a sub-rectangle image draw call. |
+| `ext.image.draw_ext` | `draw_ext(handle, sx, sy, sw, sh, dx, dy, dw, dh, rot, alpha)` | `bool` | Records an extended image draw call with scaling and rotation. |
+| `ext.image.set_icon_sheet` | `set_icon_sheet(handle, cell_w, cell_h)` | `bool` | Stores sprite-sheet metadata for later icon draws. |
+| `ext.image.draw_icon` | `draw_icon(handle, index, x, y)` | `bool` | Records a sprite draw call from the configured icon sheet. |
 
 ### 3.6 `ext.audio`
 
@@ -125,6 +130,7 @@ Requires: `CAP_ASYNC_IO`
 | --- | --- | --- | --- |
 | `ext.audio.load` | `load(resource_id: int)` | `handle \| request_id` | Loads an audio resource and returns a handle when ready. |
 | `ext.audio.play` | `play(handle, loop=false)` | `bool` | Starts or resumes playback. |
+| `ext.audio.playback` | `playback(handle, loop=false)` | `bool` | Alias for `play` used by the higher-level script surface. |
 | `ext.audio.pause` | `pause(handle)` | `bool` | Pauses playback. |
 | `ext.audio.stop` | `stop(handle)` | `bool` | Stops playback and rewinds to the beginning. |
 | `ext.audio.seek` | `seek(handle, position_ms)` | `bool` | Moves the playback cursor. |
@@ -140,6 +146,19 @@ Requires: no capability
 | --- | --- | --- | --- |
 | `ext.vm.save` | `save(slot: int)` | `bool` | Stores a runtime checkpoint in memory. |
 | `ext.vm.load` | `load(slot: int)` | `bool` | Restores a previously stored checkpoint. |
+
+### 3.8 `state`
+
+Requires: no capability
+
+| Function | Signature | Returns | Notes |
+| --- | --- | --- | --- |
+| `state.save` | `save(slot: int)` | `bool` | Stores the current persistent key/value state into a slot. |
+| `state.load` | `load(slot: int)` | `bool` | Restores the persistent key/value state from a slot. |
+| `state.has` | `has(key: string)` | `bool` | Checks whether a key exists in the current state. |
+| `state.get` | `get(key: string)` | `value` | Returns the current value for a key or `nil`. |
+| `state.set` | `set(key: string, value)` | `bool` | Writes a value into the current state. |
+| `state.erase` | `erase(key: string)` | `bool` | Removes a key from the current state. |
 
 ## 4. VM-Level Execution Primitives
 

@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use wmlhost::{CapabilityMask, HostId};
+use wmlhost::{CAP_ASYNC_IO, CAP_FILE_SYSTEM, CAP_GUI, CAP_NETWORK, CapabilityMask, HostId};
 
 /// Stable identifier assigned to an extension function.
 pub type ExtId = u32;
@@ -293,6 +293,90 @@ impl ExtensionRegistry {
     pub fn function_ids(&self) -> impl Iterator<Item = ExtId> + '_ {
         self.functions.keys().copied()
     }
+}
+
+/// Registers the built-in runtime extension set in a stable order.
+pub fn standard_extension_registry() -> Result<ExtensionRegistry> {
+    let mut registry = ExtensionRegistry::with_policy(NamespacePolicy::permissive());
+    registry.register_extension(
+        "ext.fs",
+        &[
+            ExtensionFunctionSpec::new("read", 100, 1, 1, CAP_FILE_SYSTEM),
+            ExtensionFunctionSpec::new("write", 101, 2, 2, CAP_FILE_SYSTEM),
+            ExtensionFunctionSpec::new("exists", 102, 1, 1, CAP_FILE_SYSTEM),
+        ],
+    )?;
+    registry.register_extension(
+        "ext.debug",
+        &[
+            ExtensionFunctionSpec::new("log", 110, 1, 1, 0),
+            ExtensionFunctionSpec::new("inspect", 111, 1, 1, 0),
+        ],
+    )?;
+    registry.register_extension(
+        "ext.net",
+        &[
+            ExtensionFunctionSpec::new("get", 120, 1, 1, CAP_NETWORK),
+            ExtensionFunctionSpec::new("post", 121, 2, 2, CAP_NETWORK),
+        ],
+    )?;
+    registry.register_extension(
+        "ext.llm",
+        &[ExtensionFunctionSpec::new(
+            "generate",
+            130,
+            1,
+            1,
+            CAP_ASYNC_IO,
+        )],
+    )?;
+    registry.register_extension(
+        "ext.image",
+        &[
+            ExtensionFunctionSpec::new("load", 140, 1, 1, CAP_GUI),
+            ExtensionFunctionSpec::new("info", 141, 1, 1, CAP_GUI),
+            ExtensionFunctionSpec::new("status", 142, 1, 1, CAP_GUI),
+            ExtensionFunctionSpec::new("release", 143, 1, 1, CAP_GUI),
+            ExtensionFunctionSpec::new("draw", 144, 3, 3, CAP_GUI),
+            ExtensionFunctionSpec::new("draw_part", 145, 7, 7, CAP_GUI),
+            ExtensionFunctionSpec::new("draw_ext", 146, 11, 11, CAP_GUI),
+            ExtensionFunctionSpec::new("set_icon_sheet", 147, 3, 3, CAP_GUI),
+            ExtensionFunctionSpec::new("draw_icon", 148, 4, 4, CAP_GUI),
+        ],
+    )?;
+    registry.register_extension(
+        "ext.audio",
+        &[
+            ExtensionFunctionSpec::new("load", 150, 1, 1, CAP_ASYNC_IO),
+            ExtensionFunctionSpec::new("play", 151, 1, 2, CAP_ASYNC_IO),
+            ExtensionFunctionSpec::new("playback", 158, 1, 2, CAP_ASYNC_IO),
+            ExtensionFunctionSpec::new("pause", 152, 1, 1, CAP_ASYNC_IO),
+            ExtensionFunctionSpec::new("stop", 153, 1, 1, CAP_ASYNC_IO),
+            ExtensionFunctionSpec::new("seek", 154, 2, 2, CAP_ASYNC_IO),
+            ExtensionFunctionSpec::new("volume", 155, 2, 2, CAP_ASYNC_IO),
+            ExtensionFunctionSpec::new("release", 156, 1, 1, CAP_ASYNC_IO),
+            ExtensionFunctionSpec::new("status", 157, 1, 1, CAP_ASYNC_IO),
+        ],
+    )?;
+    registry.register_extension(
+        "ext.vm",
+        &[
+            ExtensionFunctionSpec::new("save", 160, 1, 1, 0),
+            ExtensionFunctionSpec::new("load", 161, 1, 1, 0),
+        ],
+    )?;
+    registry.register_extension(
+        "state",
+        &[
+            ExtensionFunctionSpec::new("save", 170, 1, 1, 0),
+            ExtensionFunctionSpec::new("load", 171, 1, 1, 0),
+            ExtensionFunctionSpec::new("has", 172, 1, 1, 0),
+            ExtensionFunctionSpec::new("get", 173, 1, 1, 0),
+            ExtensionFunctionSpec::new("set", 174, 2, 2, 0),
+            ExtensionFunctionSpec::new("erase", 175, 1, 1, 0),
+        ],
+    )?;
+    Ok(registry)
 }
 
 impl Default for ExtensionRegistry {

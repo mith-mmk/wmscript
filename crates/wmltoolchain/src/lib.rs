@@ -9,6 +9,7 @@ use wmlarchive::{
     SectionDigest, SectionKind, Version, digest_section,
 };
 use wmlcompiler::{CompileError, Compiler, CompilerConfig, ModuleCatalog};
+use wmlext::standard_extension_registry;
 use wmlplatform::PlatformProfile;
 use wmlresource::ResourceType;
 use wmlruntime::{LoadedArchive, Runtime, RuntimeError, StandardExtensions};
@@ -203,8 +204,11 @@ pub struct Toolchain {
 
 impl Toolchain {
     pub fn new(config: ToolchainConfig) -> Self {
+        let extension_registry = standard_extension_registry().expect("standard extensions");
         Self {
-            compiler: Compiler::new(CompilerConfig::new(config.platform)),
+            compiler: Compiler::new(
+                CompilerConfig::new(config.platform).with_extension_registry(extension_registry),
+            ),
             config,
         }
     }

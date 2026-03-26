@@ -12,16 +12,19 @@ use std::fmt;
 mod expr;
 
 use wmlbytecode::Opcode;
+use wmlext::ExtensionRegistry;
 use wmlplatform::PlatformProfile;
 use wmlvm::{Function as VmFunction, Program as VmProgram, Value as VmValue};
 
 /// Compiler configuration.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CompilerConfig {
     /// Target platform profile.
     pub platform: PlatformProfile,
     /// Maximum accepted source size in bytes.
     pub max_source_bytes: usize,
+    /// Extension registry used to resolve `ext.*` calls.
+    pub extension_registry: Option<ExtensionRegistry>,
 }
 
 impl CompilerConfig {
@@ -30,6 +33,7 @@ impl CompilerConfig {
         Self {
             platform,
             max_source_bytes: 1 << 20,
+            extension_registry: None,
         }
     }
 
@@ -37,6 +41,15 @@ impl CompilerConfig {
     pub const fn with_max_source_bytes(mut self, max_source_bytes: usize) -> Self {
         self.max_source_bytes = max_source_bytes;
         self
+    }
+
+    pub fn with_extension_registry(mut self, extension_registry: ExtensionRegistry) -> Self {
+        self.extension_registry = Some(extension_registry);
+        self
+    }
+
+    pub fn extension_registry(&self) -> Option<&ExtensionRegistry> {
+        self.extension_registry.as_ref()
     }
 }
 
@@ -154,8 +167,8 @@ impl Compiler {
     }
 
     /// Returns the compiler configuration.
-    pub const fn config(&self) -> CompilerConfig {
-        self.config
+    pub fn config(&self) -> CompilerConfig {
+        self.config.clone()
     }
 
     /// Reports whether a bytecode opcode is in the current bootstrap set.
@@ -352,7 +365,11 @@ impl Compiler {
                     value: function.locals.iter().count() as u32,
                 }
             })?;
-            let code = lower_function_body(&function.body, &mut program)?;
+            let code = lower_function_body(
+                &function.body,
+                &mut program,
+                self.config.extension_registry(),
+            )?;
             program.insert_function(VmFunction::new(func_id, code, arg_count, local_count));
             if entry.is_none() && function.name == "main" {
                 entry = Some(func_id);
@@ -960,8 +977,12 @@ fn last_path_segment(path: &str) -> &str {
     path.rsplit(['/', '.']).next().unwrap_or(path)
 }
 
-fn lower_function_body(body: &str, program: &mut VmProgram) -> Result<Vec<u8>> {
-    let (code, _type_tag) = expr::compile_return_body(body, program)?;
+fn lower_function_body(
+    body: &str,
+    program: &mut VmProgram,
+    extension_registry: Option<&ExtensionRegistry>,
+) -> Result<Vec<u8>> {
+    let (code, _type_tag) = expr::compile_return_body(body, program, extension_registry)?;
     Ok(code)
 }
 

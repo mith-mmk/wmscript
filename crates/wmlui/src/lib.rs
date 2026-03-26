@@ -134,6 +134,84 @@ impl UiImageSource {
     }
 }
 
+/// Rectangular region in image coordinates.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct UiImageRect {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+impl UiImageRect {
+    pub const fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+}
+
+/// Icon sheet metadata for sprite-like drawing.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct UiIconSheet {
+    pub cell_width: u32,
+    pub cell_height: u32,
+    pub index: u32,
+}
+
+impl UiIconSheet {
+    pub const fn new(cell_width: u32, cell_height: u32, index: u32) -> Self {
+        Self {
+            cell_width,
+            cell_height,
+            index,
+        }
+    }
+}
+
+/// A single draw call for an image resource.
+#[derive(Clone, Debug, PartialEq)]
+pub struct UiImageDrawCall {
+    pub resource_id: u32,
+    pub x: f32,
+    pub y: f32,
+    pub width: Option<f32>,
+    pub height: Option<f32>,
+    pub source: Option<UiImageRect>,
+    pub icon_sheet: Option<UiIconSheet>,
+    pub rotation_degrees: f32,
+    pub opacity: f32,
+}
+
+impl UiImageDrawCall {
+    pub const fn new(resource_id: u32, x: f32, y: f32) -> Self {
+        Self {
+            resource_id,
+            x,
+            y,
+            width: None,
+            height: None,
+            source: None,
+            icon_sheet: None,
+            rotation_degrees: 0.0,
+            opacity: 1.0,
+        }
+    }
+}
+
+/// Playback state for an audio resource.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct UiAudioPlaybackState {
+    pub resource_id: u32,
+    pub playing: bool,
+    pub looped: bool,
+    pub position_ms: u64,
+    pub volume: f32,
+}
+
 /// Choice shown in a message window.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UiChoice {
@@ -166,6 +244,8 @@ pub struct UiMessageWindowState {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct UiSceneState {
     pub images: BTreeMap<UiImageSlot, UiImageSource>,
+    pub draw_calls: Vec<UiImageDrawCall>,
+    pub audio_playback: BTreeMap<u64, UiAudioPlaybackState>,
     pub message_window: UiMessageWindowState,
 }
 
@@ -383,6 +463,14 @@ impl<'a> UiContext<'a> {
     pub fn set_image(&mut self, slot: UiImageSlot, image: UiImageSource) {
         self.state.scene.images.insert(slot.clone(), image.clone());
         self.emit(UiCommand::SetImage { slot, image });
+    }
+
+    pub fn set_draw_calls(&mut self, draw_calls: Vec<UiImageDrawCall>) {
+        self.state.scene.draw_calls = draw_calls;
+    }
+
+    pub fn set_audio_playback(&mut self, audio_playback: BTreeMap<u64, UiAudioPlaybackState>) {
+        self.state.scene.audio_playback = audio_playback;
     }
 
     pub fn clear_image(&mut self, slot: UiImageSlot) {

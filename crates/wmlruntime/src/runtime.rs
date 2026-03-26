@@ -6,8 +6,9 @@ use std::fmt;
 use std::path::PathBuf;
 use std::rc::Rc;
 
+use crate::{AudioBackend, create_disabled_audio_backend};
 use wmlarchive::{Archive, ArchiveError, Manifest};
-use wmlext::{ExtError, ExtensionFunctionSpec, ExtensionRegistry};
+use wmlext::{ExtError, ExtensionFunctionSpec, ExtensionRegistry, NamespacePolicy};
 use wmlhost::{
     CAP_ASYNC_IO, CAP_FILE_SYSTEM, CAP_GUI, CAP_NETWORK, CapabilityMask, HostFunction, HostId,
     HostRegistry,
@@ -119,12 +120,41 @@ pub struct LoadedArchive {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-struct AudioPlaybackState {
-    resource_id: u32,
-    playing: bool,
-    looped: bool,
-    position_ms: u64,
-    volume: f32,
+pub struct AudioPlaybackState {
+    pub resource_id: u32,
+    pub playing: bool,
+    pub looped: bool,
+    pub position_ms: u64,
+    pub volume: f32,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ImageSourceRect {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct IconSheetState {
+    pub cell_width: u32,
+    pub cell_height: u32,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ImageDrawState {
+    pub handle: u64,
+    pub resource_id: u32,
+    pub x: f32,
+    pub y: f32,
+    pub width: Option<f32>,
+    pub height: Option<f32>,
+    pub source: Option<ImageSourceRect>,
+    pub icon_sheet: Option<IconSheetState>,
+    pub icon_index: Option<u32>,
+    pub rotation_degrees: f32,
+    pub opacity: f32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -132,8 +162,48 @@ struct RuntimeCheckpoint {
     scheduler: wmlvm::SchedulerSnapshot,
     resources: ResourceManager,
     loaded_archives: Vec<Manifest>,
+    image_draws: Vec<ImageDrawState>,
+    icon_sheets: BTreeMap<u64, IconSheetState>,
     debug_log: Vec<String>,
     audio_states: BTreeMap<u64, AudioPlaybackState>,
+    state_manager: StateManager,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+struct StateManager {
+    current: BTreeMap<String, Value>,
+    slots: BTreeMap<u32, BTreeMap<String, Value>>,
+}
+
+impl StateManager {
+    fn save(&mut self, slot: u32) {
+        self.slots.insert(slot, self.current.clone());
+    }
+
+    fn load(&mut self, slot: u32) -> bool {
+        if let Some(saved) = self.slots.get(&slot).cloned() {
+            self.current = saved;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn has(&self, key: &str) -> bool {
+        self.current.contains_key(key)
+    }
+
+    fn get(&self, key: &str) -> Option<Value> {
+        self.current.get(key).cloned()
+    }
+
+    fn set(&mut self, key: String, value: Value) {
+        self.current.insert(key, value);
+    }
+
+    fn erase(&mut self, key: &str) -> bool {
+        self.current.remove(key).is_some()
+    }
 }
 
 struct HostHandler {
@@ -229,11 +299,15 @@ pub struct Runtime {
     resources: Rc<RefCell<ResourceManager>>,
     host: Rc<RefCell<HostDispatcher>>,
     extensions: ExtensionRegistry,
+    audio_backend: Rc<RefCell<Box<dyn AudioBackend>>>,
     debug_log: Rc<RefCell<Vec<String>>>,
     net_backend: Rc<RefCell<Box<dyn NetBackend>>>,
     llm_backend: Rc<RefCell<Box<dyn LlmBackend>>>,
     loaded_archives: Rc<RefCell<Vec<Manifest>>>,
+    image_draws: Rc<RefCell<Vec<ImageDrawState>>>,
+    icon_sheets: Rc<RefCell<BTreeMap<u64, IconSheetState>>>,
     audio_states: Rc<RefCell<BTreeMap<u64, AudioPlaybackState>>>,
+    state_manager: Rc<RefCell<StateManager>>,
     checkpoints: Rc<RefCell<BTreeMap<u32, RuntimeCheckpoint>>>,
 }
 
@@ -246,12 +320,16 @@ impl Runtime {
                 config.platform,
                 config.capability_mask,
             ))),
-            extensions: ExtensionRegistry::new(),
+            extensions: ExtensionRegistry::with_policy(NamespacePolicy::permissive()),
+            audio_backend: Rc::new(RefCell::new(create_disabled_audio_backend())),
             debug_log: Rc::new(RefCell::new(Vec::new())),
             net_backend: Rc::new(RefCell::new(Box::new(DisabledNetBackend))),
             llm_backend: Rc::new(RefCell::new(Box::new(DisabledLlmBackend))),
             loaded_archives: Rc::new(RefCell::new(Vec::new())),
+            image_draws: Rc::new(RefCell::new(Vec::new())),
+            icon_sheets: Rc::new(RefCell::new(BTreeMap::new())),
             audio_states: Rc::new(RefCell::new(BTreeMap::new())),
+            state_manager: Rc::new(RefCell::new(StateManager::default())),
             checkpoints: Rc::new(RefCell::new(BTreeMap::new())),
             config,
         }
@@ -279,6 +357,10 @@ impl Runtime {
 
     pub fn set_llm_backend<B: LlmBackend + 'static>(&mut self, backend: B) {
         *self.llm_backend.borrow_mut() = Box::new(backend);
+    }
+
+    pub fn set_audio_backend(&mut self, backend: Box<dyn AudioBackend>) {
+        *self.audio_backend.borrow_mut() = backend;
     }
 
     pub fn register_host_function(
@@ -373,6 +455,84 @@ impl Runtime {
         })
     }
 
+    pub fn install_state_extension(&mut self) -> Result<StateExtension, RuntimeError> {
+        let save_host_id = 170;
+        let load_host_id = 171;
+        let has_host_id = 172;
+        let get_host_id = 173;
+        let set_host_id = 174;
+        let erase_host_id = 175;
+        let state_manager = self.state_manager.clone();
+
+        let _ =
+            self.register_host_function(HostFunction::new(save_host_id, 1, 1, 0), move |args| {
+                let slot = expect_integer_arg(args, 0, "slot")? as u32;
+                state_manager.borrow_mut().save(slot);
+                Ok(Value::Bool(true))
+            });
+
+        let state_manager = self.state_manager.clone();
+        let _ =
+            self.register_host_function(HostFunction::new(load_host_id, 1, 1, 0), move |args| {
+                let slot = expect_integer_arg(args, 0, "slot")? as u32;
+                Ok(Value::Bool(state_manager.borrow_mut().load(slot)))
+            });
+
+        let state_manager = self.state_manager.clone();
+        let _ = self.register_host_function(HostFunction::new(has_host_id, 1, 1, 0), move |args| {
+            let key = expect_string_arg(args, 0, "key")?;
+            Ok(Value::Bool(state_manager.borrow().has(&key)))
+        });
+
+        let state_manager = self.state_manager.clone();
+        let _ = self.register_host_function(HostFunction::new(get_host_id, 1, 1, 0), move |args| {
+            let key = expect_string_arg(args, 0, "key")?;
+            Ok(state_manager.borrow().get(&key).unwrap_or(Value::Nil))
+        });
+
+        let state_manager = self.state_manager.clone();
+        let _ = self.register_host_function(HostFunction::new(set_host_id, 2, 2, 0), move |args| {
+            let key = expect_string_arg(args, 0, "key")?;
+            let value = args.get(1).cloned().unwrap_or(Value::Nil);
+            state_manager.borrow_mut().set(key, value);
+            Ok(Value::Bool(true))
+        });
+
+        let state_manager = self.state_manager.clone();
+        let _ =
+            self.register_host_function(HostFunction::new(erase_host_id, 1, 1, 0), move |args| {
+                let key = expect_string_arg(args, 0, "key")?;
+                Ok(Value::Bool(state_manager.borrow_mut().erase(&key)))
+            });
+
+        let ids = self.extensions.register_extension(
+            "state",
+            &[
+                ExtensionFunctionSpec::new("save", save_host_id, 1, 1, 0),
+                ExtensionFunctionSpec::new("load", load_host_id, 1, 1, 0),
+                ExtensionFunctionSpec::new("has", has_host_id, 1, 1, 0),
+                ExtensionFunctionSpec::new("get", get_host_id, 1, 1, 0),
+                ExtensionFunctionSpec::new("set", set_host_id, 2, 2, 0),
+                ExtensionFunctionSpec::new("erase", erase_host_id, 1, 1, 0),
+            ],
+        )?;
+
+        Ok(StateExtension {
+            save_ext_id: ids[0],
+            load_ext_id: ids[1],
+            has_ext_id: ids[2],
+            get_ext_id: ids[3],
+            set_ext_id: ids[4],
+            erase_ext_id: ids[5],
+            save_host_id,
+            load_host_id,
+            has_host_id,
+            get_host_id,
+            set_host_id,
+            erase_host_id,
+        })
+    }
+
     pub fn install_net_extension(&mut self) -> Result<NetExtension, RuntimeError> {
         let get_host_id = 120;
         let post_host_id = 121;
@@ -452,7 +612,13 @@ impl Runtime {
         let info_host_id = 141;
         let status_host_id = 142;
         let release_host_id = 143;
+        let draw_host_id = 144;
+        let draw_part_host_id = 145;
+        let draw_ext_host_id = 146;
+        let set_icon_sheet_host_id = 147;
+        let draw_icon_host_id = 148;
         let resources = self.resources.clone();
+        let image_draws = self.image_draws.clone();
 
         let _ = self.register_host_function(
             HostFunction::new(load_host_id, 1, 1, CAP_GUI),
@@ -542,6 +708,170 @@ impl Runtime {
             },
         );
 
+        let resources = self.resources.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(draw_host_id, 3, 3, CAP_GUI),
+            move |args| {
+                let handle = ResourceHandle::from(expect_handle_arg(args, 0, "handle")?);
+                let x = expect_number_arg(args, 1, "x")? as f32;
+                let y = expect_number_arg(args, 2, "y")? as f32;
+                let resource_id = resources
+                    .borrow()
+                    .resource_id(handle)
+                    .map_err(resource_error_to_host_error)?;
+                image_draws.borrow_mut().push(ImageDrawState {
+                    handle: handle.raw(),
+                    resource_id,
+                    x,
+                    y,
+                    width: None,
+                    height: None,
+                    source: None,
+                    icon_sheet: None,
+                    icon_index: None,
+                    rotation_degrees: 0.0,
+                    opacity: 1.0,
+                });
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let resources = self.resources.clone();
+        let image_draws = self.image_draws.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(draw_part_host_id, 7, 7, CAP_GUI),
+            move |args| {
+                let handle = ResourceHandle::from(expect_handle_arg(args, 0, "handle")?);
+                let sx = expect_number_arg(args, 1, "sx")? as f32;
+                let sy = expect_number_arg(args, 2, "sy")? as f32;
+                let sw = expect_number_arg(args, 3, "sw")? as f32;
+                let sh = expect_number_arg(args, 4, "sh")? as f32;
+                let dx = expect_number_arg(args, 5, "dx")? as f32;
+                let dy = expect_number_arg(args, 6, "dy")? as f32;
+                let resource_id = resources
+                    .borrow()
+                    .resource_id(handle)
+                    .map_err(resource_error_to_host_error)?;
+                image_draws.borrow_mut().push(ImageDrawState {
+                    handle: handle.raw(),
+                    resource_id,
+                    x: dx,
+                    y: dy,
+                    width: Some(sw),
+                    height: Some(sh),
+                    source: Some(ImageSourceRect {
+                        x: sx,
+                        y: sy,
+                        width: sw,
+                        height: sh,
+                    }),
+                    icon_sheet: None,
+                    icon_index: None,
+                    rotation_degrees: 0.0,
+                    opacity: 1.0,
+                });
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let resources = self.resources.clone();
+        let image_draws = self.image_draws.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(draw_ext_host_id, 11, 11, CAP_GUI),
+            move |args| {
+                let handle = ResourceHandle::from(expect_handle_arg(args, 0, "handle")?);
+                let sx = expect_number_arg(args, 1, "sx")? as f32;
+                let sy = expect_number_arg(args, 2, "sy")? as f32;
+                let sw = expect_number_arg(args, 3, "sw")? as f32;
+                let sh = expect_number_arg(args, 4, "sh")? as f32;
+                let dx = expect_number_arg(args, 5, "dx")? as f32;
+                let dy = expect_number_arg(args, 6, "dy")? as f32;
+                let dw = expect_number_arg(args, 7, "dw")? as f32;
+                let dh = expect_number_arg(args, 8, "dh")? as f32;
+                let rot = expect_number_arg(args, 9, "rot")? as f32;
+                let alpha = expect_number_arg(args, 10, "alpha")? as f32;
+                let resource_id = resources
+                    .borrow()
+                    .resource_id(handle)
+                    .map_err(resource_error_to_host_error)?;
+                image_draws.borrow_mut().push(ImageDrawState {
+                    handle: handle.raw(),
+                    resource_id,
+                    x: dx,
+                    y: dy,
+                    width: Some(dw),
+                    height: Some(dh),
+                    source: Some(ImageSourceRect {
+                        x: sx,
+                        y: sy,
+                        width: sw,
+                        height: sh,
+                    }),
+                    icon_sheet: None,
+                    icon_index: None,
+                    rotation_degrees: rot,
+                    opacity: alpha.clamp(0.0, 1.0),
+                });
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let icon_sheets = self.icon_sheets.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(set_icon_sheet_host_id, 3, 3, CAP_GUI),
+            move |args| {
+                let handle = ResourceHandle::from(expect_handle_arg(args, 0, "handle")?);
+                let cell_w = expect_integer_arg(args, 1, "cell_w")? as u32;
+                let cell_h = expect_integer_arg(args, 2, "cell_h")? as u32;
+                icon_sheets.borrow_mut().insert(
+                    handle.raw(),
+                    IconSheetState {
+                        cell_width: cell_w,
+                        cell_height: cell_h,
+                    },
+                );
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let resources = self.resources.clone();
+        let image_draws = self.image_draws.clone();
+        let icon_sheets = self.icon_sheets.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(draw_icon_host_id, 4, 4, CAP_GUI),
+            move |args| {
+                let handle = ResourceHandle::from(expect_handle_arg(args, 0, "handle")?);
+                let index = expect_integer_arg(args, 1, "index")? as u32;
+                let x = expect_number_arg(args, 2, "x")? as f32;
+                let y = expect_number_arg(args, 3, "y")? as f32;
+                let resource_id = resources
+                    .borrow()
+                    .resource_id(handle)
+                    .map_err(resource_error_to_host_error)?;
+                let icon_sheet = icon_sheets
+                    .borrow()
+                    .get(&handle.raw())
+                    .cloned()
+                    .ok_or_else(|| {
+                        HostError::Failed(format!("missing icon sheet for handle {}", handle.raw()))
+                    })?;
+                image_draws.borrow_mut().push(ImageDrawState {
+                    handle: handle.raw(),
+                    resource_id,
+                    x,
+                    y,
+                    width: Some(icon_sheet.cell_width as f32),
+                    height: Some(icon_sheet.cell_height as f32),
+                    source: None,
+                    icon_sheet: Some(icon_sheet),
+                    icon_index: Some(index),
+                    rotation_degrees: 0.0,
+                    opacity: 1.0,
+                });
+                Ok(Value::Bool(true))
+            },
+        );
+
         let ids = self.extensions.register_extension(
             "ext.image",
             &[
@@ -549,6 +879,11 @@ impl Runtime {
                 ExtensionFunctionSpec::new("info", info_host_id, 1, 1, CAP_GUI),
                 ExtensionFunctionSpec::new("status", status_host_id, 1, 1, CAP_GUI),
                 ExtensionFunctionSpec::new("release", release_host_id, 1, 1, CAP_GUI),
+                ExtensionFunctionSpec::new("draw", draw_host_id, 3, 3, CAP_GUI),
+                ExtensionFunctionSpec::new("draw_part", draw_part_host_id, 7, 7, CAP_GUI),
+                ExtensionFunctionSpec::new("draw_ext", draw_ext_host_id, 11, 11, CAP_GUI),
+                ExtensionFunctionSpec::new("set_icon_sheet", set_icon_sheet_host_id, 3, 3, CAP_GUI),
+                ExtensionFunctionSpec::new("draw_icon", draw_icon_host_id, 4, 4, CAP_GUI),
             ],
         )?;
 
@@ -557,10 +892,20 @@ impl Runtime {
             info_ext_id: ids[1],
             status_ext_id: ids[2],
             release_ext_id: ids[3],
+            draw_ext_id: ids[4],
+            draw_part_ext_id: ids[5],
+            draw_ext_ext_id: ids[6],
+            set_icon_sheet_ext_id: ids[7],
+            draw_icon_ext_id: ids[8],
             load_host_id,
             info_host_id,
             status_host_id,
             release_host_id,
+            draw_host_id,
+            draw_part_host_id,
+            draw_ext_host_id,
+            set_icon_sheet_host_id,
+            draw_icon_host_id,
         })
     }
 
@@ -573,6 +918,7 @@ impl Runtime {
         let volume_host_id = 155;
         let release_host_id = 156;
         let status_host_id = 157;
+        let playback_host_id = 158;
         let resources = self.resources.clone();
         let audio_states = self.audio_states.clone();
 
@@ -604,15 +950,32 @@ impl Runtime {
         );
 
         let audio_states = self.audio_states.clone();
+        let audio_backend = self.audio_backend.clone();
+        let resources = self.resources.clone();
         let _ = self.register_host_function(
             HostFunction::new(play_host_id, 1, 2, CAP_ASYNC_IO),
             move |args| {
                 let handle = expect_handle_arg(args, 0, "handle")?;
                 let looped = args.get(1).map(|value| value.truthy()).unwrap_or(false);
+                let (resource_id, bytes) = audio_bytes_for_handle(&resources, handle)?;
+                let mut backend = audio_backend.borrow_mut();
                 let mut states = audio_states.borrow_mut();
-                let state = states
-                    .entry(handle)
-                    .or_insert_with(AudioPlaybackState::default);
+                let state = states.entry(handle).or_insert_with(|| AudioPlaybackState {
+                    resource_id,
+                    playing: false,
+                    looped: false,
+                    position_ms: 0,
+                    volume: 1.0,
+                });
+                backend.play(
+                    handle,
+                    resource_id,
+                    &bytes,
+                    looped,
+                    state.position_ms,
+                    state.volume,
+                )?;
+                state.resource_id = resource_id;
                 state.playing = true;
                 state.looped = looped;
                 Ok(Value::Bool(true))
@@ -620,10 +983,45 @@ impl Runtime {
         );
 
         let audio_states = self.audio_states.clone();
+        let audio_backend = self.audio_backend.clone();
+        let resources = self.resources.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(playback_host_id, 1, 2, CAP_ASYNC_IO),
+            move |args| {
+                let handle = expect_handle_arg(args, 0, "handle")?;
+                let looped = args.get(1).map(|value| value.truthy()).unwrap_or(false);
+                let (resource_id, bytes) = audio_bytes_for_handle(&resources, handle)?;
+                let mut backend = audio_backend.borrow_mut();
+                let mut states = audio_states.borrow_mut();
+                let state = states.entry(handle).or_insert_with(|| AudioPlaybackState {
+                    resource_id,
+                    playing: false,
+                    looped: false,
+                    position_ms: 0,
+                    volume: 1.0,
+                });
+                backend.play(
+                    handle,
+                    resource_id,
+                    &bytes,
+                    looped,
+                    state.position_ms,
+                    state.volume,
+                )?;
+                state.resource_id = resource_id;
+                state.playing = true;
+                state.looped = looped;
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let audio_states = self.audio_states.clone();
+        let audio_backend = self.audio_backend.clone();
         let _ = self.register_host_function(
             HostFunction::new(pause_host_id, 1, 1, CAP_ASYNC_IO),
             move |args| {
                 let handle = expect_handle_arg(args, 0, "handle")?;
+                audio_backend.borrow_mut().pause(handle)?;
                 if let Some(state) = audio_states.borrow_mut().get_mut(&handle) {
                     state.playing = false;
                 }
@@ -632,10 +1030,12 @@ impl Runtime {
         );
 
         let audio_states = self.audio_states.clone();
+        let audio_backend = self.audio_backend.clone();
         let _ = self.register_host_function(
             HostFunction::new(stop_host_id, 1, 1, CAP_ASYNC_IO),
             move |args| {
                 let handle = expect_handle_arg(args, 0, "handle")?;
+                audio_backend.borrow_mut().stop(handle)?;
                 if let Some(state) = audio_states.borrow_mut().get_mut(&handle) {
                     state.playing = false;
                     state.position_ms = 0;
@@ -645,11 +1045,15 @@ impl Runtime {
         );
 
         let audio_states = self.audio_states.clone();
+        let audio_backend = self.audio_backend.clone();
         let _ = self.register_host_function(
             HostFunction::new(seek_host_id, 2, 2, CAP_ASYNC_IO),
             move |args| {
                 let handle = expect_handle_arg(args, 0, "handle")?;
                 let position_ms = expect_number_arg(args, 1, "position_ms")?;
+                audio_backend
+                    .borrow_mut()
+                    .seek(handle, position_ms.max(0.0) as u64)?;
                 let mut states = audio_states.borrow_mut();
                 let state = states
                     .entry(handle)
@@ -660,11 +1064,15 @@ impl Runtime {
         );
 
         let audio_states = self.audio_states.clone();
+        let audio_backend = self.audio_backend.clone();
         let _ = self.register_host_function(
             HostFunction::new(volume_host_id, 2, 2, CAP_ASYNC_IO),
             move |args| {
                 let handle = expect_handle_arg(args, 0, "handle")?;
                 let volume = expect_number_arg(args, 1, "volume")?;
+                audio_backend
+                    .borrow_mut()
+                    .volume(handle, volume.clamp(0.0, 1.0) as f32)?;
                 let mut states = audio_states.borrow_mut();
                 let state = states
                     .entry(handle)
@@ -676,10 +1084,12 @@ impl Runtime {
 
         let resources = self.resources.clone();
         let audio_states = self.audio_states.clone();
+        let audio_backend = self.audio_backend.clone();
         let _ = self.register_host_function(
             HostFunction::new(release_host_id, 1, 1, CAP_ASYNC_IO),
             move |args| {
                 let handle = ResourceHandle::from(expect_handle_arg(args, 0, "handle")?);
+                audio_backend.borrow_mut().release(handle.raw())?;
                 audio_states.borrow_mut().remove(&handle.raw());
                 resources
                     .borrow_mut()
@@ -708,6 +1118,7 @@ impl Runtime {
             &[
                 ExtensionFunctionSpec::new("load", load_host_id, 1, 1, CAP_ASYNC_IO),
                 ExtensionFunctionSpec::new("play", play_host_id, 1, 2, CAP_ASYNC_IO),
+                ExtensionFunctionSpec::new("playback", playback_host_id, 1, 2, CAP_ASYNC_IO),
                 ExtensionFunctionSpec::new("pause", pause_host_id, 1, 1, CAP_ASYNC_IO),
                 ExtensionFunctionSpec::new("stop", stop_host_id, 1, 1, CAP_ASYNC_IO),
                 ExtensionFunctionSpec::new("seek", seek_host_id, 2, 2, CAP_ASYNC_IO),
@@ -720,14 +1131,16 @@ impl Runtime {
         Ok(AudioExtension {
             load_ext_id: ids[0],
             play_ext_id: ids[1],
-            pause_ext_id: ids[2],
-            stop_ext_id: ids[3],
-            seek_ext_id: ids[4],
-            volume_ext_id: ids[5],
-            release_ext_id: ids[6],
-            status_ext_id: ids[7],
+            playback_ext_id: ids[2],
+            pause_ext_id: ids[3],
+            stop_ext_id: ids[4],
+            seek_ext_id: ids[5],
+            volume_ext_id: ids[6],
+            release_ext_id: ids[7],
+            status_ext_id: ids[8],
             load_host_id,
             play_host_id,
+            playback_host_id,
             pause_host_id,
             stop_host_id,
             seek_host_id,
@@ -744,7 +1157,10 @@ impl Runtime {
         let resources = self.resources.clone();
         let debug_log = self.debug_log.clone();
         let loaded_archives = self.loaded_archives.clone();
+        let image_draws = self.image_draws.clone();
+        let icon_sheets = self.icon_sheets.clone();
         let audio_states = self.audio_states.clone();
+        let state_manager = self.state_manager.clone();
         let checkpoints = self.checkpoints.clone();
         let host = self.host.clone();
 
@@ -757,8 +1173,11 @@ impl Runtime {
                         scheduler: scheduler.borrow().snapshot(),
                         resources: resources.borrow().clone(),
                         loaded_archives: loaded_archives.borrow().clone(),
+                        image_draws: image_draws.borrow().clone(),
+                        icon_sheets: icon_sheets.borrow().clone(),
                         debug_log: debug_log.borrow().clone(),
                         audio_states: audio_states.borrow().clone(),
+                        state_manager: state_manager.borrow().clone(),
                     },
                 );
                 Ok(Value::Bool(true))
@@ -768,7 +1187,11 @@ impl Runtime {
         let resources = self.resources.clone();
         let debug_log = self.debug_log.clone();
         let loaded_archives = self.loaded_archives.clone();
+        let image_draws = self.image_draws.clone();
+        let icon_sheets = self.icon_sheets.clone();
         let audio_states = self.audio_states.clone();
+        let audio_backend = self.audio_backend.clone();
+        let state_manager = self.state_manager.clone();
         let checkpoints = self.checkpoints.clone();
         let host_for_load = host.clone();
         let _ =
@@ -782,8 +1205,32 @@ impl Runtime {
                 });
                 *resources.borrow_mut() = checkpoint.resources;
                 *loaded_archives.borrow_mut() = checkpoint.loaded_archives;
+                *image_draws.borrow_mut() = checkpoint.image_draws;
+                *icon_sheets.borrow_mut() = checkpoint.icon_sheets;
                 *debug_log.borrow_mut() = checkpoint.debug_log;
                 *audio_states.borrow_mut() = checkpoint.audio_states;
+                *state_manager.borrow_mut() = checkpoint.state_manager;
+                {
+                    let mut backend = audio_backend.borrow_mut();
+                    backend.clear()?;
+                    let replay_states = audio_states
+                        .borrow()
+                        .iter()
+                        .filter(|(_, state)| state.playing)
+                        .map(|(handle, state)| (*handle, state.clone()))
+                        .collect::<Vec<_>>();
+                    for (handle, state) in replay_states {
+                        let bytes = audio_bytes_for_resource_id(&resources, state.resource_id)?;
+                        backend.play(
+                            handle,
+                            state.resource_id,
+                            &bytes,
+                            state.looped,
+                            state.position_ms,
+                            state.volume,
+                        )?;
+                    }
+                }
                 Ok(Value::Bool(true))
             });
 
@@ -812,6 +1259,7 @@ impl Runtime {
             image: self.install_image_extension()?,
             audio: self.install_audio_extension()?,
             vm: self.install_vm_extension()?,
+            state: self.install_state_extension()?,
         })
     }
 
@@ -866,9 +1314,46 @@ impl Runtime {
         self.loaded_archives.borrow().clone()
     }
 
+    pub fn image_draws(&self) -> Vec<ImageDrawState> {
+        self.image_draws.borrow().clone()
+    }
+
+    pub fn audio_playback_states(&self) -> BTreeMap<u64, AudioPlaybackState> {
+        self.audio_states.borrow().clone()
+    }
+
     pub fn send_message(&mut self, message: Message) {
         self.scheduler.borrow_mut().deliver(message);
     }
+}
+
+fn audio_bytes_for_handle(
+    resources: &Rc<RefCell<ResourceManager>>,
+    handle: u64,
+) -> Result<(u32, Vec<u8>), HostError> {
+    let resource_id = resources
+        .borrow()
+        .resource_id(ResourceHandle::from(handle))
+        .map_err(resource_error_to_host_error)?;
+    let bytes = audio_bytes_for_resource_id(resources, resource_id)?;
+    Ok((resource_id, bytes))
+}
+
+fn audio_bytes_for_resource_id(
+    resources: &Rc<RefCell<ResourceManager>>,
+    resource_id: u32,
+) -> Result<Vec<u8>, HostError> {
+    let bytes = {
+        let resources = resources.borrow();
+        let entry = resources
+            .entry(resource_id)
+            .ok_or_else(|| HostError::Failed(format!("audio resource {resource_id} not found")))?;
+        let data = entry.data.as_ref().ok_or_else(|| {
+            HostError::Failed(format!("audio resource {resource_id} has no payload"))
+        })?;
+        data.bytes().to_vec()
+    };
+    Ok(bytes)
 }
 
 /// Stable ids assigned to the built-in file system extension.
@@ -914,10 +1399,20 @@ pub struct ImageExtension {
     pub info_ext_id: u32,
     pub status_ext_id: u32,
     pub release_ext_id: u32,
+    pub draw_ext_id: u32,
+    pub draw_part_ext_id: u32,
+    pub draw_ext_ext_id: u32,
+    pub set_icon_sheet_ext_id: u32,
+    pub draw_icon_ext_id: u32,
     pub load_host_id: HostId,
     pub info_host_id: HostId,
     pub status_host_id: HostId,
     pub release_host_id: HostId,
+    pub draw_host_id: HostId,
+    pub draw_part_host_id: HostId,
+    pub draw_ext_host_id: HostId,
+    pub set_icon_sheet_host_id: HostId,
+    pub draw_icon_host_id: HostId,
 }
 
 /// Stable ids assigned to the built-in audio extension.
@@ -925,6 +1420,7 @@ pub struct ImageExtension {
 pub struct AudioExtension {
     pub load_ext_id: u32,
     pub play_ext_id: u32,
+    pub playback_ext_id: u32,
     pub pause_ext_id: u32,
     pub stop_ext_id: u32,
     pub seek_ext_id: u32,
@@ -933,6 +1429,7 @@ pub struct AudioExtension {
     pub status_ext_id: u32,
     pub load_host_id: HostId,
     pub play_host_id: HostId,
+    pub playback_host_id: HostId,
     pub pause_host_id: HostId,
     pub stop_host_id: HostId,
     pub seek_host_id: HostId,
@@ -950,6 +1447,23 @@ pub struct VmExtension {
     pub load_host_id: HostId,
 }
 
+/// Stable ids assigned to the built-in persistent state extension.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StateExtension {
+    pub save_ext_id: u32,
+    pub load_ext_id: u32,
+    pub has_ext_id: u32,
+    pub get_ext_id: u32,
+    pub set_ext_id: u32,
+    pub erase_ext_id: u32,
+    pub save_host_id: HostId,
+    pub load_host_id: HostId,
+    pub has_host_id: HostId,
+    pub get_host_id: HostId,
+    pub set_host_id: HostId,
+    pub erase_host_id: HostId,
+}
+
 /// Stable ids for the runtime's standard extension set.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StandardExtensions {
@@ -960,6 +1474,7 @@ pub struct StandardExtensions {
     pub image: ImageExtension,
     pub audio: AudioExtension,
     pub vm: VmExtension,
+    pub state: StateExtension,
 }
 
 /// Backend interface for `ext.net`.
@@ -1527,6 +2042,95 @@ mod tests {
             .expect("image load");
         let handle = handle_from_value(handle);
 
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(
+                    extension.draw_host_id,
+                    &[
+                        Value::Handle(handle),
+                        Value::Integer(12),
+                        Value::Integer(24)
+                    ]
+                )
+                .expect("image draw"),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(
+                    extension.draw_part_host_id,
+                    &[
+                        Value::Handle(handle),
+                        Value::Integer(1),
+                        Value::Integer(2),
+                        Value::Integer(3),
+                        Value::Integer(4),
+                        Value::Integer(5),
+                        Value::Integer(6),
+                    ]
+                )
+                .expect("image draw_part"),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(
+                    extension.draw_ext_host_id,
+                    &[
+                        Value::Handle(handle),
+                        Value::Integer(7),
+                        Value::Integer(8),
+                        Value::Integer(9),
+                        Value::Integer(10),
+                        Value::Integer(11),
+                        Value::Integer(12),
+                        Value::Integer(13),
+                        Value::Integer(14),
+                        Value::Integer(15),
+                        Value::Float(0.5),
+                    ]
+                )
+                .expect("image draw_ext"),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(
+                    extension.set_icon_sheet_host_id,
+                    &[
+                        Value::Handle(handle),
+                        Value::Integer(16),
+                        Value::Integer(16)
+                    ]
+                )
+                .expect("set icon sheet"),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(
+                    extension.draw_icon_host_id,
+                    &[
+                        Value::Handle(handle),
+                        Value::Integer(2),
+                        Value::Integer(20),
+                        Value::Integer(24)
+                    ]
+                )
+                .expect("draw icon"),
+            Value::Bool(true)
+        );
+
         let status = runtime
             .host
             .borrow_mut()
@@ -1550,6 +2154,15 @@ mod tests {
         );
         assert_eq!(table.get(&3), Some(&Value::Integer(3)));
         assert_eq!(table.get(&4), Some(&Value::Integer(2)));
+        assert_eq!(runtime.image_draws().len(), 4);
+        let draw = &runtime.image_draws()[0];
+        assert_eq!(draw.handle, handle);
+        assert_eq!(draw.resource_id, 100);
+        assert_eq!(draw.x, 12.0);
+        assert_eq!(draw.y, 24.0);
+        assert!(runtime.image_draws()[1].source.is_some());
+        assert!(runtime.image_draws()[2].rotation_degrees > 0.0);
+        assert!(runtime.image_draws()[3].icon_sheet.is_some());
 
         let released = runtime
             .host
@@ -1588,10 +2201,39 @@ mod tests {
             runtime
                 .host
                 .borrow_mut()
+                .call(
+                    extension.playback_host_id,
+                    &[Value::Handle(handle), Value::Bool(false)]
+                )
+                .expect("audio playback"),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(
+                    extension.playback_host_id,
+                    &[Value::Handle(handle), Value::Bool(false)]
+                )
+                .expect("audio playback"),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
                 .call(extension.status_host_id, &[Value::Handle(handle)])
                 .expect("audio status"),
             Value::Integer(2)
         );
+        let audio_state = runtime
+            .audio_playback_states()
+            .get(&handle)
+            .cloned()
+            .expect("audio state");
+        assert!(audio_state.playing);
+        assert!(!audio_state.looped);
         assert_eq!(
             runtime
                 .host
@@ -1660,6 +2302,52 @@ mod tests {
                 .host
                 .borrow_mut()
                 .call(
+                    image.draw_host_id,
+                    &[
+                        Value::Handle(image_handle),
+                        Value::Integer(4),
+                        Value::Integer(8)
+                    ]
+                )
+                .expect("image draw before save"),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(
+                    image.set_icon_sheet_host_id,
+                    &[
+                        Value::Handle(image_handle),
+                        Value::Integer(16),
+                        Value::Integer(16)
+                    ]
+                )
+                .expect("set icon sheet before save"),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(
+                    image.draw_icon_host_id,
+                    &[
+                        Value::Handle(image_handle),
+                        Value::Integer(1),
+                        Value::Integer(16),
+                        Value::Integer(16)
+                    ]
+                )
+                .expect("draw icon before save"),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(
                     audio.play_host_id,
                     &[Value::Handle(audio_handle), Value::Bool(true)]
                 )
@@ -1710,6 +2398,10 @@ mod tests {
                 .expect("image status after load"),
             Value::Integer(2)
         );
+        assert_eq!(runtime.image_draws().len(), 2);
+        assert_eq!(runtime.image_draws()[0].resource_id, 100);
+        assert_eq!(runtime.image_draws()[0].icon_sheet, None);
+        assert!(runtime.image_draws()[1].icon_sheet.is_some());
         assert_eq!(
             runtime
                 .host

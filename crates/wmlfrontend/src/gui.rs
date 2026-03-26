@@ -7,7 +7,9 @@ use std::sync::Arc;
 use eframe::{egui, egui::Vec2};
 
 use crate::{FrontendError, FrontendReport, GuiFontPreset};
-use wmlui::{UiChoice, UiImageSlot, UiImageSource, UiKey, UiMouseButton, UiPoint, UiTheme};
+use wmlui::{
+    UiChoice, UiImageDrawCall, UiImageSlot, UiImageSource, UiKey, UiMouseButton, UiPoint, UiTheme,
+};
 
 /// Runs the GUI window for a finished frontend report.
 pub fn run_gui(report: FrontendReport, font_preset: GuiFontPreset) -> Result<(), FrontendError> {
@@ -32,6 +34,7 @@ pub fn run_gui(report: FrontendReport, font_preset: GuiFontPreset) -> Result<(),
 struct ReportApp {
     report: FrontendReport,
     textures: BTreeMap<UiImageSlot, egui::TextureHandle>,
+    textures_by_resource_id: BTreeMap<u32, TextureEntry>,
     initialized: bool,
     auto_close: bool,
     close_sent: bool,
@@ -41,11 +44,18 @@ struct ReportApp {
     applied_font_preset: Option<GuiFontPreset>,
 }
 
+#[derive(Clone)]
+struct TextureEntry {
+    texture: egui::TextureHandle,
+    size: egui::Vec2,
+}
+
 impl ReportApp {
     fn new(report: FrontendReport, auto_close: bool, font_preset: GuiFontPreset) -> Self {
         Self {
             report,
             textures: BTreeMap::new(),
+            textures_by_resource_id: BTreeMap::new(),
             initialized: false,
             auto_close,
             close_sent: false,
@@ -71,6 +81,13 @@ impl ReportApp {
         self.initialized = true;
         for (slot, image) in &self.report.ui_state.scene.images {
             if let Ok(texture) = decode_texture(ctx, image) {
+                self.textures_by_resource_id.insert(
+                    image.resource_id,
+                    TextureEntry {
+                        size: texture.size_vec2(),
+                        texture: texture.clone(),
+                    },
+                );
                 self.textures.insert(slot.clone(), texture);
             }
         }
@@ -325,6 +342,42 @@ impl eframe::App for ReportApp {
                 });
 
             ui.add_space(12.0);
+            ui.heading("Draw Calls");
+            let draw_calls = &self.report.ui_state.scene.draw_calls;
+            if draw_calls.is_empty() {
+                ui.label("No draw calls recorded.");
+            } else {
+                let (rect, _) = ui.allocate_exact_size(
+                    egui::vec2(ui.available_width().max(1.0), 240.0),
+                    egui::Sense::hover(),
+                );
+                let painter = ui.painter_at(rect);
+                painter.rect_filled(rect, 6.0, ui.visuals().extreme_bg_color);
+                for draw in draw_calls {
+                    self.paint_draw_call(&painter, rect.min, draw);
+                }
+            }
+
+            ui.add_space(12.0);
+            ui.heading("Audio Playback");
+            let audio_playback = &self.report.ui_state.scene.audio_playback;
+            if audio_playback.is_empty() {
+                ui.label("No audio playback recorded.");
+            } else {
+                for (handle, state) in audio_playback {
+                    ui.monospace(format!(
+                        "handle={} resource={} playing={} looped={} position={}ms volume={:.2}",
+                        handle,
+                        state.resource_id,
+                        state.playing,
+                        state.looped,
+                        state.position_ms,
+                        state.volume
+                    ));
+                }
+            }
+
+            ui.add_space(12.0);
             ui.heading("Summary");
             ui.label(format!(
                 "events processed: {}",
@@ -349,6 +402,112 @@ impl eframe::App for ReportApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }
+}
+
+impl ReportApp {
+    fn paint_draw_call(&self, painter: &egui::Painter, origin: egui::Pos2, draw: &UiImageDrawCall) {
+        let Some(texture_entry) = self.textures_by_resource_id.get(&draw.resource_id) else {
+            painter.text(
+                origin + egui::vec2(draw.x, draw.y),
+                egui::Align2::LEFT_TOP,
+                format!("missing texture {}", draw.resource_id),
+                egui::TextStyle::Body.resolve(&egui::Style::default()),
+                egui::Color32::RED,
+            );
+            return;
+        };
+
+        let natural = texture_entry.size;
+        let source = resolve_source_rect(draw, natural);
+        let width = draw.width.unwrap_or(source.width());
+        let height = draw.height.unwrap_or(source.height());
+        let rect = egui::Rect::from_min_size(
+            origin + egui::vec2(draw.x, draw.y),
+            egui::vec2(width, height),
+        );
+        let uv = egui::Rect::from_min_max(
+            egui::pos2(source.left() / natural.x, source.top() / natural.y),
+            egui::pos2(source.right() / natural.x, source.bottom() / natural.y),
+        );
+        paint_textured_rect(
+            painter,
+            texture_entry.texture.id(),
+            rect,
+            uv,
+            egui::Color32::WHITE.linear_multiply(draw.opacity.clamp(0.0, 1.0)),
+            draw.rotation_degrees,
+        );
+        painter.rect_stroke(
+            rect,
+            0.0,
+            egui::Stroke::new(1.0, egui::Color32::from_white_alpha(96)),
+            egui::StrokeKind::Inside,
+        );
+        painter.text(
+            rect.left_top() + egui::vec2(4.0, 4.0),
+            egui::Align2::LEFT_TOP,
+            format!("#{}", draw.resource_id),
+            egui::TextStyle::Small.resolve(&egui::Style::default()),
+            egui::Color32::WHITE,
+        );
+    }
+}
+
+fn resolve_source_rect(draw: &UiImageDrawCall, natural: egui::Vec2) -> egui::Rect {
+    if let Some(source) = draw.source {
+        return egui::Rect::from_min_size(
+            egui::pos2(source.x, source.y),
+            egui::vec2(source.width, source.height),
+        );
+    }
+    if let Some(icon_sheet) = draw.icon_sheet {
+        let cell_w = icon_sheet.cell_width as f32;
+        let cell_h = icon_sheet.cell_height as f32;
+        if cell_w > 0.0 && cell_h > 0.0 {
+            let cols = (natural.x / cell_w).floor().max(1.0) as u32;
+            let col = icon_sheet.index % cols;
+            let row = icon_sheet.index / cols;
+            return egui::Rect::from_min_size(
+                egui::pos2(col as f32 * cell_w, row as f32 * cell_h),
+                egui::vec2(cell_w, cell_h),
+            );
+        }
+    }
+    egui::Rect::from_min_size(egui::Pos2::ZERO, natural)
+}
+
+fn paint_textured_rect(
+    painter: &egui::Painter,
+    texture_id: egui::TextureId,
+    rect: egui::Rect,
+    uv: egui::Rect,
+    tint: egui::Color32,
+    rotation_degrees: f32,
+) {
+    if rotation_degrees.abs() <= f32::EPSILON {
+        painter.image(texture_id, rect, uv, tint);
+        return;
+    }
+
+    let center = rect.center();
+    let rotation = egui::emath::Rot2::from_angle(rotation_degrees.to_radians());
+    let mut mesh = egui::Mesh::with_texture(texture_id);
+    let corners = [
+        (rect.left_top(), uv.left_top()),
+        (rect.right_top(), uv.right_top()),
+        (rect.right_bottom(), uv.right_bottom()),
+        (rect.left_bottom(), uv.left_bottom()),
+    ];
+    for (pos, uv) in corners {
+        let rotated = center + rotation * (pos - center);
+        mesh.vertices.push(egui::epaint::Vertex {
+            pos: rotated,
+            uv,
+            color: tint,
+        });
+    }
+    mesh.indices.extend_from_slice(&[0, 1, 2, 0, 2, 3]);
+    painter.add(egui::Shape::mesh(mesh));
 }
 
 fn font_definitions(preset: GuiFontPreset) -> egui::FontDefinitions {
