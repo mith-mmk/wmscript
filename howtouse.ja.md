@@ -97,7 +97,8 @@ export func main() {
 
 小さな物語系スクリプトです。ビジュアルノベル風の構造を持ちながら、
 現在のコンパイラが扱える `return` 中心のモデルに収めています。
-ランタイム例はコマンドライン引数で実行章を切り替えます。
+ランタイム例はコマンドライン引数で実行章を切り替えます。frontend の
+message window には返り値の章本文がそのまま表示されます。
 
 ### ソース
 
@@ -106,19 +107,19 @@ export let protagonist = "Aki";
 export let setting = "last train platform";
 
 export func prologue() {
-    return "Aki arrives at the last train platform.";
+    return "Narrator: The last train platform is almost empty.\nNarrator: Aki stops under the lantern light and listens to the rails.\nAki: The city feels farther away than usual.";
 }
 
 export func chapter_1() {
-    return "A lantern lights the stairs down to the station.";
+    return "Narrator: A lantern lights the stairs down to the station.\nAki: The next train is still ten minutes away.\nNarrator: A quiet voice answers from the ticket gate.";
 }
 
 export func chapter_2() {
-    return "Aki chooses the quiet route home.";
+    return "Narrator: Aki chooses the quiet route home.\nAki: I'll take the river path tonight.\nNarrator: The station lights fade behind the empty road.";
 }
 
 export func main() {
-    return "Prologue";
+    return "Narrator: Select a chapter from the runtime example.\nNarrator: prologue, chapter_1, or chapter_2.\nNarrator: The returned text will appear in the message window.";
 }
 ```
 
@@ -126,6 +127,7 @@ export func main() {
 
 - 各関数本体が単純な `return` 式なので、現在のコンパイラで直接出力できます。
 - 将来的に分岐を追加しやすい形で書いてあります。
+- frontend は最終的な文字列返り値を message window に表示します。
 
 ### 実行例
 

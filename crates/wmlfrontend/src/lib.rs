@@ -23,6 +23,7 @@ use wmlui::{
     UiIconSheet, UiImageDrawCall, UiImageRect, UiImageSlot, UiImageSource, UiLogLevel, UiSession,
     UiState, UiTheme,
 };
+use wmlvm::{RunOutcome, Value};
 
 /// Configuration for the frontend shell.
 #[derive(Clone, Debug, PartialEq)]
@@ -264,13 +265,19 @@ impl UiApp for FrontendApp {
             Ok(execution) => {
                 let build = execution.build.clone();
                 let log_lines = collect_lines(&build, &execution);
+                let story_text = final_story_text(&execution);
                 *self.log_lines.borrow_mut() = log_lines.clone();
                 ctx.show_message_window(
                     Some(self.config.project.package_name.clone()),
-                    "runtime completed",
+                    story_text
+                        .clone()
+                        .unwrap_or_else(|| "runtime completed".to_owned()),
                 );
-                for line in self.log_lines.borrow().iter() {
-                    ctx.append_message_line(line.clone());
+                ctx.state_mut().scene.message_window.backlog = story_text
+                    .as_deref()
+                    .map(|text| text.lines().map(|line| line.to_owned()).collect())
+                    .unwrap_or_default();
+                for line in &log_lines {
                     ctx.log(UiLogLevel::Info, line.clone());
                 }
                 for asset in &self.config.project.assets {
@@ -340,6 +347,17 @@ fn collect_lines(build: &BuildArtifact, execution: &ExecutionReport) -> Vec<Stri
         lines.push(format!("final outcome: {outcome:?}"));
     }
     lines
+}
+
+fn final_story_text(execution: &ExecutionReport) -> Option<String> {
+    let (_, outcome) = execution.outcomes.last()?;
+    match outcome {
+        RunOutcome::Halted {
+            value: Some(Value::String(text)),
+            ..
+        } => Some(text.clone()),
+        _ => None,
+    }
 }
 
 fn to_ui_draw_call(draw: ImageDrawState) -> UiImageDrawCall {

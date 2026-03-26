@@ -10,4 +10,5 @@ wmlplatform = { path = "../wmlplatform" }
 wmlresource = { path = "../wmlresource" }
 wmlruntime = { path = "../wmlruntime" }
 wmltoolchain = { path = "../wmltoolchain" }
+wmlvm = { path = "../wmlvm" }
 wmlui = { path = "../wmlui" }

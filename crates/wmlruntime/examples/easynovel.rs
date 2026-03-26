@@ -3,6 +3,7 @@ use std::env;
 use wmlcompiler::{Compiler, CompilerConfig, ModuleCatalog};
 use wmlplatform::PlatformProfile;
 use wmlruntime::{Runtime, RuntimeConfig};
+use wmlvm::{RunOutcome, Value};
 
 fn main() {
     let source = include_str!("../../../samples/easynovel/main.wml");
@@ -32,8 +33,19 @@ fn main() {
     let worker_id = runtime.spawn_program(program).expect("spawn program");
     let outcomes = runtime.run_until_idle(4);
 
-    println!(
-        "easynovel worker {worker_id} chapter `{selected}` => {:?}",
-        outcomes.last()
-    );
+    println!("=== easynovel ===");
+    println!("worker: {worker_id}");
+    println!("chapter: {selected}");
+    if let Some((_, outcome)) = outcomes.last() {
+        match outcome {
+            RunOutcome::Halted {
+                value: Some(Value::String(text)),
+                ..
+            } => {
+                println!("--- message window ---");
+                println!("{text}");
+            }
+            other => println!("outcome: {other:?}"),
+        }
+    }
 }

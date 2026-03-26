@@ -11,4 +11,4 @@
 - `imageaudio/`
   - Combined image draw and audio playback demo.
 - `easynovel/`
-  - Small story-driven sample with chapters and narration.
+  - Small story-driven sample with chapters and narration that renders into the message window.

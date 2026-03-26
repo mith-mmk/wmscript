@@ -39,7 +39,9 @@ struct ReportApp {
     auto_close: bool,
     close_sent: bool,
     input_snapshot: InputSnapshot,
+    player_input: String,
     selected_choice: Option<String>,
+    message_history_open: bool,
     font_preset: GuiFontPreset,
     applied_font_preset: Option<GuiFontPreset>,
 }
@@ -60,7 +62,9 @@ impl ReportApp {
             auto_close,
             close_sent: false,
             input_snapshot: InputSnapshot::default(),
+            player_input: String::new(),
             selected_choice: None,
+            message_history_open: false,
             font_preset,
             applied_font_preset: None,
         }
@@ -170,15 +174,29 @@ impl ReportApp {
 
     fn apply_choice(&mut self, choice: &UiChoice) {
         self.selected_choice = Some(choice.id.clone());
+        let line = format!("Choice selected: {}", choice.label);
         self.report.ui_state.scene.message_window.visible = true;
         self.report.ui_state.scene.message_window.speaker = Some("Choice".to_owned());
-        self.report.ui_state.scene.message_window.text = format!("selected: {}", choice.label);
+        self.report.ui_state.scene.message_window.text = line.clone();
+        self.report.ui_state.scene.message_window.backlog.push(line);
+    }
+
+    fn submit_player_input(&mut self) {
+        let text = self.player_input.trim().to_owned();
+        if text.is_empty() {
+            return;
+        }
+        self.player_input.clear();
+        self.selected_choice = None;
+        self.report.ui_state.scene.message_window.visible = true;
+        self.report.ui_state.scene.message_window.speaker = Some("Player".to_owned());
+        self.report.ui_state.scene.message_window.text = text.clone();
         self.report
             .ui_state
             .scene
             .message_window
             .backlog
-            .push(format!("selected: {}", choice.label));
+            .push(format!("Player: {text}"));
     }
 }
 
@@ -242,12 +260,13 @@ impl eframe::App for ReportApp {
             });
         });
 
-        egui::SidePanel::left("assets")
+        egui::SidePanel::right("debug")
             .resizable(true)
-            .default_width(280.0)
+            .default_width(320.0)
             .show(ctx, |ui| {
-                ui.heading("Images");
+                ui.heading("Debug");
                 ui.separator();
+                ui.label("Images");
                 if self.textures.is_empty() {
                     ui.label("No images loaded.");
                 } else {
@@ -264,22 +283,7 @@ impl eframe::App for ReportApp {
                     }
                 }
                 ui.separator();
-                ui.heading("Choices");
-                for choice in self.report.ui_state.scene.message_window.choices.clone() {
-                    let selected = self
-                        .selected_choice
-                        .as_deref()
-                        .is_some_and(|selected| selected == choice.id);
-                    let response = ui.add_enabled(
-                        choice.enabled,
-                        egui::Button::new(choice.label.clone()).selected(selected),
-                    );
-                    if response.clicked() {
-                        self.apply_choice(&choice);
-                    }
-                }
-                ui.separator();
-                ui.heading("Input");
+                ui.label("Input");
                 ui.label(format!(
                     "pointer: {}",
                     self.input_snapshot
@@ -311,90 +315,229 @@ impl eframe::App for ReportApp {
                         ui.monospace(line);
                     }
                 }
+                ui.separator();
+                ui.label("Draw Calls");
+                let draw_calls = &self.report.ui_state.scene.draw_calls;
+                if draw_calls.is_empty() {
+                    ui.label("No draw calls recorded.");
+                } else {
+                    let (rect, _) = ui.allocate_exact_size(
+                        egui::vec2(ui.available_width().max(1.0), 220.0),
+                        egui::Sense::hover(),
+                    );
+                    let painter = ui.painter_at(rect);
+                    painter.rect_filled(rect, 6.0, ui.visuals().extreme_bg_color);
+                    for draw in draw_calls {
+                        self.paint_draw_call(&painter, rect.min, draw);
+                    }
+                }
+
+                ui.separator();
+                ui.label("Audio Playback");
+                let audio_playback = &self.report.ui_state.scene.audio_playback;
+                if audio_playback.is_empty() {
+                    ui.label("No audio playback recorded.");
+                } else {
+                    for (handle, state) in audio_playback {
+                        ui.monospace(format!(
+                            "handle={} resource={} playing={} looped={} position={}ms volume={:.2}",
+                            handle,
+                            state.resource_id,
+                            state.playing,
+                            state.looped,
+                            state.position_ms,
+                            state.volume
+                        ));
+                    }
+                }
+
+                ui.separator();
+                ui.label("Summary");
+                ui.label(format!(
+                    "events processed: {}",
+                    self.report.execution.outcomes.len()
+                ));
+                if let Some((_, outcome)) = self.report.execution.outcomes.last() {
+                    ui.monospace(format!("{outcome:?}"));
+                }
+                ui.separator();
+                ui.label("Build Log");
+                if self.report.log_lines.is_empty() {
+                    ui.label("No build log lines.");
+                } else {
+                    egui::ScrollArea::vertical()
+                        .id_salt("build_log")
+                        .max_height(140.0)
+                        .show(ui, |ui| {
+                            for line in &self.report.log_lines {
+                                ui.monospace(line);
+                            }
+                        });
+                }
+
+                ui.add_space(8.0);
+                if ui.button("Close").clicked() {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+                ui.add_space(8.0);
+                if self.report.ui_state.window.close_requested {
+                    ui.label("Frontend run completed.");
+                }
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.vertical_centered(|ui| {
-                ui.heading("Message Window");
-            });
-            ui.add_space(8.0);
+            ui.vertical(|ui| {
+                ui.heading("Game Body");
+                ui.add_space(8.0);
 
-            let window = &self.report.ui_state.scene.message_window;
-            egui::Frame::group(ui.style())
-                .fill(ui.visuals().panel_fill)
-                .show(ui, |ui| {
-                    ui.set_min_height(180.0);
-                    ui.vertical(|ui| {
-                        if let Some(speaker) = &window.speaker {
-                            ui.label(egui::RichText::new(speaker).strong());
+                let draw_calls = self.report.ui_state.scene.draw_calls.clone();
+                egui::Frame::group(ui.style())
+                    .fill(ui.visuals().extreme_bg_color)
+                    .show(ui, |ui| {
+                        ui.set_min_height(240.0);
+                        if draw_calls.is_empty() {
+                            ui.centered_and_justified(|ui| {
+                                ui.label("No scene loaded yet.");
+                            });
                         } else {
-                            ui.label(egui::RichText::new("Narrator").strong());
-                        }
-                        ui.separator();
-                        if window.visible {
-                            for line in window.text.lines() {
-                                ui.label(line);
+                            let (rect, _) = ui.allocate_exact_size(
+                                egui::vec2(ui.available_width().max(1.0), 220.0),
+                                egui::Sense::hover(),
+                            );
+                            let painter = ui.painter_at(rect);
+                            for draw in &draw_calls {
+                                self.paint_draw_call(&painter, rect.min, draw);
                             }
-                        } else {
-                            ui.label("Message window hidden.");
+                        }
+                    });
+
+                ui.add_space(10.0);
+                ui.group(|ui| {
+                    ui.vertical(|ui| {
+                        ui.label(egui::RichText::new("Input").strong());
+                        ui.horizontal(|ui| {
+                            let response = ui.add(
+                                egui::TextEdit::singleline(&mut self.player_input)
+                                    .hint_text("Type a line and press Enter"),
+                            );
+                            let enter_pressed = response.lost_focus()
+                                && ui.input(|input| input.key_pressed(egui::Key::Enter));
+                            if ui.button("Send").clicked() || enter_pressed {
+                                self.submit_player_input();
+                            }
+                        });
+                        if !self.player_input.is_empty() {
+                            ui.label(format!("draft: {}", self.player_input));
                         }
                     });
                 });
 
-            ui.add_space(12.0);
-            ui.heading("Draw Calls");
-            let draw_calls = &self.report.ui_state.scene.draw_calls;
-            if draw_calls.is_empty() {
-                ui.label("No draw calls recorded.");
-            } else {
-                let (rect, _) = ui.allocate_exact_size(
-                    egui::vec2(ui.available_width().max(1.0), 240.0),
-                    egui::Sense::hover(),
-                );
-                let painter = ui.painter_at(rect);
-                painter.rect_filled(rect, 6.0, ui.visuals().extreme_bg_color);
-                for draw in draw_calls {
-                    self.paint_draw_call(&painter, rect.min, draw);
-                }
-            }
+                ui.add_space(10.0);
 
-            ui.add_space(12.0);
-            ui.heading("Audio Playback");
-            let audio_playback = &self.report.ui_state.scene.audio_playback;
-            if audio_playback.is_empty() {
-                ui.label("No audio playback recorded.");
-            } else {
-                for (handle, state) in audio_playback {
-                    ui.monospace(format!(
-                        "handle={} resource={} playing={} looped={} position={}ms volume={:.2}",
-                        handle,
-                        state.resource_id,
-                        state.playing,
-                        state.looped,
-                        state.position_ms,
-                        state.volume
-                    ));
-                }
-            }
+                let window = self.report.ui_state.scene.message_window.clone();
+                let visible = window.visible;
+                let speaker = window
+                    .speaker
+                    .as_deref()
+                    .filter(|speaker| !speaker.is_empty())
+                    .unwrap_or("Narrator")
+                    .to_owned();
+                let text_lines = window
+                    .text
+                    .lines()
+                    .map(|line| line.to_owned())
+                    .collect::<Vec<_>>();
+                let backlog = window.backlog.clone();
+                let choices = window.choices.clone();
+                egui::Frame::group(ui.style())
+                    .fill(ui.visuals().window_fill())
+                    .show(ui, |ui| {
+                        ui.set_min_height(260.0);
+                        ui.vertical(|ui| {
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new(&speaker).strong().size(18.0));
+                                ui.separator();
+                                ui.label(format!("lines: {}", backlog.len()));
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        if ui
+                                            .button(if self.message_history_open {
+                                                "Hide History"
+                                            } else {
+                                                "Show History"
+                                            })
+                                            .clicked()
+                                        {
+                                            self.message_history_open = !self.message_history_open;
+                                        }
+                                        if ui
+                                            .button(if visible { "Hide" } else { "Show" })
+                                            .clicked()
+                                        {
+                                            self.report.ui_state.scene.message_window.visible =
+                                                !visible;
+                                        }
+                                    },
+                                );
+                            });
+                            ui.add_space(6.0);
+                            ui.separator();
+                            if visible {
+                                egui::ScrollArea::vertical()
+                                    .id_salt("message_window_text")
+                                    .max_height(160.0)
+                                    .show(ui, |ui| {
+                                        if text_lines.is_empty() {
+                                            ui.label("...");
+                                        } else {
+                                            for line in &text_lines {
+                                                ui.label(line);
+                                            }
+                                        }
+                                    });
+                            } else {
+                                ui.label(egui::RichText::new("Message window hidden.").italics());
+                            }
 
-            ui.add_space(12.0);
-            ui.heading("Summary");
-            ui.label(format!(
-                "events processed: {}",
-                self.report.execution.outcomes.len()
-            ));
-            if let Some((_, outcome)) = self.report.execution.outcomes.last() {
-                ui.monospace(format!("{outcome:?}"));
-            }
+                            if !choices.is_empty() {
+                                ui.add_space(8.0);
+                                ui.separator();
+                                ui.label(egui::RichText::new("Choices").strong());
+                                ui.horizontal_wrapped(|ui| {
+                                    for choice in &choices {
+                                        let selected = self
+                                            .selected_choice
+                                            .as_deref()
+                                            .is_some_and(|selected| selected == choice.id);
+                                        let response = ui.add_enabled(
+                                            choice.enabled,
+                                            egui::Button::new(choice.label.clone())
+                                                .selected(selected),
+                                        );
+                                        if response.clicked() {
+                                            self.apply_choice(choice);
+                                        }
+                                    }
+                                });
+                            }
 
-            ui.add_space(8.0);
-            if ui.button("Close").clicked() {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-            }
-            ui.add_space(8.0);
-            if self.report.ui_state.window.close_requested {
-                ui.label("Frontend run completed.");
-            }
+                            if self.message_history_open && !backlog.is_empty() {
+                                ui.add_space(8.0);
+                                ui.separator();
+                                ui.label(egui::RichText::new("Backlog").strong());
+                                egui::ScrollArea::vertical()
+                                    .id_salt("message_window_backlog")
+                                    .max_height(100.0)
+                                    .show(ui, |ui| {
+                                        for (index, line) in backlog.iter().enumerate() {
+                                            ui.label(format!("{:02}. {}", index + 1, line));
+                                        }
+                                    });
+                            }
+                        });
+                    });
+            });
         });
 
         if self.auto_close && !self.close_sent {
