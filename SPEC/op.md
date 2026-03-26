@@ -235,6 +235,11 @@ debug buildで必ずチェック
 文字列じゃなく 整数ID
 （ここ外すとVMが一気に重くなる）
 
+6.5 error handle
+- devided zeroなど
+- Errorを保管する場所
+- Errorをトラップする場所
+
 7. 最終まとめ（Rust向け）
 
 opcode = u8
