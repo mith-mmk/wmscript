@@ -173,49 +173,49 @@ Toolchain
 1. VM実装
 2.1 外部公開API（crate）
 
- VM生成API
+ [+] VM生成API
 
- Vm::new(config)
+ [+] Vm::new(config)
 
- 実行API
+ [+] 実行API
 
- vm.run_frame(step_limit)
+ [+] vm.run_frame(step_limit)
 
- worker操作
+ [+] worker操作（send / recv）
 
- spawn / send / recv
+ [+] send / recv
 
  asset/stateアクセスAPI
 
 2.2 内部コア構造
 
- Value enum実装（int/float/string/handleなど）
+ [+] Value enum実装（int/float/string/handleなど）
 
- Stack構造
+ [+] Stack構造
 
- Frame構造
+ [+] Frame構造
 
- VM struct（stack / frames / heap / pc）
+ [+] VM struct（stack / frames / heap / pc）
 
 2.3 デコーダ
 
- バイトコード → Op enum変換
+ [+] バイトコード → Op enum変換
 
- little endian読み込み統一
+ [+] little endian読み込み統一
 
- 命令長テーブル or decode内管理
+ [+] 命令長テーブル or decode内管理
 
 2.4 実行ループ
 
- match dispatchループ実装
+ [+] match dispatchループ実装
 
- CALL / RETURN処理
+ [+] CALL / RETURN処理
 
- CALL_HOST処理
+ [+] CALL_HOST処理
 
- JUMP系処理
+ [+] JUMP系処理
 
- stack操作安全チェック（debug）
+ [+] stack操作安全チェック（debug）
 
 2.5 ワーカーモデル
 
@@ -237,11 +237,11 @@ Toolchain
 
 2.7 Host API
 
- host_idテーブル
+ [+] host_idテーブル
 
- call_hostディスパッチ
+ [+] call_hostディスパッチ
 
- capabilityチェック
+ [+] capabilityチェック
 
 2.8 WebAssembly対応
 
@@ -254,15 +254,15 @@ Toolchain
 1. VMテスト
 3.1 命令テスト
 
- 全opcode単体テスト
+ [+] 全opcode単体テスト
 
- stack挙動テスト
+ [+] stack挙動テスト
 
- jump整合性テスト
+ [+] jump整合性テスト
 
 3.2 実行テスト
 
- 関数呼び出し
+ [+] 関数呼び出し
 
  再帰制限確認
 
@@ -270,7 +270,7 @@ Toolchain
 
 3.3 ワーカー
 
- send/recvテスト
+ [+] send/recvテスト
 
  非同期動作確認
 
@@ -379,6 +379,9 @@ Toolchain
 
  JS bridge
 
+10.4 paintcore+WML実装
+- https://github.com/mith-mmk/wasm-paint
+
 11. ext APIサンプル
 
  ext.fs
@@ -415,6 +418,10 @@ Toolchain
  セーブ/ロード整合確認
 
 13．拡張機能
+13.1 FFIラッパー
+- C/C++, .net, node, pythonからも呼べる様にする
+- Unity統合
+- Unreal Engineに統合
 
 ```
 依存関係（重要）
@@ -425,7 +432,7 @@ Toolchain
         サンプル/UI
 ```
 
-14. ランタイムの作成
+13.2.  ランタイムの作成
     - ランタイムは素のランタイムと有料ランタイムを作る
 
 14.1 ランタイムは以下の追加機能を追加させる。そのための薄いラッパーを被せること
