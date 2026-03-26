@@ -1,0 +1,8 @@
+worker engine {
+    send 2, "show", "Narrator", "The engine worker streams dialogue without touching window state.", "choices", "prologue", "chapter_1", "chapter_2";
+}
+
+worker ui {
+    recv();
+    return "UI worker owns the message window.";
+}

@@ -6,6 +6,8 @@
   - Host-driven input sample that returns a string from the runtime bridge.
 - `workercomm/`
   - Two-worker message passing sample.
+- `engineworker/`
+  - Engine/UI worker split sample that streams dialogue commands to the UI worker.
 - `assetload/`
   - Runtime archive and resource loading sample.
 - `imageaudio/`
