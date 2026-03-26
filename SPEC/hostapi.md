@@ -1,4 +1,11 @@
 全体像
+## 責務
+- VM から呼べる host API の分類、ID 呼び出し、capability 制御を定義する。
+- ResourceManager / StateManager / UI / AsyncIO の接続点を定義する。
+
+## 依存
+- VM からの呼び出し形式は [SPEC/vm.md](vm.md) の `CALL_HOST` に依存する。
+- リソース handle と request の区別は [SPEC/resource.md](resource.md) に依存する。
 
 最終形の関係はこうです。
 

@@ -9,11 +9,11 @@
 　- 問題点や曖昧な仕様はissue.mdで管理
 
 0. Crate分割
-    - [ ] .gitignoreの整理
-    - [ ] Workflowの作成
-    - [ ] 以下のcrateの作成 cargo new
-    - [ ] buildチェーンの作成(releasesに保管)
-    - [ ] VMにwasmとeguiの実装で異なる部分を吸収可能なモジュールを実装
+    - [+] .gitignoreの整理
+    - [+] Workflowの作成
+    - [+] 以下のcrateの作成 cargo new
+    - [+] buildチェーンの作成(releasesに保管)
+    - [+] VMにwasmとeguiの実装で異なる部分を吸収可能なモジュールを実装
 
 ```
 
@@ -25,7 +25,7 @@ WMLVM
 ├─ memory / GC
 ├─ verifier
 
-1. ホスト統合系（Engine Bridge,  crate.ioに公開予定）
+2. ホスト統合系（Engine Bridge,  crate.ioに公開予定）
 WMLHost
 ├─ HostAPI
 ├─ ResourceManager
@@ -33,7 +33,7 @@ WMLHost
 ├─ Audio/Image/UI
 ├─ AsyncIO
 
-1. コンパイラ系（Script Toolchain, githubのみ, npmかも）
+3. コンパイラ系（Script Toolchain, githubのみ, npmかも）
 
 WMLCompiler
 ├─ parser
@@ -86,13 +86,13 @@ Toolchain
 1.1 ドキュメント構造分割
 
   仕様を以下の単位に分割
- - [ ] 言語仕様（WMLScript）
- - [ ] VM仕様
- - [ ] バイトコード仕様
- - [ ] アーカイブ仕様
- - [ ] ホストAPI仕様
- - [ ] 各仕様に責務コメント追加（何を定義するか明記）
- - [ ] 各仕様間の依存関係を明文化（例：VM→バイトコード）
+ - [+] 言語仕様（WMLScript）
+ - [+] VM仕様
+ - [+] バイトコード仕様
+ - [+] アーカイブ仕様
+ - [+] ホストAPI仕様
+ - [+] 各仕様に責務コメント追加（何を定義するか明記）
+ - [+] 各仕様間の依存関係を明文化（例：VM→バイトコード）
 
 1.2 相互リンク整理
 
@@ -116,9 +116,59 @@ Toolchain
 
 1.4 TODO整理
 
- - TODOを機能単位に分解
- - 各TODOに「入力」「出力」「完了条件」を付与
- - 実装依存順に並び替え
+ - 整理方針
+   - 上流から下流へ並べる
+   - 1項目は1成果物に絞る
+   - 各TODOに「入力」「出力」「完了条件」を付与する
+ - 実装順のバックログ
+   - [ ] 仕様固定の最終確認
+     - 入力: `SPEC/language.md`, `SPEC/vm.md`, `SPEC/op.md`, `SPEC/hostapi.md`, `SPEC/resource.md`, `SPEC/archive.md`, `SPEC/scheduler.md`
+     - 出力: 仕様間リンクと依存関係が明文化された状態
+     - 完了条件: 仕様の矛盾が `SPEC/issue.md` に切り出され、実装前提が確定する
+   - [ ] VMコア最小型の定義
+     - 入力: `SPEC/vm.md`, `SPEC/op.md`
+     - 出力: `Value`, `Stack`, `Frame`, `VmConfig`, `Vm`
+     - 完了条件: 型定義だけで `cargo check` が通り、VMの骨格が共有できる
+   - [ ] バイトコードデコード層
+     - 入力: opcode表、bytecode buffer
+     - 出力: `Op` enum への decode 関数、little endian 読み取りヘルパ
+     - 完了条件: invalid opcode / eof / endian の単体テストが揃う
+   - [ ] VM実行ループ
+     - 入力: `Op`, `Vm`, `HostRegistry`
+     - 出力: `run_frame`、`CALL/RETURN/JUMP/CALL_HOST` の実装
+     - 完了条件: 基本命令列の実行テストが通る
+   - [ ] worker と scheduler
+     - 入力: `Vm`, message queue, sleep/request state
+     - 出力: worker state machine、step budget scheduler
+     - 完了条件: `spawn/run/destroy` と `yield/sleep/recv` の遷移が確認できる
+   - [ ] Host API ブリッジ
+     - 入力: host_id table、capability table
+     - 出力: host dispatch、権限制御、mock interface
+     - 完了条件: `CALL_HOST` のモックテストが書ける
+   - [ ] Verifier
+     - 入力: bytecode module、func table、const table、jump targets、host_id table
+     - 出力: 検証結果、エラー分類
+     - 完了条件: 不正 opcode / 範囲外 jump / 無効 host_id を検出できる
+   - [ ] VMテスト
+     - 入力: 命令列、VM状態、host mock
+     - 出力: opcode 単体テスト、実行テスト、worker テスト
+     - 完了条件: `cargo test --workspace` が安定して通る
+   - [ ] Ext API 基盤
+     - 入力: host registry、namespace policy
+     - 出力: ext_id 割当、namespace 管理
+     - 完了条件: `ext.*` の名前解決がコンパイル時 ID に落ちる
+   - [ ] コンパイラ基盤
+     - 入力: AST/IR 方針、import 解決規則
+     - 出力: parser、resolver、IR の骨格
+     - 完了条件: 静的 import 解決と symbol table の流れが作れる
+   - [ ] アーカイブ / リソース基盤
+     - 入力: manifest、section table、resource id policy
+     - 出力: archive encode/decode、verify、resource handle の橋渡し
+     - 完了条件: bundle load までの経路が仕様で閉じる
+   - [ ] UI / サンプル / ランタイム
+     - 入力: host UI/audio/image API、VM と compiler の成果物
+     - 出力: サンプルスクリプト、総合サンプル、runtime wrapper
+     - 完了条件: end-to-end の最小例が説明できる
 
 1. VM実装
 2.1 外部公開API（crate）

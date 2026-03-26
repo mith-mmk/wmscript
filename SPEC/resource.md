@@ -1,3 +1,11 @@
+## 責務
+- ResourceId / handle / request の分離を定義する。
+- アーカイブ由来の資産を VM に安全に渡す手続きを定義する。
+
+## 依存
+- アセット供給元は [SPEC/archive.md](archive.md) に依存する。
+- host API の待機・完了通知は [SPEC/hostapi.md](hostapi.md) に依存する。
+
 1. リソース管理の役割
 
 リソースは単なるファイルではなく、VMから見るとこうなります：

@@ -1,4 +1,12 @@
 # アーカイブ設計（VM統合前提）
+## 責務
+- パッケージング、整合性検証、署名検証、任意暗号化を定義する。
+- VM と ResourceManager がロードする配布単位を定義する。
+
+## 依存
+- module と bytecode の検証は [SPEC/vm.md](vm.md) と [SPEC/op.md](op.md) に依存する。
+- asset / string / manifest の意味は [SPEC/resource.md](resource.md) に依存する。
+
 1. 目的
 
 アーカイブ層の責務を最終的にこう固定します。

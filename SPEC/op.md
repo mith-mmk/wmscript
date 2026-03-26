@@ -1,4 +1,12 @@
 # オペコード
+## 責務
+- VM が解釈する opcode 番号と operand 形式を定義する。
+- デコードと実行ループの共通言語を定義する。
+
+## 依存
+- 実行時の意味は [SPEC/vm.md](vm.md) に依存する。
+- `CALL_HOST` の host_id 定義は [SPEC/hostapi.md](hostapi.md) に依存する。
+
 オペコード一覧（Rust VM用）
 0. 基本設計
 

@@ -1,4 +1,13 @@
 # VM仕様設計案（実装前提の形）
+## 責務
+- VM の実行モデル、値表現、フレーム、ヒープ、メッセージキュー、検証器を定義する。
+- 命令実行と worker 状態遷移の境界を定義する。
+
+## 依存
+- 命令表現は [SPEC/op.md](op.md) に依存する。
+- `CALL_HOST` の契約は [SPEC/hostapi.md](hostapi.md) に依存する。
+- worker の実行制御は [SPEC/scheduler.md](scheduler.md) に依存する。
+
 1. 設計目標
 
 まずVMの責務を絞ります。

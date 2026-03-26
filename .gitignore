@@ -1,4 +1,6 @@
 _test*
 .env
 releases
+target
+Cargo.lock
 

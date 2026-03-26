@@ -1,0 +1,9 @@
+[package]
+name = "wmlcompiler"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+wmlbytecode = { path = "../wmlbytecode" }
+wmlplatform = { path = "../wmlplatform" }
+

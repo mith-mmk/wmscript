@@ -1,0 +1,17 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/wmlarchive",
+    "crates/wmlbytecode",
+    "crates/wmlcompiler",
+    "crates/wmlhost",
+    "crates/wmlplatform",
+    "crates/wmlresource",
+    "crates/wmlvm",
+]
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+publish = false
+
