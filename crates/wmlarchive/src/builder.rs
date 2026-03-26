@@ -1,8 +1,8 @@
 #![forbid(unsafe_code)]
 
 use crate::{
-    ArchiveError, ArchiveSection, FixedHeader, Manifest, Result, SectionEntry, SectionId,
-    SectionKind, SecurityHeader, digest_section,
+    ArchiveError, ArchiveSection, ArchiveSigner, FixedHeader, Manifest, Result, SectionEntry,
+    SectionId, SectionKind, SecurityHeader, digest_section,
 };
 
 fn write_u16(dst: &mut Vec<u8>, value: u16) {
@@ -55,6 +55,15 @@ fn align_up(value: usize, align: usize) -> usize {
     (value + mask) & !mask
 }
 
+fn patch_u64(bytes: &mut [u8], offset: usize, value: u64) -> Result<()> {
+    let end = offset.checked_add(8).ok_or(ArchiveError::BrokenLayout)?;
+    let slice = bytes
+        .get_mut(offset..end)
+        .ok_or(ArchiveError::BrokenLayout)?;
+    slice.copy_from_slice(&value.to_le_bytes());
+    Ok(())
+}
+
 /// Builder used to emit archive bytes.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ArchiveBuilder {
@@ -87,6 +96,24 @@ impl ArchiveBuilder {
             payload: manifest.encode(),
         });
         self
+    }
+
+    pub fn build_signed(self, signer: &ArchiveSigner) -> Result<Vec<u8>> {
+        let mut builder = self.clone();
+        let signer_security = signer.security_header();
+        builder.security.security_version = signer_security.security_version;
+        builder.security.sig_alg = signer_security.sig_alg;
+        builder.security.hash_alg = signer_security.hash_alg;
+        builder.security.enc_alg = signer_security.enc_alg;
+        builder.security.key_id = signer_security.key_id;
+        let mut bytes = builder.build()?;
+        let signature = signer.sign(&bytes);
+        let signature_offset = bytes.len() as u64;
+        let signature_size = signature.len() as u64;
+        patch_u64(&mut bytes, 48, signature_offset)?;
+        patch_u64(&mut bytes, 56, signature_size)?;
+        bytes.extend_from_slice(&signature);
+        Ok(bytes)
     }
 
     pub fn build(self) -> Result<Vec<u8>> {
@@ -299,6 +326,10 @@ impl<'a> Archive<'a> {
         self.security
     }
 
+    pub fn bytes(&self) -> &'a [u8] {
+        self.data
+    }
+
     pub fn sections(&self) -> &[SectionEntry] {
         &self.sections
     }
@@ -328,6 +359,16 @@ impl<'a> Archive<'a> {
             Some(bytes) => Ok(Some(Manifest::decode(bytes)?)),
             None => Ok(None),
         }
+    }
+
+    pub fn signature_bytes(&self) -> Option<&'a [u8]> {
+        let size = self.header.signature_size as usize;
+        if size == 0 {
+            return None;
+        }
+        let start = self.header.signature_offset as usize;
+        let end = start.checked_add(size)?;
+        self.data.get(start..end)
     }
 
     pub fn verify_layout(&self) -> Result<()> {
@@ -382,6 +423,14 @@ impl<'a> Archive<'a> {
         }
         Ok(())
     }
+
+    pub fn verify_signature(&self, keyring: &crate::KeyRing) -> Result<()> {
+        crate::ArchiveVerifier::new(keyring).verify(self)
+    }
+
+    pub fn unpack(&self) -> Result<crate::ArchiveBundle> {
+        crate::ArchiveBundle::from_archive(self)
+    }
 }
 
 #[cfg(test)]
@@ -416,5 +465,34 @@ mod tests {
             SectionKind::Manifest
         );
         assert!(archive.manifest().expect("manifest").is_some());
+    }
+
+    #[test]
+    fn signed_archive_verifies_with_keyring() {
+        let manifest = ManifestBuilder::new("signed", 7, 9).build();
+        let signer = ArchiveSigner::new([1; 16], b"secret");
+        let bytes = ArchiveBuilder::new()
+            .push_manifest(1, &manifest)
+            .build_signed(&signer)
+            .expect("build signed archive");
+        let archive = Archive::decode(&bytes).expect("decode archive");
+        let mut keyring = crate::KeyRing::new();
+        keyring.register(crate::SigningKey::new([1; 16], b"secret"));
+        assert!(archive.verify_signature(&keyring).is_ok());
+    }
+
+    #[test]
+    fn archive_unpacks_sections() {
+        let manifest = ManifestBuilder::new("unpack", 11, 22).build();
+        let bytes = ArchiveBuilder::new()
+            .push_section(ArchiveSection::new(2, SectionKind::Module, vec![1, 2, 3]))
+            .push_manifest(1, &manifest)
+            .build()
+            .expect("build archive");
+        let archive = Archive::decode(&bytes).expect("decode archive");
+        let bundle = archive.unpack().expect("unpack archive");
+        assert_eq!(bundle.sections().len(), 2);
+        assert!(bundle.manifest().is_some());
+        assert_eq!(bundle.asset_sections().count(), 0);
     }
 }

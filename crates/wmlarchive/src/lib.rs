@@ -5,13 +5,17 @@
 mod builder;
 mod error;
 mod manifest;
+mod security;
 mod types;
+mod unpacker;
 
 pub use builder::Archive;
 pub use builder::*;
 pub use error::*;
 pub use manifest::*;
+pub use security::*;
 pub use types::*;
+pub use unpacker::*;
 
 use wmlplatform::PlatformProfile;
 

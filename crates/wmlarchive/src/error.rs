@@ -13,6 +13,10 @@ pub enum ArchiveError {
     UnexpectedEof,
     BrokenLayout,
     DuplicateSectionId(SectionId),
+    MissingSignature,
+    UnsupportedSignatureAlgorithm(u16),
+    UnknownKeyId([u8; 16]),
+    SignatureMismatch,
     SectionOutOfRange {
         section_id: SectionId,
         offset: u64,
@@ -32,6 +36,12 @@ impl fmt::Display for ArchiveError {
             Self::UnexpectedEof => f.write_str("unexpected end of archive"),
             Self::BrokenLayout => f.write_str("broken archive layout"),
             Self::DuplicateSectionId(section_id) => write!(f, "duplicate section id: {section_id}"),
+            Self::MissingSignature => f.write_str("missing archive signature"),
+            Self::UnsupportedSignatureAlgorithm(alg) => {
+                write!(f, "unsupported signature algorithm: {alg}")
+            }
+            Self::UnknownKeyId(key_id) => write!(f, "unknown key id: {key_id:?}"),
+            Self::SignatureMismatch => f.write_str("signature mismatch"),
             Self::SectionOutOfRange {
                 section_id,
                 offset,
