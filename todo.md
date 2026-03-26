@@ -386,7 +386,7 @@ Toolchain
 
 11. ext APIサンプル
 
- ext.fs
+ [+] ext.fs
 
  ext.net // ネットワークダウンロード, ネットワークアクセス
 

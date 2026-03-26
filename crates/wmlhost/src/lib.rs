@@ -15,6 +15,18 @@ pub type HostId = u16;
 /// Capability bitmask for host functions.
 pub type CapabilityMask = u32;
 
+/// Capability bit used for file system access.
+pub const CAP_FILE_SYSTEM: CapabilityMask = 1 << 0;
+
+/// Capability bit used for async I/O.
+pub const CAP_ASYNC_IO: CapabilityMask = 1 << 1;
+
+/// Capability bit used for GUI access.
+pub const CAP_GUI: CapabilityMask = 1 << 2;
+
+/// Capability bit used for web-compat behavior.
+pub const CAP_WEB_COMPAT: CapabilityMask = 1 << 3;
+
 /// Metadata attached to a host function.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct HostFunction {

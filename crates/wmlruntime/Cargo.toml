@@ -7,6 +7,7 @@ edition = "2024"
 wmlarchive = { path = "../wmlarchive" }
 wmlbytecode = { path = "../wmlbytecode" }
 wmlhost = { path = "../wmlhost" }
+wmlext = { path = "../wmlext" }
 wmlplatform = { path = "../wmlplatform" }
 wmlresource = { path = "../wmlresource" }
 wmlverifier = { path = "../wmlverifier" }
