@@ -9,7 +9,9 @@ use std::collections::BTreeMap;
 use std::convert::TryFrom;
 use std::fmt;
 
-use wmlbytecode::{Op, Opcode, encode_op};
+mod expr;
+
+use wmlbytecode::Opcode;
 use wmlplatform::PlatformProfile;
 use wmlvm::{Function as VmFunction, Program as VmProgram, Value as VmValue};
 
@@ -959,33 +961,8 @@ fn last_path_segment(path: &str) -> &str {
 }
 
 fn lower_function_body(body: &str, program: &mut VmProgram) -> Result<Vec<u8>> {
-    let statement = body
-        .trim()
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty() && !line.starts_with("//"))
-        .collect::<Vec<_>>()
-        .join(" ");
-    let statement = statement.trim().trim_end_matches(';').trim();
-    if statement.is_empty() || statement == "return" {
-        return Ok(vec![Opcode::Return as u8]);
-    }
-    if let Some(expr) = statement.strip_prefix("return") {
-        let expr = expr.trim();
-        if expr.is_empty() {
-            return Ok(vec![Opcode::Return as u8]);
-        }
-        let value = parse_literal_value(expr)?;
-        let const_id = program.push_constant(value);
-        let mut code = Vec::new();
-        encode_op(&Op::PushConst(const_id), &mut code);
-        encode_op(&Op::Return, &mut code);
-        return Ok(code);
-    }
-
-    Err(CompileError::UnsupportedExpression {
-        source: statement.to_owned(),
-    })
+    let (code, _type_tag) = expr::compile_return_body(body, program)?;
+    Ok(code)
 }
 
 fn parse_literal_value(source: &str) -> Result<VmValue> {
