@@ -1,6 +1,7 @@
 # How To Use
 
-This document mirrors the contents of `samples/` and the runtime examples used in this workspace.
+This document mirrors the contents of `samples/` and the runtime/toolchain
+examples used in this workspace.
 
 ## Samples
 
@@ -143,7 +144,40 @@ cargo run -p wmlruntime --example asset_load
 cargo run -p wmlruntime --example easynovel
 ```
 
-### Host Function Example
+## Toolchain
+
+`wmltoolchain` compiles a WML script into a packaged archive and can optionally
+bundle assets into the output.
+
+Command line:
+
+```bash
+wmltoolchain <script.wml> [--package NAME] [--out FILE] [--step-limit N] [--platform native|wasm|egui] [--release] [--asset NAME=PATH]
+```
+
+Behavior:
+
+- `script.wml` is the input source file.
+- `--package NAME` overrides the package name. If omitted, the package name is
+  derived from the script file stem.
+- `--out FILE` writes the generated archive to a custom path. If omitted, the
+  output defaults to `<script>.warc`.
+- `--step-limit N` sets the VM step limit used by the toolchain config.
+- `--platform native|wasm|egui` selects the platform profile.
+- `--release` enables release mode in the toolchain config.
+- `--asset NAME=PATH` adds a packaged asset. Pass the flag multiple times to
+  include more than one asset.
+
+Examples:
+
+```bash
+cargo run -p wmltoolchain -- samples/helloworld/main.wml
+cargo run -p wmltoolchain -- samples/helloworld/main.wml --out samples/helloworld/main.warc
+cargo run -p wmltoolchain -- samples/easynovel/main.wml --package easynovel --platform native --step-limit 256
+cargo run -p wmltoolchain -- samples/easynovel/main.wml --package easynovel --out build/easynovel.warc --asset ui/title=assets/title.bin
+```
+
+## Host Function Example
 
 `CALL_HOST` uses a host function registered on the runtime side.
 
@@ -153,7 +187,7 @@ runtime.register_host_function(wmlhost::HostFunction::new(1, 1, 1, 0), |args| {
 });
 ```
 
-### Archive And Resource Example
+## Archive And Resource Example
 
 - `Runtime::load_archive` loads a bundle into the runtime.
 - `ResourceManager` exposes resource state and handles.
@@ -164,4 +198,3 @@ runtime.register_host_function(wmlhost::HostFunction::new(1, 1, 1, 0), |args| {
 - The compiler currently handles a limited subset of WMLScript.
 - The examples in `samples/` are intentionally small and map to the runtime examples.
 - When adding a new sample, keep its README and the corresponding runtime example in sync.
-

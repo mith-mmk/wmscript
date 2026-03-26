@@ -5,8 +5,8 @@
 use core::fmt;
 
 use wmlarchive::{
-    ArchiveBuilder, ArchiveError, ArchiveSection, Manifest, ManifestBuilder,
-    ManifestResourceEntry, SectionDigest, SectionKind, Version, digest_section,
+    ArchiveBuilder, ArchiveError, ArchiveSection, Manifest, ManifestBuilder, ManifestResourceEntry,
+    SectionDigest, SectionKind, Version, digest_section,
 };
 use wmlcompiler::{CompileError, Compiler, CompilerConfig, ModuleCatalog};
 use wmlplatform::PlatformProfile;
@@ -299,8 +299,11 @@ impl Toolchain {
         builder = builder.push_section(module);
 
         for asset in &project.assets {
-            let mut section =
-                ArchiveSection::new(asset.section_id, SectionKind::Asset, encode_resource_payload(asset));
+            let mut section = ArchiveSection::new(
+                asset.section_id,
+                SectionKind::Asset,
+                encode_resource_payload(asset),
+            );
             section.flags = asset.flags;
             section.align = asset.align;
             section.name_hash = asset.name_hash();
