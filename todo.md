@@ -161,7 +161,7 @@ Toolchain
      - 入力: AST/IR 方針、import 解決規則
      - 出力: parser、resolver、IR の骨格
      - 完了条件: 静的 import 解決と symbol table の流れが作れる
-   - [ ] アーカイブ / リソース基盤
+   - [+] アーカイブ / リソース基盤
      - 入力: manifest、section table、resource id policy
      - 出力: archive encode/decode、verify、resource handle の橋渡し
      - 完了条件: bundle load までの経路が仕様で閉じる
@@ -339,9 +339,9 @@ Toolchain
 8. アーカイバ
 8.1 基本
 
- bundle構造生成
+ [+] bundle構造生成
 
- manifest生成
+ [+] manifest生成
 
  ネットワークダウンロードに対応するためのファイル配置の最適化
 

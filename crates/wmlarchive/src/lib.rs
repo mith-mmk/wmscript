@@ -1,24 +1,28 @@
 #![forbid(unsafe_code)]
 
 //! Archive and bundle support for WML distributions.
-//!
-//! The archive crate will later manage packaging, verification, and optional
-//! signing. The initial scaffold keeps the dependency surface available to the
-//! rest of the workspace.
+
+mod builder;
+mod error;
+mod manifest;
+mod types;
+
+pub use builder::Archive;
+pub use builder::*;
+pub use error::*;
+pub use manifest::*;
+pub use types::*;
 
 use wmlplatform::PlatformProfile;
 
 /// Archive metadata shared with packaging tools.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ArchivePlan {
-    /// Target runtime profile.
     pub platform: PlatformProfile,
-    /// Whether the output should be optimized for release builds.
     pub release: bool,
 }
 
 impl ArchivePlan {
-    /// Creates a new archive plan.
     pub const fn new(platform: PlatformProfile, release: bool) -> Self {
         Self { platform, release }
     }
