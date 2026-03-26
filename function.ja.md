@@ -106,6 +106,41 @@ export func main() {
 | --- | --- | --- | --- |
 | `ext.llm.generate` | `generate(prompt: string)` | `string` | 設定済みの LLM バックエンドへプロンプトを送信します。 |
 
+### 3.5 `ext.image`
+
+必要 capability: `CAP_GUI`
+
+| 関数 | シグネチャ | 戻り値 | 説明 |
+| --- | --- | --- | --- |
+| `ext.image.load` | `load(resource_id: int)` | `handle \| request_id` | 画像リソースを読み込み、準備済みなら handle を返します。 |
+| `ext.image.info` | `info(handle)` | `table` | resource id / type / size / state のメタデータを返します。 |
+| `ext.image.status` | `status(handle)` | `int` | 数値の resource state code を返します。 |
+| `ext.image.release` | `release(handle)` | `bool` | 画像 handle を解放します。 |
+
+### 3.6 `ext.audio`
+
+必要 capability: `CAP_ASYNC_IO`
+
+| 関数 | シグネチャ | 戻り値 | 説明 |
+| --- | --- | --- | --- |
+| `ext.audio.load` | `load(resource_id: int)` | `handle \| request_id` | 音声リソースを読み込み、準備済みなら handle を返します。 |
+| `ext.audio.play` | `play(handle, loop=false)` | `bool` | 再生を開始または再開します。 |
+| `ext.audio.pause` | `pause(handle)` | `bool` | 再生を一時停止します。 |
+| `ext.audio.stop` | `stop(handle)` | `bool` | 再生を停止して先頭へ戻します。 |
+| `ext.audio.seek` | `seek(handle, position_ms)` | `bool` | 再生位置を移動します。 |
+| `ext.audio.volume` | `volume(handle, value)` | `bool` | 再生音量を更新します。 |
+| `ext.audio.status` | `status(handle)` | `int` | 現在の再生状態コードを返します。 |
+| `ext.audio.release` | `release(handle)` | `bool` | 音声 handle を解放します。 |
+
+### 3.7 `ext.vm`
+
+必要 capability: なし
+
+| 関数 | シグネチャ | 戻り値 | 説明 |
+| --- | --- | --- | --- |
+| `ext.vm.save` | `save(slot: int)` | `bool` | ランタイムのチェックポイントをメモリに保存します。 |
+| `ext.vm.load` | `load(slot: int)` | `bool` | 以前保存したチェックポイントを復元します。 |
+
 ## 4. VM レベルの実行プリミティブ
 
 これは表層の「関数」ではなく VM の opcode ですが、実行モデルを読む際に重要です。
@@ -130,4 +165,3 @@ export func main() {
 - `samples/workercomm`
 - `samples/assetload`
 - `samples/easynovel`
-

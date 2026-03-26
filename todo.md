@@ -396,6 +396,12 @@ Toolchain
 
  [+] ext.llm  llama-cpp +  0.6B-0.8Bの軽量LLM([qwen3](https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/blob/main/Qwen3.5-0.8B-Q8_0.gguf))で人工無能
 
+ [+] ext.image
+
+ [+] ext.audio
+
+ [+] ext.vm(save, load)
+
 12. 総合サンプル
 12.1 フロント
  [+] メニューUI（セーブ/ロード）

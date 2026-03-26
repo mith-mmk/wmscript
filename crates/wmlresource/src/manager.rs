@@ -291,6 +291,10 @@ impl ResourceManager {
             .state)
     }
 
+    pub fn resource_id(&self, handle: Handle) -> ResourceResult<ResourceId> {
+        self.handle_table.resolve(handle)
+    }
+
     pub fn entry(&self, resource_id: ResourceId) -> Option<&ResourceEntry> {
         self.entries.get(&resource_id)
     }

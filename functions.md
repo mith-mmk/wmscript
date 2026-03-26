@@ -106,6 +106,41 @@ Requires: `CAP_ASYNC_IO`
 | --- | --- | --- | --- |
 | `ext.llm.generate` | `generate(prompt: string)` | `string` | Sends a prompt to the configured LLM backend. |
 
+### 3.5 `ext.image`
+
+Requires: `CAP_GUI`
+
+| Function | Signature | Returns | Notes |
+| --- | --- | --- | --- |
+| `ext.image.load` | `load(resource_id: int)` | `handle \| request_id` | Loads an image resource and returns a handle when ready. |
+| `ext.image.info` | `info(handle)` | `table` | Returns resource id, type, size, and state metadata. |
+| `ext.image.status` | `status(handle)` | `int` | Returns a numeric resource state code. |
+| `ext.image.release` | `release(handle)` | `bool` | Releases the image handle. |
+
+### 3.6 `ext.audio`
+
+Requires: `CAP_ASYNC_IO`
+
+| Function | Signature | Returns | Notes |
+| --- | --- | --- | --- |
+| `ext.audio.load` | `load(resource_id: int)` | `handle \| request_id` | Loads an audio resource and returns a handle when ready. |
+| `ext.audio.play` | `play(handle, loop=false)` | `bool` | Starts or resumes playback. |
+| `ext.audio.pause` | `pause(handle)` | `bool` | Pauses playback. |
+| `ext.audio.stop` | `stop(handle)` | `bool` | Stops playback and rewinds to the beginning. |
+| `ext.audio.seek` | `seek(handle, position_ms)` | `bool` | Moves the playback cursor. |
+| `ext.audio.volume` | `volume(handle, value)` | `bool` | Updates playback volume. |
+| `ext.audio.status` | `status(handle)` | `int` | Returns the current playback state code. |
+| `ext.audio.release` | `release(handle)` | `bool` | Releases the audio handle. |
+
+### 3.7 `ext.vm`
+
+Requires: no capability
+
+| Function | Signature | Returns | Notes |
+| --- | --- | --- | --- |
+| `ext.vm.save` | `save(slot: int)` | `bool` | Stores a runtime checkpoint in memory. |
+| `ext.vm.load` | `load(slot: int)` | `bool` | Restores a previously stored checkpoint. |
+
 ## 4. VM-Level Execution Primitives
 
 These are VM opcodes rather than surface-language functions, but they are part of the
@@ -131,4 +166,3 @@ See:
 - `samples/workercomm`
 - `samples/assetload`
 - `samples/easynovel`
-

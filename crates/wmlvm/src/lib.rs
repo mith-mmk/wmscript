@@ -368,6 +368,21 @@ pub struct Vm {
     host_api: Box<dyn HostApi>,
 }
 
+/// Serializable snapshot of a VM worker.
+#[derive(Clone, Debug, PartialEq)]
+pub struct VmSnapshot {
+    pub config: VmConfig,
+    pub program: Program,
+    pub stack: Vec<Value>,
+    pub globals: Vec<Value>,
+    pub call_stack: Vec<Frame>,
+    pub current_frame: Option<Frame>,
+    pub inbox: VecDeque<Message>,
+    pub outbox: VecDeque<Message>,
+    pub state: VmState,
+    pub last_return: Option<Value>,
+}
+
 impl Vm {
     pub fn new(config: VmConfig) -> Self {
         Self::with_host_api(config, NullHostApi)
@@ -447,6 +462,37 @@ impl Vm {
 
     pub fn set_host_api(&mut self, host_api: impl HostApi + 'static) {
         self.host_api = Box::new(host_api);
+    }
+
+    pub fn snapshot(&self) -> VmSnapshot {
+        VmSnapshot {
+            config: self.config.clone(),
+            program: self.program.clone(),
+            stack: self.stack.clone(),
+            globals: self.globals.clone(),
+            call_stack: self.call_stack.clone(),
+            current_frame: self.current_frame.clone(),
+            inbox: self.inbox.clone(),
+            outbox: self.outbox.clone(),
+            state: self.state.clone(),
+            last_return: self.last_return.clone(),
+        }
+    }
+
+    pub fn from_snapshot(snapshot: VmSnapshot, host_api: Box<dyn HostApi>) -> Self {
+        Self {
+            config: snapshot.config,
+            program: snapshot.program,
+            stack: snapshot.stack,
+            globals: snapshot.globals,
+            call_stack: snapshot.call_stack,
+            current_frame: snapshot.current_frame,
+            inbox: snapshot.inbox,
+            outbox: snapshot.outbox,
+            state: snapshot.state,
+            last_return: snapshot.last_return,
+            host_api,
+        }
     }
 
     pub fn push_message(&mut self, message: Message) {
@@ -1148,6 +1194,18 @@ pub struct Scheduler {
     next_worker_id: WorkerId,
 }
 
+/// Serializable snapshot of the scheduler and all workers.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SchedulerSnapshot {
+    pub workers: BTreeMap<WorkerId, VmSnapshot>,
+    pub runnable: VecDeque<WorkerId>,
+    pub waiting: BTreeSet<WorkerId>,
+    pub sleeping: BTreeSet<WorkerId>,
+    pub halted: BTreeSet<WorkerId>,
+    pub errors: BTreeMap<WorkerId, VmError>,
+    pub next_worker_id: WorkerId,
+}
+
 impl Scheduler {
     /// Creates an empty scheduler.
     pub fn new() -> Self {
@@ -1180,6 +1238,47 @@ impl Scheduler {
     /// Returns a mutable worker VM by id.
     pub fn worker_mut(&mut self, worker_id: WorkerId) -> Option<&mut Vm> {
         self.workers.get_mut(&worker_id)
+    }
+
+    /// Returns a serializable snapshot of the scheduler and all workers.
+    pub fn snapshot(&self) -> SchedulerSnapshot {
+        SchedulerSnapshot {
+            workers: self
+                .workers
+                .iter()
+                .map(|(worker_id, vm)| (*worker_id, vm.snapshot()))
+                .collect(),
+            runnable: self.runnable.clone(),
+            waiting: self.waiting.clone(),
+            sleeping: self.sleeping.clone(),
+            halted: self.halted.clone(),
+            errors: self.errors.clone(),
+            next_worker_id: self.next_worker_id,
+        }
+    }
+
+    /// Restores a scheduler from a snapshot.
+    pub fn from_snapshot(
+        snapshot: SchedulerSnapshot,
+        mut host_api_factory: impl FnMut(&VmConfig) -> Box<dyn HostApi>,
+    ) -> Self {
+        let workers = snapshot
+            .workers
+            .into_iter()
+            .map(|(worker_id, vm_snapshot)| {
+                let host_api = host_api_factory(&vm_snapshot.config);
+                (worker_id, Vm::from_snapshot(vm_snapshot, host_api))
+            })
+            .collect();
+        Self {
+            workers,
+            runnable: snapshot.runnable,
+            waiting: snapshot.waiting,
+            sleeping: snapshot.sleeping,
+            halted: snapshot.halted,
+            errors: snapshot.errors,
+            next_worker_id: snapshot.next_worker_id,
+        }
     }
 
     /// Returns the current state of a worker.

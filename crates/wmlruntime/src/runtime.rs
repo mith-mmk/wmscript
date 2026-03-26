@@ -9,10 +9,14 @@ use std::rc::Rc;
 use wmlarchive::{Archive, ArchiveError, Manifest};
 use wmlext::{ExtError, ExtensionFunctionSpec, ExtensionRegistry};
 use wmlhost::{
-    CAP_ASYNC_IO, CAP_FILE_SYSTEM, CAP_NETWORK, CapabilityMask, HostFunction, HostId, HostRegistry,
+    CAP_ASYNC_IO, CAP_FILE_SYSTEM, CAP_GUI, CAP_NETWORK, CapabilityMask, HostFunction, HostId,
+    HostRegistry,
 };
 use wmlplatform::PlatformProfile;
-use wmlresource::{ResourceError, ResourceManager};
+use wmlresource::{
+    Handle as ResourceHandle, LoadResult, ResourceError, ResourceManager, ResourceState,
+    ResourceType,
+};
 use wmlverifier::{VerificationError, verify_program};
 use wmlvm::{
     HostApi, HostError, Message, Program, RunOutcome, Scheduler, Value, Vm, VmConfig, WorkerId,
@@ -114,6 +118,24 @@ pub struct LoadedArchive {
     pub resources_loaded: usize,
 }
 
+#[derive(Clone, Debug, Default, PartialEq)]
+struct AudioPlaybackState {
+    resource_id: u32,
+    playing: bool,
+    looped: bool,
+    position_ms: u64,
+    volume: f32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct RuntimeCheckpoint {
+    scheduler: wmlvm::SchedulerSnapshot,
+    resources: ResourceManager,
+    loaded_archives: Vec<Manifest>,
+    debug_log: Vec<String>,
+    audio_states: BTreeMap<u64, AudioPlaybackState>,
+}
+
 struct HostHandler {
     meta: HostFunction,
     callback: Box<dyn FnMut(&[Value]) -> Result<Value, HostError>>,
@@ -203,21 +225,23 @@ impl HostApi for SharedHostApi {
 /// Headless runtime wrapper.
 pub struct Runtime {
     config: RuntimeConfig,
-    scheduler: Scheduler,
-    resources: ResourceManager,
+    scheduler: Rc<RefCell<Scheduler>>,
+    resources: Rc<RefCell<ResourceManager>>,
     host: Rc<RefCell<HostDispatcher>>,
     extensions: ExtensionRegistry,
     debug_log: Rc<RefCell<Vec<String>>>,
     net_backend: Rc<RefCell<Box<dyn NetBackend>>>,
     llm_backend: Rc<RefCell<Box<dyn LlmBackend>>>,
-    loaded_archives: Vec<Manifest>,
+    loaded_archives: Rc<RefCell<Vec<Manifest>>>,
+    audio_states: Rc<RefCell<BTreeMap<u64, AudioPlaybackState>>>,
+    checkpoints: Rc<RefCell<BTreeMap<u32, RuntimeCheckpoint>>>,
 }
 
 impl Runtime {
     pub fn new(config: RuntimeConfig) -> Self {
         Self {
-            scheduler: Scheduler::new(),
-            resources: ResourceManager::new(config.memory_limit),
+            scheduler: Rc::new(RefCell::new(Scheduler::new())),
+            resources: Rc::new(RefCell::new(ResourceManager::new(config.memory_limit))),
             host: Rc::new(RefCell::new(HostDispatcher::new(
                 config.platform,
                 config.capability_mask,
@@ -226,7 +250,9 @@ impl Runtime {
             debug_log: Rc::new(RefCell::new(Vec::new())),
             net_backend: Rc::new(RefCell::new(Box::new(DisabledNetBackend))),
             llm_backend: Rc::new(RefCell::new(Box::new(DisabledLlmBackend))),
-            loaded_archives: Vec::new(),
+            loaded_archives: Rc::new(RefCell::new(Vec::new())),
+            audio_states: Rc::new(RefCell::new(BTreeMap::new())),
+            checkpoints: Rc::new(RefCell::new(BTreeMap::new())),
             config,
         }
     }
@@ -268,9 +294,9 @@ impl Runtime {
         archive.verify_layout()?;
         archive.verify_manifest_digests()?;
         let manifest = archive.manifest()?;
-        let resources_loaded = self.resources.ingest_archive(&archive)?;
+        let resources_loaded = self.resources.borrow_mut().ingest_archive(&archive)?;
         if let Some(manifest) = &manifest {
-            self.loaded_archives.push(manifest.clone());
+            self.loaded_archives.borrow_mut().push(manifest.clone());
         }
         Ok(LoadedArchive {
             manifest,
@@ -421,12 +447,371 @@ impl Runtime {
         })
     }
 
+    pub fn install_image_extension(&mut self) -> Result<ImageExtension, RuntimeError> {
+        let load_host_id = 140;
+        let info_host_id = 141;
+        let status_host_id = 142;
+        let release_host_id = 143;
+        let resources = self.resources.clone();
+
+        let _ = self.register_host_function(
+            HostFunction::new(load_host_id, 1, 1, CAP_GUI),
+            move |args| {
+                let resource_id = expect_integer_arg(args, 0, "resource_id")? as u32;
+                match resources
+                    .borrow_mut()
+                    .load_resource(resource_id)
+                    .map_err(resource_error_to_host_error)?
+                {
+                    LoadResult::Ready(handle) => Ok(Value::Handle(handle.into())),
+                    LoadResult::Pending(request_id) => Ok(Value::Integer(request_id as i64)),
+                }
+            },
+        );
+
+        let resources = self.resources.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(info_host_id, 1, 1, CAP_GUI),
+            move |args| {
+                let handle = ResourceHandle::from(expect_handle_arg(args, 0, "handle")?);
+                let resources = resources.borrow();
+                let resource_id = resources
+                    .resource_id(handle)
+                    .map_err(resource_error_to_host_error)?;
+                let entry = resources.entry(resource_id).ok_or_else(|| {
+                    HostError::Failed(format!("missing resource entry {resource_id}"))
+                })?;
+                Ok(make_table(&[
+                    (1, Value::Integer(resource_id as i64)),
+                    (
+                        2,
+                        Value::Integer(resource_type_value(
+                            entry
+                                .data
+                                .as_ref()
+                                .map(|data| match data {
+                                    wmlresource::ResourceData::Image(_) => ResourceType::Image,
+                                    wmlresource::ResourceData::Audio(_) => ResourceType::Audio,
+                                    wmlresource::ResourceData::Binary(_) => ResourceType::Binary,
+                                    wmlresource::ResourceData::Font(_) => ResourceType::Font,
+                                    wmlresource::ResourceData::Video(_) => ResourceType::Video,
+                                    wmlresource::ResourceData::ScriptData(_) => {
+                                        ResourceType::ScriptData
+                                    }
+                                })
+                                .unwrap_or(ResourceType::Unknown(0)),
+                        )),
+                    ),
+                    (
+                        3,
+                        Value::Integer(
+                            entry
+                                .data
+                                .as_ref()
+                                .map_or(0, |data| data.bytes().len() as i64),
+                        ),
+                    ),
+                    (4, Value::Integer(resource_state_code(entry.state))),
+                ]))
+            },
+        );
+
+        let resources = self.resources.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(status_host_id, 1, 1, CAP_GUI),
+            move |args| {
+                let handle = ResourceHandle::from(expect_handle_arg(args, 0, "handle")?);
+                let state = resources
+                    .borrow()
+                    .status(handle)
+                    .map_err(resource_error_to_host_error)?;
+                Ok(Value::Integer(resource_state_code(state)))
+            },
+        );
+
+        let resources = self.resources.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(release_host_id, 1, 1, CAP_GUI),
+            move |args| {
+                let handle = ResourceHandle::from(expect_handle_arg(args, 0, "handle")?);
+                resources
+                    .borrow_mut()
+                    .release(handle)
+                    .map_err(resource_error_to_host_error)?;
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let ids = self.extensions.register_extension(
+            "ext.image",
+            &[
+                ExtensionFunctionSpec::new("load", load_host_id, 1, 1, CAP_GUI),
+                ExtensionFunctionSpec::new("info", info_host_id, 1, 1, CAP_GUI),
+                ExtensionFunctionSpec::new("status", status_host_id, 1, 1, CAP_GUI),
+                ExtensionFunctionSpec::new("release", release_host_id, 1, 1, CAP_GUI),
+            ],
+        )?;
+
+        Ok(ImageExtension {
+            load_ext_id: ids[0],
+            info_ext_id: ids[1],
+            status_ext_id: ids[2],
+            release_ext_id: ids[3],
+            load_host_id,
+            info_host_id,
+            status_host_id,
+            release_host_id,
+        })
+    }
+
+    pub fn install_audio_extension(&mut self) -> Result<AudioExtension, RuntimeError> {
+        let load_host_id = 150;
+        let play_host_id = 151;
+        let pause_host_id = 152;
+        let stop_host_id = 153;
+        let seek_host_id = 154;
+        let volume_host_id = 155;
+        let release_host_id = 156;
+        let status_host_id = 157;
+        let resources = self.resources.clone();
+        let audio_states = self.audio_states.clone();
+
+        let _ = self.register_host_function(
+            HostFunction::new(load_host_id, 1, 1, CAP_ASYNC_IO),
+            move |args| {
+                let resource_id = expect_integer_arg(args, 0, "resource_id")? as u32;
+                match resources
+                    .borrow_mut()
+                    .load_resource(resource_id)
+                    .map_err(resource_error_to_host_error)?
+                {
+                    LoadResult::Ready(handle) => {
+                        audio_states.borrow_mut().insert(
+                            handle.raw(),
+                            AudioPlaybackState {
+                                resource_id,
+                                playing: false,
+                                looped: false,
+                                position_ms: 0,
+                                volume: 1.0,
+                            },
+                        );
+                        Ok(Value::Handle(handle.into()))
+                    }
+                    LoadResult::Pending(request_id) => Ok(Value::Integer(request_id as i64)),
+                }
+            },
+        );
+
+        let audio_states = self.audio_states.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(play_host_id, 1, 2, CAP_ASYNC_IO),
+            move |args| {
+                let handle = expect_handle_arg(args, 0, "handle")?;
+                let looped = args.get(1).map(|value| value.truthy()).unwrap_or(false);
+                let mut states = audio_states.borrow_mut();
+                let state = states
+                    .entry(handle)
+                    .or_insert_with(AudioPlaybackState::default);
+                state.playing = true;
+                state.looped = looped;
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let audio_states = self.audio_states.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(pause_host_id, 1, 1, CAP_ASYNC_IO),
+            move |args| {
+                let handle = expect_handle_arg(args, 0, "handle")?;
+                if let Some(state) = audio_states.borrow_mut().get_mut(&handle) {
+                    state.playing = false;
+                }
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let audio_states = self.audio_states.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(stop_host_id, 1, 1, CAP_ASYNC_IO),
+            move |args| {
+                let handle = expect_handle_arg(args, 0, "handle")?;
+                if let Some(state) = audio_states.borrow_mut().get_mut(&handle) {
+                    state.playing = false;
+                    state.position_ms = 0;
+                }
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let audio_states = self.audio_states.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(seek_host_id, 2, 2, CAP_ASYNC_IO),
+            move |args| {
+                let handle = expect_handle_arg(args, 0, "handle")?;
+                let position_ms = expect_number_arg(args, 1, "position_ms")?;
+                let mut states = audio_states.borrow_mut();
+                let state = states
+                    .entry(handle)
+                    .or_insert_with(AudioPlaybackState::default);
+                state.position_ms = position_ms.max(0.0) as u64;
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let audio_states = self.audio_states.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(volume_host_id, 2, 2, CAP_ASYNC_IO),
+            move |args| {
+                let handle = expect_handle_arg(args, 0, "handle")?;
+                let volume = expect_number_arg(args, 1, "volume")?;
+                let mut states = audio_states.borrow_mut();
+                let state = states
+                    .entry(handle)
+                    .or_insert_with(AudioPlaybackState::default);
+                state.volume = volume.clamp(0.0, 1.0) as f32;
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let resources = self.resources.clone();
+        let audio_states = self.audio_states.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(release_host_id, 1, 1, CAP_ASYNC_IO),
+            move |args| {
+                let handle = ResourceHandle::from(expect_handle_arg(args, 0, "handle")?);
+                audio_states.borrow_mut().remove(&handle.raw());
+                resources
+                    .borrow_mut()
+                    .release(handle)
+                    .map_err(resource_error_to_host_error)?;
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let audio_states = self.audio_states.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(status_host_id, 1, 1, CAP_ASYNC_IO),
+            move |args| {
+                let handle = expect_handle_arg(args, 0, "handle")?;
+                let status = audio_states
+                    .borrow()
+                    .get(&handle)
+                    .map(|state| if state.playing { 2 } else { 1 })
+                    .unwrap_or(0);
+                Ok(Value::Integer(status))
+            },
+        );
+
+        let ids = self.extensions.register_extension(
+            "ext.audio",
+            &[
+                ExtensionFunctionSpec::new("load", load_host_id, 1, 1, CAP_ASYNC_IO),
+                ExtensionFunctionSpec::new("play", play_host_id, 1, 2, CAP_ASYNC_IO),
+                ExtensionFunctionSpec::new("pause", pause_host_id, 1, 1, CAP_ASYNC_IO),
+                ExtensionFunctionSpec::new("stop", stop_host_id, 1, 1, CAP_ASYNC_IO),
+                ExtensionFunctionSpec::new("seek", seek_host_id, 2, 2, CAP_ASYNC_IO),
+                ExtensionFunctionSpec::new("volume", volume_host_id, 2, 2, CAP_ASYNC_IO),
+                ExtensionFunctionSpec::new("release", release_host_id, 1, 1, CAP_ASYNC_IO),
+                ExtensionFunctionSpec::new("status", status_host_id, 1, 1, CAP_ASYNC_IO),
+            ],
+        )?;
+
+        Ok(AudioExtension {
+            load_ext_id: ids[0],
+            play_ext_id: ids[1],
+            pause_ext_id: ids[2],
+            stop_ext_id: ids[3],
+            seek_ext_id: ids[4],
+            volume_ext_id: ids[5],
+            release_ext_id: ids[6],
+            status_ext_id: ids[7],
+            load_host_id,
+            play_host_id,
+            pause_host_id,
+            stop_host_id,
+            seek_host_id,
+            volume_host_id,
+            release_host_id,
+            status_host_id,
+        })
+    }
+
+    pub fn install_vm_extension(&mut self) -> Result<VmExtension, RuntimeError> {
+        let save_host_id = 160;
+        let load_host_id = 161;
+        let scheduler = self.scheduler.clone();
+        let resources = self.resources.clone();
+        let debug_log = self.debug_log.clone();
+        let loaded_archives = self.loaded_archives.clone();
+        let audio_states = self.audio_states.clone();
+        let checkpoints = self.checkpoints.clone();
+        let host = self.host.clone();
+
+        let _ =
+            self.register_host_function(HostFunction::new(save_host_id, 1, 1, 0), move |args| {
+                let slot = expect_integer_arg(args, 0, "slot")? as u32;
+                checkpoints.borrow_mut().insert(
+                    slot,
+                    RuntimeCheckpoint {
+                        scheduler: scheduler.borrow().snapshot(),
+                        resources: resources.borrow().clone(),
+                        loaded_archives: loaded_archives.borrow().clone(),
+                        debug_log: debug_log.borrow().clone(),
+                        audio_states: audio_states.borrow().clone(),
+                    },
+                );
+                Ok(Value::Bool(true))
+            });
+
+        let scheduler = self.scheduler.clone();
+        let resources = self.resources.clone();
+        let debug_log = self.debug_log.clone();
+        let loaded_archives = self.loaded_archives.clone();
+        let audio_states = self.audio_states.clone();
+        let checkpoints = self.checkpoints.clone();
+        let host_for_load = host.clone();
+        let _ =
+            self.register_host_function(HostFunction::new(load_host_id, 1, 1, 0), move |args| {
+                let slot = expect_integer_arg(args, 0, "slot")? as u32;
+                let Some(checkpoint) = checkpoints.borrow().get(&slot).cloned() else {
+                    return Ok(Value::Bool(false));
+                };
+                *scheduler.borrow_mut() = Scheduler::from_snapshot(checkpoint.scheduler, |_| {
+                    Box::new(SharedHostApi::new(host_for_load.clone()))
+                });
+                *resources.borrow_mut() = checkpoint.resources;
+                *loaded_archives.borrow_mut() = checkpoint.loaded_archives;
+                *debug_log.borrow_mut() = checkpoint.debug_log;
+                *audio_states.borrow_mut() = checkpoint.audio_states;
+                Ok(Value::Bool(true))
+            });
+
+        let ids = self.extensions.register_extension(
+            "ext.vm",
+            &[
+                ExtensionFunctionSpec::new("save", save_host_id, 1, 1, 0),
+                ExtensionFunctionSpec::new("load", load_host_id, 1, 1, 0),
+            ],
+        )?;
+
+        Ok(VmExtension {
+            save_ext_id: ids[0],
+            load_ext_id: ids[1],
+            save_host_id,
+            load_host_id,
+        })
+    }
+
     pub fn install_standard_extensions(&mut self) -> Result<StandardExtensions, RuntimeError> {
         Ok(StandardExtensions {
             fs: self.install_fs_extension()?,
             debug: self.install_debug_extension()?,
             net: self.install_net_extension()?,
             llm: self.install_llm_extension()?,
+            image: self.install_image_extension()?,
+            audio: self.install_audio_extension()?,
+            vm: self.install_vm_extension()?,
         })
     }
 
@@ -449,17 +834,19 @@ impl Runtime {
             program,
             SharedHostApi::new(self.host.clone()),
         );
-        self.scheduler.spawn(vm)
+        self.scheduler.borrow_mut().spawn(vm)
     }
 
     pub fn tick(&mut self) -> Vec<(WorkerId, RunOutcome)> {
-        self.scheduler.run_round(self.config.step_limit)
+        self.scheduler
+            .borrow_mut()
+            .run_round(self.config.step_limit)
     }
 
     pub fn run_until_idle(&mut self, max_rounds: usize) -> Vec<(WorkerId, RunOutcome)> {
         let mut outcomes = Vec::new();
         for _ in 0..max_rounds {
-            if self.scheduler.is_idle() {
+            if self.scheduler.borrow().is_idle() {
                 break;
             }
             outcomes.extend(self.tick());
@@ -467,20 +854,20 @@ impl Runtime {
         outcomes
     }
 
-    pub fn resource_manager(&self) -> &ResourceManager {
-        &self.resources
+    pub fn resource_manager(&self) -> std::cell::Ref<'_, ResourceManager> {
+        self.resources.borrow()
     }
 
-    pub fn resource_manager_mut(&mut self) -> &mut ResourceManager {
-        &mut self.resources
+    pub fn resource_manager_mut(&self) -> std::cell::RefMut<'_, ResourceManager> {
+        self.resources.borrow_mut()
     }
 
-    pub fn loaded_archives(&self) -> &[Manifest] {
-        &self.loaded_archives
+    pub fn loaded_archives(&self) -> Vec<Manifest> {
+        self.loaded_archives.borrow().clone()
     }
 
     pub fn send_message(&mut self, message: Message) {
-        self.scheduler.deliver(message);
+        self.scheduler.borrow_mut().deliver(message);
     }
 }
 
@@ -513,6 +900,56 @@ pub struct NetExtension {
     pub post_host_id: HostId,
 }
 
+/// Stable ids assigned to the built-in llm extension.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LlmExtension {
+    pub generate_ext_id: u32,
+    pub generate_host_id: HostId,
+}
+
+/// Stable ids assigned to the built-in image extension.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ImageExtension {
+    pub load_ext_id: u32,
+    pub info_ext_id: u32,
+    pub status_ext_id: u32,
+    pub release_ext_id: u32,
+    pub load_host_id: HostId,
+    pub info_host_id: HostId,
+    pub status_host_id: HostId,
+    pub release_host_id: HostId,
+}
+
+/// Stable ids assigned to the built-in audio extension.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AudioExtension {
+    pub load_ext_id: u32,
+    pub play_ext_id: u32,
+    pub pause_ext_id: u32,
+    pub stop_ext_id: u32,
+    pub seek_ext_id: u32,
+    pub volume_ext_id: u32,
+    pub release_ext_id: u32,
+    pub status_ext_id: u32,
+    pub load_host_id: HostId,
+    pub play_host_id: HostId,
+    pub pause_host_id: HostId,
+    pub stop_host_id: HostId,
+    pub seek_host_id: HostId,
+    pub volume_host_id: HostId,
+    pub release_host_id: HostId,
+    pub status_host_id: HostId,
+}
+
+/// Stable ids assigned to the built-in VM extension.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct VmExtension {
+    pub save_ext_id: u32,
+    pub load_ext_id: u32,
+    pub save_host_id: HostId,
+    pub load_host_id: HostId,
+}
+
 /// Stable ids for the runtime's standard extension set.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StandardExtensions {
@@ -520,13 +957,9 @@ pub struct StandardExtensions {
     pub debug: DebugExtension,
     pub net: NetExtension,
     pub llm: LlmExtension,
-}
-
-/// Stable ids assigned to the built-in llm extension.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct LlmExtension {
-    pub generate_ext_id: u32,
-    pub generate_host_id: HostId,
+    pub image: ImageExtension,
+    pub audio: AudioExtension,
+    pub vm: VmExtension,
 }
 
 /// Backend interface for `ext.net`.
@@ -589,6 +1022,32 @@ fn exists_text_file(args: &[Value]) -> Result<Value, HostError> {
     Ok(Value::Bool(PathBuf::from(path).exists()))
 }
 
+fn make_table(fields: &[(u16, Value)]) -> Value {
+    let mut map = BTreeMap::new();
+    for (key, value) in fields {
+        map.insert(*key, value.clone());
+    }
+    Value::Table(Rc::new(map))
+}
+
+fn resource_state_code(state: ResourceState) -> i64 {
+    match state {
+        ResourceState::Unloaded => 0,
+        ResourceState::Loading => 1,
+        ResourceState::Ready => 2,
+        ResourceState::Failed => 3,
+        ResourceState::Unloading => 4,
+    }
+}
+
+fn resource_type_value(resource_type: ResourceType) -> i64 {
+    resource_type.as_u16() as i64
+}
+
+fn resource_error_to_host_error(error: wmlresource::ResourceError) -> HostError {
+    HostError::Failed(error.to_string())
+}
+
 fn expect_string_arg(
     args: &[Value],
     index: usize,
@@ -598,6 +1057,46 @@ fn expect_string_arg(
         Some(Value::String(value)) => Ok(value.clone()),
         Some(found) => Err(HostError::InvalidArguments(format!(
             "expected {name} argument {index} to be string, found {found:?}"
+        ))),
+        None => Err(HostError::InvalidArguments(format!(
+            "missing required argument {name} at index {index}"
+        ))),
+    }
+}
+
+fn expect_integer_arg(args: &[Value], index: usize, name: &'static str) -> Result<i64, HostError> {
+    match args.get(index) {
+        Some(Value::Integer(value)) => Ok(*value),
+        Some(Value::Bool(true)) => Ok(1),
+        Some(Value::Bool(false)) => Ok(0),
+        Some(found) => Err(HostError::InvalidArguments(format!(
+            "expected {name} argument {index} to be integer, found {found:?}"
+        ))),
+        None => Err(HostError::InvalidArguments(format!(
+            "missing required argument {name} at index {index}"
+        ))),
+    }
+}
+
+fn expect_number_arg(args: &[Value], index: usize, name: &'static str) -> Result<f64, HostError> {
+    match args.get(index) {
+        Some(Value::Integer(value)) => Ok(*value as f64),
+        Some(Value::Float(value)) => Ok(*value),
+        Some(found) => Err(HostError::InvalidArguments(format!(
+            "expected {name} argument {index} to be numeric, found {found:?}"
+        ))),
+        None => Err(HostError::InvalidArguments(format!(
+            "missing required argument {name} at index {index}"
+        ))),
+    }
+}
+
+fn expect_handle_arg(args: &[Value], index: usize, name: &'static str) -> Result<u64, HostError> {
+    match args.get(index) {
+        Some(Value::Handle(value)) => Ok(*value),
+        Some(Value::Integer(value)) if *value >= 0 => Ok(*value as u64),
+        Some(found) => Err(HostError::InvalidArguments(format!(
+            "expected {name} argument {index} to be a handle, found {found:?}"
         ))),
         None => Err(HostError::InvalidArguments(format!(
             "missing required argument {name} at index {index}"
@@ -624,6 +1123,11 @@ mod tests {
     use std::collections::BTreeMap;
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
+    use wmlarchive::{
+        ArchiveBuilder, ArchiveSection, ManifestBuilder, ManifestResourceEntry, SectionDigest,
+        SectionKind, digest_section,
+    };
+    use wmlresource::ResourceType;
     use wmlvm::{Function, Program, RunOutcome, Value};
 
     #[derive(Default)]
@@ -688,6 +1192,59 @@ mod tests {
                         "missing mock response for POST {url} with body {body}"
                     ))
                 })
+        }
+    }
+
+    fn build_asset_payload(resource_id: u32, resource_type: ResourceType, data: &[u8]) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(24 + data.len());
+        bytes.extend_from_slice(&resource_id.to_le_bytes());
+        bytes.extend_from_slice(&resource_type.as_u16().to_le_bytes());
+        bytes.extend_from_slice(&0u16.to_le_bytes());
+        bytes.extend_from_slice(&0u16.to_le_bytes());
+        bytes.extend_from_slice(&0u16.to_le_bytes());
+        bytes.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&(24u32).to_le_bytes());
+        bytes.extend_from_slice(data);
+        bytes
+    }
+
+    fn build_archive(package_name: &str, assets: &[(u32, ResourceType, &[u8])]) -> Vec<u8> {
+        let mut builder = ArchiveBuilder::new();
+        let mut manifest_builder = ManifestBuilder::new(package_name, 42, 1);
+        for (section_id, (resource_id, resource_type, data)) in assets.iter().enumerate() {
+            let section_id = section_id as u32 + 2;
+            let payload = build_asset_payload(*resource_id, *resource_type, data);
+            manifest_builder = manifest_builder.push_resource_mapping(ManifestResourceEntry::new(
+                0x1000 + *resource_id as u64,
+                *resource_id,
+            ));
+            manifest_builder = manifest_builder.push_section_digest(SectionDigest {
+                section_id,
+                section_kind: SectionKind::Asset,
+                flags_canonical: 0,
+                unpacked_size: payload.len() as u64,
+                digest: digest_section(
+                    section_id,
+                    SectionKind::Asset,
+                    0,
+                    payload.len() as u64,
+                    &payload,
+                ),
+            });
+            builder =
+                builder.push_section(ArchiveSection::new(section_id, SectionKind::Asset, payload));
+        }
+        builder
+            .push_manifest(1, &manifest_builder.build())
+            .build()
+            .expect("build archive")
+    }
+
+    fn handle_from_value(value: Value) -> u64 {
+        match value {
+            Value::Handle(handle) => handle,
+            other => panic!("expected handle, found {other:?}"),
         }
     }
 
@@ -954,5 +1511,212 @@ mod tests {
                 }
             )) if text == "model reply"
         ));
+    }
+
+    #[test]
+    fn runtime_installs_and_executes_image_extension() {
+        let mut runtime = Runtime::new(RuntimeConfig::new(PlatformProfile::native()));
+        let extension = runtime.install_image_extension().expect("install image");
+        let archive = build_archive("image-sample", &[(100, ResourceType::Image, b"img")]);
+        runtime.load_archive(&archive).expect("load archive");
+
+        let handle = runtime
+            .host
+            .borrow_mut()
+            .call(extension.load_host_id, &[Value::Integer(100)])
+            .expect("image load");
+        let handle = handle_from_value(handle);
+
+        let status = runtime
+            .host
+            .borrow_mut()
+            .call(extension.status_host_id, &[Value::Handle(handle)])
+            .expect("image status");
+        assert_eq!(status, Value::Integer(2));
+
+        let info = runtime
+            .host
+            .borrow_mut()
+            .call(extension.info_host_id, &[Value::Handle(handle)])
+            .expect("image info");
+        let table = match info {
+            Value::Table(table) => table,
+            other => panic!("expected table, found {other:?}"),
+        };
+        assert_eq!(table.get(&1), Some(&Value::Integer(100)));
+        assert_eq!(
+            table.get(&2),
+            Some(&Value::Integer(ResourceType::Image.as_u16() as i64))
+        );
+        assert_eq!(table.get(&3), Some(&Value::Integer(3)));
+        assert_eq!(table.get(&4), Some(&Value::Integer(2)));
+
+        let released = runtime
+            .host
+            .borrow_mut()
+            .call(extension.release_host_id, &[Value::Handle(handle)])
+            .expect("image release");
+        assert_eq!(released, Value::Bool(true));
+    }
+
+    #[test]
+    fn runtime_installs_and_executes_audio_extension() {
+        let mut runtime = Runtime::new(RuntimeConfig::new(PlatformProfile::native()));
+        let extension = runtime.install_audio_extension().expect("install audio");
+        let archive = build_archive("audio-sample", &[(200, ResourceType::Audio, b"audio")]);
+        runtime.load_archive(&archive).expect("load archive");
+
+        let handle = runtime
+            .host
+            .borrow_mut()
+            .call(extension.load_host_id, &[Value::Integer(200)])
+            .expect("audio load");
+        let handle = handle_from_value(handle);
+
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(
+                    extension.play_host_id,
+                    &[Value::Handle(handle), Value::Bool(true)]
+                )
+                .expect("audio play"),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(extension.status_host_id, &[Value::Handle(handle)])
+                .expect("audio status"),
+            Value::Integer(2)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(extension.pause_host_id, &[Value::Handle(handle)])
+                .expect("audio pause"),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(extension.status_host_id, &[Value::Handle(handle)])
+                .expect("audio status"),
+            Value::Integer(1)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(extension.stop_host_id, &[Value::Handle(handle)])
+                .expect("audio stop"),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(extension.release_host_id, &[Value::Handle(handle)])
+                .expect("audio release"),
+            Value::Bool(true)
+        );
+    }
+
+    #[test]
+    fn runtime_vm_save_and_load_restores_state() {
+        let mut runtime = Runtime::new(RuntimeConfig::new(PlatformProfile::native()));
+        let image = runtime.install_image_extension().expect("install image");
+        let audio = runtime.install_audio_extension().expect("install audio");
+        let vm = runtime.install_vm_extension().expect("install vm");
+        let archive = build_archive(
+            "checkpoint-sample",
+            &[
+                (100, ResourceType::Image, b"img"),
+                (200, ResourceType::Audio, b"audio"),
+            ],
+        );
+        runtime.load_archive(&archive).expect("load archive");
+
+        let image_handle = handle_from_value(
+            runtime
+                .host
+                .borrow_mut()
+                .call(image.load_host_id, &[Value::Integer(100)])
+                .expect("image load"),
+        );
+        let audio_handle = handle_from_value(
+            runtime
+                .host
+                .borrow_mut()
+                .call(audio.load_host_id, &[Value::Integer(200)])
+                .expect("audio load"),
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(
+                    audio.play_host_id,
+                    &[Value::Handle(audio_handle), Value::Bool(true)]
+                )
+                .expect("audio play"),
+            Value::Bool(true)
+        );
+
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(vm.save_host_id, &[Value::Integer(7)])
+                .expect("vm save"),
+            Value::Bool(true)
+        );
+
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(audio.pause_host_id, &[Value::Handle(audio_handle)])
+                .expect("audio pause"),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(image.release_host_id, &[Value::Handle(image_handle)])
+                .expect("image release"),
+            Value::Bool(true)
+        );
+
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(vm.load_host_id, &[Value::Integer(7)])
+                .expect("vm load"),
+            Value::Bool(true)
+        );
+
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(image.status_host_id, &[Value::Handle(image_handle)])
+                .expect("image status after load"),
+            Value::Integer(2)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(audio.status_host_id, &[Value::Handle(audio_handle)])
+                .expect("audio status after load"),
+            Value::Integer(2)
+        );
     }
 }

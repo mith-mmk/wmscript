@@ -41,10 +41,8 @@ fn main() {
         .expect("load resource")
     {
         LoadResult::Ready(handle) => {
-            let entry = runtime
-                .resource_manager()
-                .entry(100)
-                .expect("resource entry");
+            let resources = runtime.resource_manager();
+            let entry = resources.entry(100).expect("resource entry");
             let bytes = entry.data.as_ref().map(|data| data.bytes()).unwrap_or(&[]);
             println!(
                 "asset load => handle {}, bytes {:?}, archive resources {}",
