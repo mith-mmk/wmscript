@@ -6,7 +6,7 @@ use std::fmt;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use crate::{AudioBackend, create_disabled_audio_backend};
+use crate::{AudioBackend, SharedAudioBackend, create_disabled_audio_backend};
 use wmlarchive::{Archive, ArchiveError, Manifest};
 use wmlext::{ExtError, ExtensionFunctionSpec, ExtensionRegistry, NamespacePolicy};
 use wmlhost::{
@@ -299,7 +299,7 @@ pub struct Runtime {
     resources: Rc<RefCell<ResourceManager>>,
     host: Rc<RefCell<HostDispatcher>>,
     extensions: ExtensionRegistry,
-    audio_backend: Rc<RefCell<Box<dyn AudioBackend>>>,
+    audio_backend: Rc<SharedAudioBackend>,
     debug_log: Rc<RefCell<Vec<String>>>,
     net_backend: Rc<RefCell<Box<dyn NetBackend>>>,
     llm_backend: Rc<RefCell<Box<dyn LlmBackend>>>,
@@ -321,7 +321,7 @@ impl Runtime {
                 config.capability_mask,
             ))),
             extensions: ExtensionRegistry::with_policy(NamespacePolicy::permissive()),
-            audio_backend: Rc::new(RefCell::new(create_disabled_audio_backend())),
+            audio_backend: Rc::new(SharedAudioBackend::new(create_disabled_audio_backend())),
             debug_log: Rc::new(RefCell::new(Vec::new())),
             net_backend: Rc::new(RefCell::new(Box::new(DisabledNetBackend))),
             llm_backend: Rc::new(RefCell::new(Box::new(DisabledLlmBackend))),
@@ -360,7 +360,11 @@ impl Runtime {
     }
 
     pub fn set_audio_backend(&mut self, backend: Box<dyn AudioBackend>) {
-        *self.audio_backend.borrow_mut() = backend;
+        self.audio_backend.replace(backend);
+    }
+
+    pub fn audio_backend_handle(&self) -> Rc<SharedAudioBackend> {
+        self.audio_backend.clone()
     }
 
     pub fn register_host_function(
@@ -958,7 +962,7 @@ impl Runtime {
                 let handle = expect_handle_arg(args, 0, "handle")?;
                 let looped = args.get(1).map(|value| value.truthy()).unwrap_or(false);
                 let (resource_id, bytes) = audio_bytes_for_handle(&resources, handle)?;
-                let mut backend = audio_backend.borrow_mut();
+                let backend = audio_backend.clone();
                 let mut states = audio_states.borrow_mut();
                 let state = states.entry(handle).or_insert_with(|| AudioPlaybackState {
                     resource_id,
@@ -991,7 +995,7 @@ impl Runtime {
                 let handle = expect_handle_arg(args, 0, "handle")?;
                 let looped = args.get(1).map(|value| value.truthy()).unwrap_or(false);
                 let (resource_id, bytes) = audio_bytes_for_handle(&resources, handle)?;
-                let mut backend = audio_backend.borrow_mut();
+                let backend = audio_backend.clone();
                 let mut states = audio_states.borrow_mut();
                 let state = states.entry(handle).or_insert_with(|| AudioPlaybackState {
                     resource_id,
@@ -1021,7 +1025,7 @@ impl Runtime {
             HostFunction::new(pause_host_id, 1, 1, CAP_ASYNC_IO),
             move |args| {
                 let handle = expect_handle_arg(args, 0, "handle")?;
-                audio_backend.borrow_mut().pause(handle)?;
+                audio_backend.pause(handle)?;
                 if let Some(state) = audio_states.borrow_mut().get_mut(&handle) {
                     state.playing = false;
                 }
@@ -1035,7 +1039,7 @@ impl Runtime {
             HostFunction::new(stop_host_id, 1, 1, CAP_ASYNC_IO),
             move |args| {
                 let handle = expect_handle_arg(args, 0, "handle")?;
-                audio_backend.borrow_mut().stop(handle)?;
+                audio_backend.stop(handle)?;
                 if let Some(state) = audio_states.borrow_mut().get_mut(&handle) {
                     state.playing = false;
                     state.position_ms = 0;
@@ -1051,9 +1055,7 @@ impl Runtime {
             move |args| {
                 let handle = expect_handle_arg(args, 0, "handle")?;
                 let position_ms = expect_number_arg(args, 1, "position_ms")?;
-                audio_backend
-                    .borrow_mut()
-                    .seek(handle, position_ms.max(0.0) as u64)?;
+                audio_backend.seek(handle, position_ms.max(0.0) as u64)?;
                 let mut states = audio_states.borrow_mut();
                 let state = states
                     .entry(handle)
@@ -1070,9 +1072,7 @@ impl Runtime {
             move |args| {
                 let handle = expect_handle_arg(args, 0, "handle")?;
                 let volume = expect_number_arg(args, 1, "volume")?;
-                audio_backend
-                    .borrow_mut()
-                    .volume(handle, volume.clamp(0.0, 1.0) as f32)?;
+                audio_backend.volume(handle, volume.clamp(0.0, 1.0) as f32)?;
                 let mut states = audio_states.borrow_mut();
                 let state = states
                     .entry(handle)
@@ -1089,7 +1089,7 @@ impl Runtime {
             HostFunction::new(release_host_id, 1, 1, CAP_ASYNC_IO),
             move |args| {
                 let handle = ResourceHandle::from(expect_handle_arg(args, 0, "handle")?);
-                audio_backend.borrow_mut().release(handle.raw())?;
+                audio_backend.release(handle.raw())?;
                 audio_states.borrow_mut().remove(&handle.raw());
                 resources
                     .borrow_mut()
@@ -1211,7 +1211,7 @@ impl Runtime {
                 *audio_states.borrow_mut() = checkpoint.audio_states;
                 *state_manager.borrow_mut() = checkpoint.state_manager;
                 {
-                    let mut backend = audio_backend.borrow_mut();
+                    let backend = audio_backend.clone();
                     backend.clear()?;
                     let replay_states = audio_states
                         .borrow()
@@ -1320,6 +1320,11 @@ impl Runtime {
 
     pub fn audio_playback_states(&self) -> BTreeMap<u64, AudioPlaybackState> {
         self.audio_states.borrow().clone()
+    }
+
+    /// Stops all running audio sessions.
+    pub fn shutdown(&mut self) {
+        let _ = self.audio_backend.clear();
     }
 
     pub fn send_message(&mut self, message: Message) {

@@ -143,10 +143,18 @@ cargo run -p wmlruntime --example worker_comm
 cargo run -p wmlruntime --example asset_load
 cargo run -p wmlruntime --example easynovel
 cargo run -p wmlfrontend -- samples/easynovel/main.wml --platform egui --font noto
+cargo run -p wmlfrontend -- --demo image-audio --platform egui --font noto
 ```
 
 The egui frontend defaults to Noto Sans for Japanese-friendly rendering. Use
 `--font default`, `--font noto`, or `--font mono` to switch presets.
+
+`wmlfrontend` also supports a built-in demo mode:
+
+- `--demo image-audio` runs the embedded image/audio showcase without reading a script file.
+- `--package NAME` overrides the demo package name.
+- `--platform native|wasm|egui` selects the runtime/backend profile.
+- `--image NAME=PATH` and `--asset NAME=PATH` attach extra resources in file-backed mode.
 
 ## Toolchain
 

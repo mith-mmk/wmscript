@@ -139,6 +139,15 @@ impl GameAsset {
         Self::new(name, section_id, resource_id, ResourceType::Image, payload)
     }
 
+    pub fn audio(
+        name: impl Into<String>,
+        section_id: u32,
+        resource_id: u32,
+        payload: impl Into<Vec<u8>>,
+    ) -> Self {
+        Self::new(name, section_id, resource_id, ResourceType::Audio, payload)
+    }
+
     pub fn name_hash(&self) -> u64 {
         stable_hash64(self.name.as_bytes())
     }

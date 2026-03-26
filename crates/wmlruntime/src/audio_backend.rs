@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
 
+use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::fmt;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -45,6 +47,73 @@ pub fn create_default_audio_backend() -> Box<dyn AudioBackend> {
     #[cfg(not(target_os = "windows"))]
     {
         create_disabled_audio_backend()
+    }
+}
+
+/// Shared audio backend handle that keeps playback alive until the last clone drops.
+pub struct SharedAudioBackend {
+    inner: RefCell<Box<dyn AudioBackend>>,
+}
+
+impl SharedAudioBackend {
+    pub fn new(backend: Box<dyn AudioBackend>) -> Self {
+        Self {
+            inner: RefCell::new(backend),
+        }
+    }
+
+    pub fn replace(&self, backend: Box<dyn AudioBackend>) {
+        *self.inner.borrow_mut() = backend;
+    }
+
+    pub fn play(
+        &self,
+        handle: u64,
+        resource_id: u32,
+        bytes: &[u8],
+        looped: bool,
+        position_ms: u64,
+        volume: f32,
+    ) -> Result<(), HostError> {
+        self.inner
+            .borrow_mut()
+            .play(handle, resource_id, bytes, looped, position_ms, volume)
+    }
+
+    pub fn pause(&self, handle: u64) -> Result<(), HostError> {
+        self.inner.borrow_mut().pause(handle)
+    }
+
+    pub fn stop(&self, handle: u64) -> Result<(), HostError> {
+        self.inner.borrow_mut().stop(handle)
+    }
+
+    pub fn seek(&self, handle: u64, position_ms: u64) -> Result<(), HostError> {
+        self.inner.borrow_mut().seek(handle, position_ms)
+    }
+
+    pub fn volume(&self, handle: u64, volume: f32) -> Result<(), HostError> {
+        self.inner.borrow_mut().volume(handle, volume)
+    }
+
+    pub fn release(&self, handle: u64) -> Result<(), HostError> {
+        self.inner.borrow_mut().release(handle)
+    }
+
+    pub fn clear(&self) -> Result<(), HostError> {
+        self.inner.borrow_mut().clear()
+    }
+}
+
+impl Drop for SharedAudioBackend {
+    fn drop(&mut self) {
+        let _ = self.inner.borrow_mut().clear();
+    }
+}
+
+impl fmt::Debug for SharedAudioBackend {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("SharedAudioBackend")
     }
 }
 
@@ -131,10 +200,13 @@ impl AudioBackend for PowerShellAudioBackend {
     }
 
     fn stop(&mut self, handle: u64) -> Result<(), HostError> {
-        if let Some(session) = self.sessions.get_mut(&handle) {
-            session.send_line("stop")?;
+        if let Some(mut session) = self.sessions.remove(&handle) {
+            let _ = session.send_line("stop");
+            let _ = session.send_line("exit");
+            let _ = terminate_process_tree(session.child.id());
+            let _ = session.child.wait();
+            let _ = fs::remove_file(&session.path);
         }
-        self.cleanup_finished(handle);
         Ok(())
     }
 
@@ -155,12 +227,7 @@ impl AudioBackend for PowerShellAudioBackend {
     }
 
     fn release(&mut self, handle: u64) -> Result<(), HostError> {
-        if let Some(mut session) = self.sessions.remove(&handle) {
-            let _ = session.send_line("exit");
-            let _ = session.child.kill();
-            let _ = session.child.wait();
-            let _ = fs::remove_file(&session.path);
-        }
+        self.stop(handle)?;
         Ok(())
     }
 
@@ -170,6 +237,13 @@ impl AudioBackend for PowerShellAudioBackend {
             self.release(handle)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl Drop for PowerShellAudioBackend {
+    fn drop(&mut self) {
+        let _ = self.clear();
     }
 }
 
@@ -198,7 +272,7 @@ impl PowerShellAudioBackend {
 
         if needs_restart {
             if let Some(mut session) = self.sessions.remove(&handle) {
-                let _ = session.child.kill();
+                let _ = terminate_process_tree(session.child.id());
                 let _ = session.child.wait();
                 let _ = fs::remove_file(&session.path);
             }
@@ -327,55 +401,69 @@ $uri = $env:WML_AUDIO_URI
 $script:player = New-Object System.Windows.Media.MediaPlayer
 $script:looped = $false
 $script:playing = $false
-$script:player.Open([Uri]::new($uri))
-$script:player.Volume = 1.0
-while ($true) {
-    if ([Console]::In.Peek() -ge 0) {
-        $line = [Console]::In.ReadLine()
-        if ($null -eq $line) { break }
-        switch -Regex ($line) {
-            '^exit$' {
-                break
-            }
-            '^play$' {
-                $script:playing = $true
-                $script:player.Play()
-            }
-            '^pause$' {
-                $script:playing = $false
-                $script:player.Pause()
-            }
-            '^stop$' {
-                $script:playing = $false
-                $script:player.Stop()
-                $script:player.Position = [TimeSpan]::Zero
-            }
-            '^seek:(\d+)$' {
-                $script:player.Position = [TimeSpan]::FromMilliseconds([double]$Matches[1])
-            }
-            '^volume:([0-9.]+)$' {
-                $script:player.Volume = [double]::Parse(
-                    $Matches[1],
-                    [System.Globalization.CultureInfo]::InvariantCulture
-                )
-            }
-            '^loop:(\d+)$' {
-                $script:looped = [int]$Matches[1] -ne 0
-            }
-        }
-    } elseif ($script:looped -and $script:playing -and $script:player.NaturalDuration.HasTimeSpan) {
-        $duration_ms = $script:player.NaturalDuration.TimeSpan.TotalMilliseconds
-        if ($duration_ms -gt 0 -and $script:player.Position.TotalMilliseconds -ge ($duration_ms - 40)) {
-            $script:player.Position = [TimeSpan]::Zero
-            $script:player.Play()
-        }
-        Start-Sleep -Milliseconds 20
-    } else {
-        Start-Sleep -Milliseconds 20
+function Stop-Playback {
+    $script:playing = $false
+    try {
+        $script:player.Stop()
+        $script:player.Position = [TimeSpan]::Zero
+    } catch {
     }
 }
-$script:player.Stop()
-$script:player.Close()
+function Close-Playback {
+    Stop-Playback
+    try {
+        $script:player.Close()
+    } catch {
+    }
+}
+try {
+    $script:player.Open([Uri]::new($uri))
+    $script:player.Volume = 1.0
+    while ($true) {
+        if ([Console]::In.Peek() -ge 0) {
+            $line = [Console]::In.ReadLine()
+            if ($null -eq $line) { break }
+            switch -Regex ($line) {
+                '^exit$' {
+                    break
+                }
+                '^play$' {
+                    $script:playing = $true
+                    $script:player.Play()
+                }
+                '^pause$' {
+                    Stop-Playback
+                }
+                '^stop$' {
+                    Stop-Playback
+                }
+                '^seek:(\d+)$' {
+                    $script:player.Position = [TimeSpan]::FromMilliseconds([double]$Matches[1])
+                }
+                '^volume:([0-9.]+)$' {
+                    $script:player.Volume = [double]::Parse(
+                        $Matches[1],
+                        [System.Globalization.CultureInfo]::InvariantCulture
+                    )
+                }
+                '^loop:(\d+)$' {
+                    $script:looped = [int]$Matches[1] -ne 0
+                }
+            }
+        } elseif ($script:looped -and $script:playing -and $script:player.NaturalDuration.HasTimeSpan) {
+            $duration_ms = $script:player.NaturalDuration.TimeSpan.TotalMilliseconds
+            if ($duration_ms -gt 0 -and $script:player.Position.TotalMilliseconds -ge ($duration_ms - 40)) {
+                $script:player.Position = [TimeSpan]::Zero
+                $script:player.Play()
+            }
+            Start-Sleep -Milliseconds 20
+        } else {
+            Start-Sleep -Milliseconds 20
+        }
+    }
+} finally {
+    Close-Playback
+}
 "#,
     )
 }
@@ -395,6 +483,20 @@ fn path_to_file_uri(path: &Path) -> String {
         format!("file://{}", normalized)
     } else {
         format!("file:///{}", normalized)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn terminate_process_tree(pid: u32) -> Result<(), HostError> {
+    match Command::new("taskkill")
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .status()
+    {
+        Ok(status) if status.success() => Ok(()),
+        Ok(status) => Err(HostError::Failed(format!(
+            "failed to terminate audio process tree {pid}: {status}"
+        ))),
+        Err(error) => Err(HostError::Failed(error.to_string())),
     }
 }
 

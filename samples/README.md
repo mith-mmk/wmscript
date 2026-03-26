@@ -8,5 +8,7 @@
   - Two-worker message passing sample.
 - `assetload/`
   - Runtime archive and resource loading sample.
+- `imageaudio/`
+  - Combined image draw and audio playback demo.
 - `easynovel/`
   - Small story-driven sample with chapters and narration.

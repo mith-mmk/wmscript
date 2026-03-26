@@ -20,4 +20,4 @@ $manifest = [ordered]@{
 
 $manifest | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 (Join-Path $releaseDir "build-manifest.json")
 
-Copy-Item ${env:CARGO_BUILD_TARGET_DIR}\wmlscript\release\*.exe .\releases\$stamp\
+Copy-Item ${env:CARGO_BUILD_TARGET_DIR}\release\*.exe .\releases\$stamp\

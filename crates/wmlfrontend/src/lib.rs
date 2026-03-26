@@ -7,12 +7,13 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
+pub mod demo;
 mod gui;
 
 use wmlplatform::PlatformProfile;
 use wmlruntime::{
     AudioPlaybackState as RuntimeAudioPlaybackState, IconSheetState, ImageDrawState,
-    ImageSourceRect, Runtime, create_default_audio_backend,
+    ImageSourceRect, Runtime, SharedAudioBackend, create_default_audio_backend,
 };
 use wmltoolchain::{
     BuildArtifact, ExecutionReport, GameProject, Toolchain, ToolchainConfig, ToolchainError,
@@ -118,12 +119,22 @@ pub fn launch_frontend_gui(
 }
 
 /// Summary returned after running the frontend.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct FrontendReport {
     pub build: BuildArtifact,
     pub execution: ExecutionReport,
     pub log_lines: Vec<String>,
     pub ui_state: UiState,
+    pub audio_backend: Rc<SharedAudioBackend>,
+}
+
+impl PartialEq for FrontendReport {
+    fn eq(&self, other: &Self) -> bool {
+        self.build == other.build
+            && self.execution == other.execution
+            && self.log_lines == other.log_lines
+            && self.ui_state == other.ui_state
+    }
 }
 
 /// Console backend that prints the frontend's UI commands.
@@ -299,6 +310,7 @@ impl UiApp for FrontendApp {
                     execution,
                     log_lines,
                     ui_state: ctx.state().clone(),
+                    audio_backend: self.runtime.audio_backend_handle(),
                 });
             }
             Err(error) => {

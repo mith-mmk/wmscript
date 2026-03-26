@@ -2,7 +2,10 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 
-use wmlfrontend::{FrontendConfig, GuiFontPreset, launch_frontend_gui, run_frontend};
+use wmlfrontend::{
+    FrontendConfig, GuiFontPreset, demo::build_image_audio_demo_project, launch_frontend_gui,
+    run_frontend,
+};
 use wmlplatform::{PlatformKind, PlatformProfile};
 use wmlresource::ResourceType;
 use wmltoolchain::{GameAsset, GameProject};
@@ -16,30 +19,41 @@ fn main() {
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args = CliArgs::parse(env::args().skip(1))?;
-    let script_path = args.script_path;
-    let source = fs::read_to_string(&script_path)?;
-    let package_name = args.package_name.unwrap_or_else(|| {
-        script_path
-            .file_stem()
-            .and_then(|stem| stem.to_str())
-            .unwrap_or("wml-game")
-            .to_owned()
-    });
-    let mut project = GameProject::new(
-        package_name,
-        script_path.to_string_lossy().to_string(),
-        source,
-    );
-    for asset in &args.assets {
-        let payload = fs::read(&asset.path)?;
-        let section_id = 10 + project.assets.len() as u32;
-        let resource_id = 100 + project.assets.len() as u32;
-        project = project.push_asset(match asset.resource_type {
-            ResourceType::Image => {
-                GameAsset::image(asset.name.clone(), section_id, resource_id, payload)
-            }
-            _ => GameAsset::script_data(asset.name.clone(), section_id, resource_id, payload),
+    let mut project = if let Some(demo) = &args.demo {
+        match demo.as_str() {
+            "image-audio" => build_image_audio_demo_project(),
+            other => return Err(format!("unknown demo: {other}").into()),
+        }
+    } else {
+        let script_path = args.script_path.clone().ok_or("missing script path")?;
+        let source = fs::read_to_string(&script_path)?;
+        let package_name = args.package_name.clone().unwrap_or_else(|| {
+            script_path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or("wml-game")
+                .to_owned()
         });
+        let mut project = GameProject::new(
+            package_name,
+            script_path.to_string_lossy().to_string(),
+            source,
+        );
+        for asset in &args.assets {
+            let payload = fs::read(&asset.path)?;
+            let section_id = 10 + project.assets.len() as u32;
+            let resource_id = 100 + project.assets.len() as u32;
+            project = project.push_asset(match asset.resource_type {
+                ResourceType::Image => {
+                    GameAsset::image(asset.name.clone(), section_id, resource_id, payload)
+                }
+                _ => GameAsset::script_data(asset.name.clone(), section_id, resource_id, payload),
+            });
+        }
+        project
+    };
+    if let Some(package_name) = &args.package_name {
+        project.package_name = package_name.clone();
     }
     let mut config = FrontendConfig::new(args.platform, project);
     config.step_limit = args.step_limit.unwrap_or(config.step_limit);
@@ -62,12 +76,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if let Some((_, outcome)) = report.execution.outcomes.last() {
         println!("final outcome: {outcome:?}");
     }
+    let _ = report.audio_backend.clear();
     Ok(())
 }
 
 #[derive(Debug)]
 struct CliArgs {
-    script_path: PathBuf,
+    demo: Option<String>,
+    script_path: Option<PathBuf>,
     package_name: Option<String>,
     step_limit: Option<usize>,
     platform: PlatformProfile,
@@ -77,6 +93,7 @@ struct CliArgs {
 
 impl CliArgs {
     fn parse(mut args: impl Iterator<Item = String>) -> Result<Self, Box<dyn std::error::Error>> {
+        let mut demo = None;
         let mut script_path = None;
         let mut package_name = None;
         let mut step_limit = None;
@@ -97,6 +114,10 @@ impl CliArgs {
                 "--platform" => {
                     let value = args.next().ok_or("--platform requires a value")?;
                     platform = parse_platform(&value)?;
+                }
+                "--demo" => {
+                    let value = args.next().ok_or("--demo requires a value")?;
+                    demo = Some(value);
                 }
                 "--asset" => {
                     let value = args.next().ok_or("--asset requires a value")?;
@@ -126,8 +147,14 @@ impl CliArgs {
             }
         }
 
-        let script_path = script_path.ok_or("missing script path")?;
+        if demo.is_none() && script_path.is_none() {
+            return Err("missing script path or demo".into());
+        }
+        if demo.is_some() && script_path.is_some() {
+            return Err("demo mode does not accept a positional script path".into());
+        }
         Ok(Self {
+            demo,
             script_path,
             package_name,
             step_limit,
@@ -179,6 +206,6 @@ fn parse_font(value: &str) -> Result<GuiFontPreset, Box<dyn std::error::Error>> 
 
 fn print_usage() {
     eprintln!(
-        "usage: wmlfrontend <script.wml> [--package NAME] [--step-limit N] [--platform native|wasm|egui] [--font noto|default|mono] [--asset NAME=PATH] [--image NAME=PATH]"
+        "usage: wmlfrontend [--demo image-audio | <script.wml>] [--package NAME] [--step-limit N] [--platform native|wasm|egui] [--font noto|default|mono] [--asset NAME=PATH] [--image NAME=PATH]"
     );
 }
