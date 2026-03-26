@@ -20,6 +20,7 @@ WMLScript currently supports a small module-based script format:
 
 The compiler front end currently lowers a limited subset of function bodies:
 
+- expression statements terminated by `;`
 - `return;`
 - `return <expr>;`
 
@@ -39,6 +40,8 @@ export func main() {
 
 The current expression grammar is intentionally small:
 
+- expression statements:
+  - `expr;`
 - literals:
   - `nil`
   - `true`
@@ -55,13 +58,14 @@ The current expression grammar is intentionally small:
   - `expr / expr`
 - grouping:
   - `(expr)`
+- call expressions:
+  - `ext.namespace.name(expr, ...)`
 
 The compiler performs constant folding and type tagging for this subset.
 
 ### 2.1 Current Limitations
 
 - No `if` / `match` / `while` / `for` yet.
-- No function call syntax in the script surface yet.
 - No user-defined structs or classes yet.
 - `export let` currently accepts literal values only.
 

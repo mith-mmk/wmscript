@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use wmlbytecode::{Op, Opcode, encode_op};
+use wmlbytecode::{Op, encode_op};
 use wmlext::ExtensionRegistry;
 use wmlvm::{Program as VmProgram, Value as VmValue};
 
@@ -47,18 +47,49 @@ pub(crate) fn compile_return_body(
     extension_registry: Option<&ExtensionRegistry>,
 ) -> Result<(Vec<u8>, TypeTag)> {
     let mut parser = ExprParser::new(body);
-    let expr = match parser.parse_return_statement()? {
-        Some(expr) => expr,
-        None => {
-            parser.finish()?;
-            return Ok((vec![Opcode::Return as u8], TypeTag::Nil));
-        }
-    };
-    parser.finish()?;
+    let mut code = Vec::new();
+    let mut type_tag = TypeTag::Nil;
+    let mut saw_return = false;
 
-    let optimized = optimize_expr(expr)?;
-    let type_tag = infer_type(&optimized)?;
-    let code = emit_expr(&optimized, program, extension_registry)?;
+    loop {
+        parser.skip_ws_and_comments();
+        if parser.eof() {
+            break;
+        }
+
+        if parser.consume_keyword("return") {
+            parser.skip_ws_and_comments();
+            if !parser.consume_byte(b';') {
+                let expr = parser.parse_expression()?;
+                parser.skip_ws_and_comments();
+                parser.expect_byte(b';')?;
+                let optimized = optimize_expr(expr)?;
+                type_tag = infer_type(&optimized)?;
+                emit_expr_into(&optimized, program, extension_registry, &mut code)?;
+            }
+            encode_op(&Op::Return, &mut code);
+            saw_return = true;
+            parser.skip_ws_and_comments();
+            if !parser.eof() {
+                return Err(unsupported_expression(
+                    "unexpected trailing tokens after return",
+                ));
+            }
+            break;
+        }
+
+        let expr = parser.parse_expression()?;
+        parser.skip_ws_and_comments();
+        parser.expect_byte(b';')?;
+        let optimized = optimize_expr(expr)?;
+        emit_expr_into(&optimized, program, extension_registry, &mut code)?;
+        encode_op(&Op::Pop, &mut code);
+    }
+
+    if !saw_return {
+        encode_op(&Op::Return, &mut code);
+    }
+
     Ok((code, type_tag))
 }
 
@@ -223,17 +254,6 @@ fn type_of_value(value: &VmValue) -> TypeTag {
     }
 }
 
-fn emit_expr(
-    expr: &Expr,
-    program: &mut VmProgram,
-    extension_registry: Option<&ExtensionRegistry>,
-) -> Result<Vec<u8>> {
-    let mut code = Vec::new();
-    emit_expr_into(expr, program, extension_registry, &mut code)?;
-    encode_op(&Op::Return, &mut code);
-    Ok(code)
-}
-
 fn emit_expr_into(
     expr: &Expr,
     program: &mut VmProgram,
@@ -300,31 +320,6 @@ struct ExprParser<'a> {
 impl<'a> ExprParser<'a> {
     fn new(source: &'a str) -> Self {
         Self { source, index: 0 }
-    }
-
-    fn parse_return_statement(&mut self) -> Result<Option<Expr>> {
-        self.skip_ws_and_comments();
-        if self.eof() {
-            return Ok(None);
-        }
-        self.expect_keyword("return")?;
-        self.skip_ws_and_comments();
-        if self.consume_byte(b';') {
-            return Ok(None);
-        }
-        let expr = self.parse_expression()?;
-        self.skip_ws_and_comments();
-        self.expect_byte(b';')?;
-        Ok(Some(expr))
-    }
-
-    fn finish(&mut self) -> Result<()> {
-        self.skip_ws_and_comments();
-        if self.eof() {
-            Ok(())
-        } else {
-            Err(unsupported_expression("unexpected trailing tokens"))
-        }
     }
 
     fn parse_expression(&mut self) -> Result<Expr> {
@@ -501,16 +496,6 @@ impl<'a> ExprParser<'a> {
         }
     }
 
-    fn expect_keyword(&mut self, keyword: &str) -> Result<()> {
-        if self.consume_keyword(keyword) {
-            Ok(())
-        } else {
-            Err(unsupported_expression(format!(
-                "expected keyword `{keyword}`"
-            )))
-        }
-    }
-
     fn consume_keyword(&mut self, keyword: &str) -> bool {
         let end = self.index.saturating_add(keyword.len());
         if self.source[self.index..].starts_with(keyword)
@@ -563,6 +548,9 @@ fn is_literal_start(byte: u8) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wmlbytecode::Opcode;
+    use wmlext::{ExtensionFunctionSpec, ExtensionRegistry, NamespacePolicy};
+    use wmlhost::CAP_GUI;
 
     #[test]
     fn optimizer_folds_constant_return_expression() {
@@ -598,5 +586,46 @@ mod tests {
         assert_eq!(type_tag, TypeTag::Nil);
         assert_eq!(program.constant_count(), 0);
         assert_eq!(code, vec![Opcode::Return as u8]);
+    }
+
+    #[test]
+    fn statement_sequence_can_call_extensions_before_return() {
+        let mut registry = ExtensionRegistry::with_policy(NamespacePolicy::permissive());
+        registry
+            .register_extension(
+                "ext.message",
+                &[ExtensionFunctionSpec::new("show", 7, 2, 2, CAP_GUI)],
+            )
+            .expect("register message extension");
+
+        let mut program = VmProgram::new();
+        let body = r#"
+            ext.message.show("Narrator", "Hello");
+            return "Prologue";
+        "#;
+        let (code, type_tag) =
+            compile_return_body(body, &mut program, Some(&registry)).expect("compile body");
+        assert_eq!(type_tag, TypeTag::String);
+        assert_eq!(program.constant_count(), 3);
+        assert_eq!(
+            code,
+            vec![
+                Opcode::PushConst as u8,
+                0,
+                0,
+                Opcode::PushConst as u8,
+                1,
+                0,
+                Opcode::CallHost as u8,
+                7,
+                0,
+                2,
+                Opcode::Pop as u8,
+                Opcode::PushConst as u8,
+                2,
+                0,
+                Opcode::Return as u8,
+            ]
+        );
     }
 }
