@@ -1,0 +1,7 @@
+worker sender {
+    send 2, "hello worker";
+}
+
+worker receiver {
+    return recv();
+}

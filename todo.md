@@ -297,11 +297,11 @@ Toolchain
 
  [+] Hello World
 
- input連動スクリプト
+ [+] input連動スクリプト
 
- worker通信サンプル
+ [+] worker通信サンプル
 
- assetロード例
+ [+] assetロード例
 
 6. スクリプトコンパイラ
 6.1 フロントエンド

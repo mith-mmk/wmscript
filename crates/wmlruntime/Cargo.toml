@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 wmlarchive = { path = "../wmlarchive" }
+wmlbytecode = { path = "../wmlbytecode" }
 wmlhost = { path = "../wmlhost" }
 wmlplatform = { path = "../wmlplatform" }
 wmlresource = { path = "../wmlresource" }
