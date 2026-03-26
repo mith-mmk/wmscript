@@ -1240,6 +1240,11 @@ impl Scheduler {
         self.workers.get_mut(&worker_id)
     }
 
+    /// Returns all worker ids currently known to the scheduler.
+    pub fn worker_ids(&self) -> impl Iterator<Item = WorkerId> + '_ {
+        self.workers.keys().copied()
+    }
+
     /// Returns a serializable snapshot of the scheduler and all workers.
     pub fn snapshot(&self) -> SchedulerSnapshot {
         SchedulerSnapshot {

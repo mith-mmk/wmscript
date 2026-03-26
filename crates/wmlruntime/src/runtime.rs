@@ -21,6 +21,7 @@ use wmlresource::{
 use wmlverifier::{VerificationError, verify_program};
 use wmlvm::{
     HostApi, HostError, Message, Program, RunOutcome, Scheduler, Value, Vm, VmConfig, WorkerId,
+    WorkerState,
 };
 
 /// Runtime configuration shared by the wrapper.
@@ -311,6 +312,7 @@ impl HostApi for SharedHostApi {
 }
 
 /// Headless runtime wrapper.
+#[derive(Clone)]
 pub struct Runtime {
     config: RuntimeConfig,
     scheduler: Rc<RefCell<Scheduler>>,
@@ -1479,6 +1481,23 @@ impl Runtime {
 
     pub fn audio_playback_states(&self) -> BTreeMap<u64, AudioPlaybackState> {
         self.audio_states.borrow().clone()
+    }
+
+    pub fn worker_state(&self, worker_id: WorkerId) -> Option<WorkerState> {
+        self.scheduler.borrow().worker_state(worker_id)
+    }
+
+    pub fn waiting_workers(&self) -> Vec<WorkerId> {
+        let scheduler = self.scheduler.borrow();
+        scheduler
+            .worker_ids()
+            .filter(|worker_id| {
+                matches!(
+                    scheduler.worker_state(*worker_id),
+                    Some(WorkerState::WaitingMessage)
+                )
+            })
+            .collect()
     }
 
     /// Stops all running audio sessions.

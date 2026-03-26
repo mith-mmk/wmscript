@@ -117,17 +117,18 @@ impl GuiFontPreset {
 pub fn launch_frontend_gui(
     report: FrontendReport,
     font_preset: GuiFontPreset,
-) -> Result<(), FrontendError> {
+) -> Result<FrontendReport, FrontendError> {
     gui::run_gui(report, font_preset)
 }
 
 /// Summary returned after running the frontend.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct FrontendReport {
     pub build: BuildArtifact,
     pub execution: ExecutionReport,
     pub log_lines: Vec<String>,
     pub ui_state: UiState,
+    pub runtime: Runtime,
     pub audio_backend: Rc<SharedAudioBackend>,
 }
 
@@ -137,6 +138,18 @@ impl PartialEq for FrontendReport {
             && self.execution == other.execution
             && self.log_lines == other.log_lines
             && self.ui_state == other.ui_state
+    }
+}
+
+impl fmt::Debug for FrontendReport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FrontendReport")
+            .field("build", &self.build)
+            .field("execution", &self.execution)
+            .field("log_lines", &self.log_lines)
+            .field("ui_state", &self.ui_state)
+            .field("audio_backend", &self.audio_backend)
+            .finish()
     }
 }
 
@@ -346,6 +359,7 @@ impl UiApp for FrontendApp {
                     execution,
                     log_lines,
                     ui_state: ctx.state().clone(),
+                    runtime: self.runtime.clone(),
                     audio_backend: self.runtime.audio_backend_handle(),
                 });
             }

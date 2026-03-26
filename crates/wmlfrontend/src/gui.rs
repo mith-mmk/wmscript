@@ -10,9 +10,13 @@ use crate::{FrontendError, FrontendReport, GuiFontPreset};
 use wmlui::{
     UiChoice, UiImageDrawCall, UiImageSlot, UiImageSource, UiKey, UiMouseButton, UiPoint, UiTheme,
 };
+use wmlvm::{Message, Value};
 
 /// Runs the GUI window for a finished frontend report.
-pub fn run_gui(report: FrontendReport, font_preset: GuiFontPreset) -> Result<(), FrontendError> {
+pub fn run_gui(
+    report: FrontendReport,
+    font_preset: GuiFontPreset,
+) -> Result<FrontendReport, FrontendError> {
     let title = format!("WML Frontend - {}", report.build.manifest.package_name);
     let size = report.ui_state.window.size;
     let auto_close = matches!(
@@ -26,13 +30,19 @@ pub fn run_gui(report: FrontendReport, font_preset: GuiFontPreset) -> Result<(),
         ..Default::default()
     };
 
-    let app = ReportApp::new(report, auto_close, font_preset);
+    let report_slot = std::rc::Rc::new(std::cell::RefCell::new(None));
+    let app = ReportApp::new(report, auto_close, font_preset, report_slot.clone());
     eframe::run_native(&title, options, Box::new(move |_| Ok(Box::new(app))))
-        .map_err(|error| FrontendError::Gui(error.to_string()))
+        .map_err(|error| FrontendError::Gui(error.to_string()))?;
+    report_slot
+        .borrow_mut()
+        .take()
+        .ok_or_else(|| FrontendError::Gui("GUI exited without a report".to_owned()))
 }
 
 struct ReportApp {
     report: FrontendReport,
+    report_slot: std::rc::Rc<std::cell::RefCell<Option<FrontendReport>>>,
     textures: BTreeMap<UiImageSlot, egui::TextureHandle>,
     textures_by_resource_id: BTreeMap<u32, TextureEntry>,
     initialized: bool,
@@ -53,9 +63,15 @@ struct TextureEntry {
 }
 
 impl ReportApp {
-    fn new(report: FrontendReport, auto_close: bool, font_preset: GuiFontPreset) -> Self {
+    fn new(
+        report: FrontendReport,
+        auto_close: bool,
+        font_preset: GuiFontPreset,
+        report_slot: std::rc::Rc<std::cell::RefCell<Option<FrontendReport>>>,
+    ) -> Self {
         Self {
             report,
+            report_slot,
             textures: BTreeMap::new(),
             textures_by_resource_id: BTreeMap::new(),
             initialized: false,
@@ -174,11 +190,7 @@ impl ReportApp {
 
     fn apply_choice(&mut self, choice: &UiChoice) {
         self.selected_choice = Some(choice.id.clone());
-        let line = format!("Choice selected: {}", choice.label);
-        self.report.ui_state.scene.message_window.visible = true;
-        self.report.ui_state.scene.message_window.speaker = Some("Choice".to_owned());
-        self.report.ui_state.scene.message_window.text = line.clone();
-        self.report.ui_state.scene.message_window.backlog.push(line);
+        self.send_user_reply(Value::String(choice.id.clone()));
     }
 
     fn submit_player_input(&mut self) {
@@ -188,15 +200,52 @@ impl ReportApp {
         }
         self.player_input.clear();
         self.selected_choice = None;
-        self.report.ui_state.scene.message_window.visible = true;
-        self.report.ui_state.scene.message_window.speaker = Some("Player".to_owned());
-        self.report.ui_state.scene.message_window.text = text.clone();
+        self.send_user_reply(Value::String(text));
+    }
+
+    fn send_user_reply(&mut self, payload: Value) {
+        let target_worker_id = {
+            let waiting = self.report.runtime.waiting_workers();
+            if waiting.len() == 1 {
+                waiting[0]
+            } else {
+                self.report.execution.worker_id
+            }
+        };
         self.report
-            .ui_state
-            .scene
-            .message_window
-            .backlog
-            .push(format!("Player: {text}"));
+            .runtime
+            .send_message(Message::new(0, target_worker_id, 0, payload));
+        let outcomes = self.report.runtime.run_until_idle(8);
+        if !outcomes.is_empty() {
+            self.report.execution.outcomes.extend(outcomes);
+        }
+        self.sync_runtime_state();
+    }
+
+    fn sync_runtime_state(&mut self) {
+        let runtime_message = self.report.runtime.message_window_state();
+        self.report.ui_state.scene.message_window =
+            crate::to_ui_message_window_state(runtime_message);
+        self.report.ui_state.scene.draw_calls = self
+            .report
+            .runtime
+            .image_draws()
+            .into_iter()
+            .map(crate::to_ui_draw_call)
+            .collect();
+        self.report.ui_state.scene.audio_playback = self
+            .report
+            .runtime
+            .audio_playback_states()
+            .into_iter()
+            .map(|(handle, state)| (handle, crate::to_ui_audio_state(state)))
+            .collect::<BTreeMap<_, _>>();
+    }
+}
+
+impl Drop for ReportApp {
+    fn drop(&mut self) {
+        *self.report_slot.borrow_mut() = Some(self.report.clone());
     }
 }
 

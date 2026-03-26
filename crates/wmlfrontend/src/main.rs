@@ -59,9 +59,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     config.step_limit = args.step_limit.unwrap_or(config.step_limit);
     config.auto_run = true;
     let egui_mode = matches!(args.platform.kind, PlatformKind::Egui);
-    let report = run_frontend(config)?;
+    let mut report = run_frontend(config)?;
     if egui_mode {
-        launch_frontend_gui(report.clone(), args.font)?;
+        report = launch_frontend_gui(report, args.font)?;
     }
 
     println!("=== frontend summary ===");
