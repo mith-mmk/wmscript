@@ -68,6 +68,8 @@ export func main() {
   - `expr - expr`
   - `expr * expr`
   - `expr / expr`
+  - `expr && expr`
+  - `expr || expr`
 - 比較:
   - `expr == expr`
   - `expr != expr`

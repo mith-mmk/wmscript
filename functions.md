@@ -68,6 +68,8 @@ The current expression grammar is intentionally small:
   - `expr - expr`
   - `expr * expr`
   - `expr / expr`
+  - `expr && expr`
+  - `expr || expr`
 - comparison:
   - `expr == expr`
   - `expr != expr`

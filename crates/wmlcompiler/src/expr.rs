@@ -31,6 +31,8 @@ enum BinaryOp {
     Le,
     Gt,
     Ge,
+    And,
+    Or,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -388,6 +390,8 @@ fn fold_binary(op: BinaryOp, left: &Expr, right: &Expr) -> Result<Option<VmValue
         BinaryOp::Le => VmValue::Bool(fold_ordering(&left, &right, |a, b| a <= b)?),
         BinaryOp::Gt => VmValue::Bool(fold_ordering(&left, &right, |a, b| a > b)?),
         BinaryOp::Ge => VmValue::Bool(fold_ordering(&left, &right, |a, b| a >= b)?),
+        BinaryOp::And => VmValue::Bool(left.truthy() && right.truthy()),
+        BinaryOp::Or => VmValue::Bool(left.truthy() || right.truthy()),
     };
     Ok(Some(value))
 }
@@ -480,7 +484,14 @@ fn infer_type(expr: &Expr) -> Result<TypeTag> {
 fn infer_binary_type(op: BinaryOp, left: TypeTag, right: TypeTag) -> Result<TypeTag> {
     if matches!(
         op,
-        BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge
+        BinaryOp::Eq
+            | BinaryOp::Ne
+            | BinaryOp::Lt
+            | BinaryOp::Le
+            | BinaryOp::Gt
+            | BinaryOp::Ge
+            | BinaryOp::And
+            | BinaryOp::Or
     ) {
         return Ok(TypeTag::Bool);
     }
@@ -534,22 +545,64 @@ fn emit_expr_into(
             emit_expr_into(inner, program, extension_registry, locals, out)?;
             encode_op(&Op::Not, out);
         }
-        Expr::Binary { op, left, right } => {
-            emit_expr_into(left, program, extension_registry, locals, out)?;
-            emit_expr_into(right, program, extension_registry, locals, out)?;
-            match op {
-                BinaryOp::Add => encode_op(&Op::Add, out),
-                BinaryOp::Sub => encode_op(&Op::Sub, out),
-                BinaryOp::Mul => encode_op(&Op::Mul, out),
-                BinaryOp::Div => encode_op(&Op::Div, out),
-                BinaryOp::Eq => encode_op(&Op::Eq, out),
-                BinaryOp::Ne => encode_op(&Op::Ne, out),
-                BinaryOp::Lt => encode_op(&Op::Lt, out),
-                BinaryOp::Le => encode_op(&Op::Le, out),
-                BinaryOp::Gt => encode_op(&Op::Gt, out),
-                BinaryOp::Ge => encode_op(&Op::Ge, out),
+        Expr::Binary { op, left, right } => match op {
+            BinaryOp::And => {
+                emit_short_circuit_and(left, right, program, extension_registry, locals, out)?
             }
-        }
+            BinaryOp::Or => {
+                emit_short_circuit_or(left, right, program, extension_registry, locals, out)?
+            }
+            BinaryOp::Add => {
+                emit_expr_into(left, program, extension_registry, locals, out)?;
+                emit_expr_into(right, program, extension_registry, locals, out)?;
+                encode_op(&Op::Add, out);
+            }
+            BinaryOp::Sub => {
+                emit_expr_into(left, program, extension_registry, locals, out)?;
+                emit_expr_into(right, program, extension_registry, locals, out)?;
+                encode_op(&Op::Sub, out);
+            }
+            BinaryOp::Mul => {
+                emit_expr_into(left, program, extension_registry, locals, out)?;
+                emit_expr_into(right, program, extension_registry, locals, out)?;
+                encode_op(&Op::Mul, out);
+            }
+            BinaryOp::Div => {
+                emit_expr_into(left, program, extension_registry, locals, out)?;
+                emit_expr_into(right, program, extension_registry, locals, out)?;
+                encode_op(&Op::Div, out);
+            }
+            BinaryOp::Eq => {
+                emit_expr_into(left, program, extension_registry, locals, out)?;
+                emit_expr_into(right, program, extension_registry, locals, out)?;
+                encode_op(&Op::Eq, out);
+            }
+            BinaryOp::Ne => {
+                emit_expr_into(left, program, extension_registry, locals, out)?;
+                emit_expr_into(right, program, extension_registry, locals, out)?;
+                encode_op(&Op::Ne, out);
+            }
+            BinaryOp::Lt => {
+                emit_expr_into(left, program, extension_registry, locals, out)?;
+                emit_expr_into(right, program, extension_registry, locals, out)?;
+                encode_op(&Op::Lt, out);
+            }
+            BinaryOp::Le => {
+                emit_expr_into(left, program, extension_registry, locals, out)?;
+                emit_expr_into(right, program, extension_registry, locals, out)?;
+                encode_op(&Op::Le, out);
+            }
+            BinaryOp::Gt => {
+                emit_expr_into(left, program, extension_registry, locals, out)?;
+                emit_expr_into(right, program, extension_registry, locals, out)?;
+                encode_op(&Op::Gt, out);
+            }
+            BinaryOp::Ge => {
+                emit_expr_into(left, program, extension_registry, locals, out)?;
+                emit_expr_into(right, program, extension_registry, locals, out)?;
+                encode_op(&Op::Ge, out);
+            }
+        },
         Expr::Call { path, args } => {
             let full_name = path.join(".");
             if path.len() == 1 {
@@ -615,6 +668,56 @@ fn emit_expr_into(
             encode_op(&Op::CallHost(ext.host_id, args.len() as u8), out);
         }
     }
+    Ok(())
+}
+
+fn emit_short_circuit_and(
+    left: &Expr,
+    right: &Expr,
+    program: &mut VmProgram,
+    extension_registry: Option<&ExtensionRegistry>,
+    locals: &LocalScope,
+    out: &mut Vec<u8>,
+) -> Result<()> {
+    emit_expr_into(left, program, extension_registry, locals, out)?;
+    let jump_false_pos = emit_jump_placeholder(Op::JumpIfFalse(0), out);
+    encode_op(&Op::Pop, out);
+    emit_expr_into(right, program, extension_registry, locals, out)?;
+    let jump_false_pos_right = emit_jump_placeholder(Op::JumpIfFalse(0), out);
+    encode_op(&Op::Pop, out);
+    encode_op(&Op::PushTrue, out);
+    let jump_end_pos = emit_jump_placeholder(Op::Jump(0), out);
+    let false_target = out.len();
+    patch_jump_target(out, jump_false_pos, false_target)?;
+    patch_jump_target(out, jump_false_pos_right, false_target)?;
+    encode_op(&Op::PushFalse, out);
+    let end_target = out.len();
+    patch_jump_target(out, jump_end_pos, end_target)?;
+    Ok(())
+}
+
+fn emit_short_circuit_or(
+    left: &Expr,
+    right: &Expr,
+    program: &mut VmProgram,
+    extension_registry: Option<&ExtensionRegistry>,
+    locals: &LocalScope,
+    out: &mut Vec<u8>,
+) -> Result<()> {
+    emit_expr_into(left, program, extension_registry, locals, out)?;
+    let jump_true_pos = emit_jump_placeholder(Op::JumpIfTrue(0), out);
+    encode_op(&Op::Pop, out);
+    emit_expr_into(right, program, extension_registry, locals, out)?;
+    let jump_true_pos_right = emit_jump_placeholder(Op::JumpIfTrue(0), out);
+    encode_op(&Op::Pop, out);
+    encode_op(&Op::PushFalse, out);
+    let jump_end_pos = emit_jump_placeholder(Op::Jump(0), out);
+    let true_target = out.len();
+    patch_jump_target(out, jump_true_pos, true_target)?;
+    patch_jump_target(out, jump_true_pos_right, true_target)?;
+    encode_op(&Op::PushTrue, out);
+    let end_target = out.len();
+    patch_jump_target(out, jump_end_pos, end_target)?;
     Ok(())
 }
 
@@ -753,7 +856,43 @@ impl<'a> ExprParser<'a> {
     }
 
     fn parse_expression(&mut self) -> Result<Expr> {
-        self.parse_equality()
+        self.parse_or()
+    }
+
+    fn parse_or(&mut self) -> Result<Expr> {
+        let mut expr = self.parse_and()?;
+        loop {
+            self.skip_ws_and_comments();
+            if !self.source[self.index..].starts_with("||") {
+                break;
+            }
+            self.index += 2;
+            let rhs = self.parse_and()?;
+            expr = Expr::Binary {
+                op: BinaryOp::Or,
+                left: Box::new(expr),
+                right: Box::new(rhs),
+            };
+        }
+        Ok(expr)
+    }
+
+    fn parse_and(&mut self) -> Result<Expr> {
+        let mut expr = self.parse_equality()?;
+        loop {
+            self.skip_ws_and_comments();
+            if !self.source[self.index..].starts_with("&&") {
+                break;
+            }
+            self.index += 2;
+            let rhs = self.parse_equality()?;
+            expr = Expr::Binary {
+                op: BinaryOp::And,
+                left: Box::new(expr),
+                right: Box::new(rhs),
+            };
+        }
+        Ok(expr)
     }
 
     fn parse_equality(&mut self) -> Result<Expr> {
@@ -1214,6 +1353,25 @@ mod tests {
         assert!(code.contains(&(Opcode::Lt as u8)));
         assert!(code.contains(&(Opcode::Ge as u8)));
         assert!(code.contains(&(Opcode::JumpIfFalse as u8)));
+    }
+
+    #[test]
+    fn logical_and_or_short_circuit_compile() {
+        let mut program = VmProgram::new();
+        let body = r#"
+            let left = recv();
+            let right = recv();
+            if left && right || !left {
+                return "ok";
+            } else {
+                return "no";
+            }
+        "#;
+        let (code, type_tag) = compile_return_body(body, &mut program, None).expect("compile body");
+        assert_eq!(type_tag, TypeTag::String);
+        assert!(code.contains(&(Opcode::JumpIfFalse as u8)));
+        assert!(code.contains(&(Opcode::JumpIfTrue as u8)));
+        assert!(code.contains(&(Opcode::Not as u8)));
     }
 
     #[test]
