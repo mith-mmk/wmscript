@@ -23,6 +23,9 @@ The compiler front end currently lowers a limited subset of function bodies:
 - expression statements terminated by `;`
 - `return;`
 - `return <expr>;`
+- `if expr { ... }`
+- `if expr { ... } else { ... }`
+- `recv();` to wait for the next message from the frontend or another worker
 
 ### 1.1 Module Example
 
@@ -42,6 +45,9 @@ The current expression grammar is intentionally small:
 
 - expression statements:
   - `expr;`
+- conditionals:
+  - `if expr { ... }`
+  - `if expr { ... } else { ... }`
 - literals:
   - `nil`
   - `true`
@@ -56,16 +62,23 @@ The current expression grammar is intentionally small:
   - `expr - expr`
   - `expr * expr`
   - `expr / expr`
+- comparison:
+  - `expr == expr`
+  - `expr != expr`
 - grouping:
   - `(expr)`
 - call expressions:
   - `ext.namespace.name(expr, ...)`
+  - `recv()`
+  - `try_recv()`
+  - `yield()`
+  - `sleep()`
 
 The compiler performs constant folding and type tagging for this subset.
 
 ### 2.1 Current Limitations
 
-- No `if` / `match` / `while` / `for` yet.
+- No `match` / `while` / `for` yet.
 - No user-defined structs or classes yet.
 - `export let` currently accepts literal values only.
 
@@ -197,8 +210,8 @@ current execution model and are useful to know when reading the runtime code.
 - `send(worker_id, payload)` - queues a message to another worker
 - `recv()` - waits for a message or yields waiting state
 - `try_recv()` - reads a message if one is available
-- `yield` - voluntarily yields the worker
-- `sleep` - moves the worker into sleeping state
+- `yield()` - voluntarily yields the worker
+- `sleep()` - moves the worker into sleeping state
 
 ## 5. Practical Notes
 
@@ -208,6 +221,9 @@ current execution model and are useful to know when reading the runtime code.
 - A simple read-flag convention works well with `state`: set keys like
   `read:chapter_1:0001` with `state.set(...)` and check them with
   `state.has(...)` when you decide whether to skip already-read content.
+- For choice-driven branching, the frontend stores the selected choice id in
+  `ui.last_choice`; a common pattern is to call `recv();` and then branch on
+  `state.get("ui.last_choice")`.
 
 ## 6. Examples
 

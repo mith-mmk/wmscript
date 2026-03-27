@@ -1615,6 +1615,10 @@ impl Runtime {
         self.message_window.borrow_mut().skip_mode = enabled;
     }
 
+    pub fn set_state_value(&self, key: impl Into<String>, value: Value) {
+        self.state_manager.borrow_mut().set(key.into(), value);
+    }
+
     pub fn audio_playback_states(&self) -> BTreeMap<u64, AudioPlaybackState> {
         self.audio_states.borrow().clone()
     }

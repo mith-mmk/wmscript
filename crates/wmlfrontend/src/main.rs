@@ -3,9 +3,9 @@ use std::fs;
 use std::path::PathBuf;
 
 use wmlfrontend::{
-    FrontendConfig, GuiFontPreset, demo::build_image_audio_demo_project,
-    demo::build_engine_worker_demo_project, demo::build_ui_image_demo_project,
-    launch_frontend_gui, run_frontend,
+    FrontendConfig, GuiFontPreset, demo::build_engine_worker_demo_project,
+    demo::build_image_audio_demo_project, demo::build_ui_image_demo_project, launch_frontend_gui,
+    run_frontend,
 };
 use wmlplatform::{PlatformKind, PlatformProfile};
 use wmlresource::ResourceType;

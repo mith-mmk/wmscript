@@ -23,6 +23,9 @@
 - `;` で終わる式文
 - `return;`
 - `return <expr>;`
+- `if expr { ... }`
+- `if expr { ... } else { ... }`
+- `recv();` で frontend / worker からの次のメッセージを待つ
 
 ### 1.1 モジュール例
 
@@ -42,6 +45,9 @@ export func main() {
 
 - 式文:
   - `expr;`
+- 条件分岐:
+  - `if expr { ... }`
+  - `if expr { ... } else { ... }`
 - リテラル:
   - `nil`
   - `true`
@@ -56,16 +62,23 @@ export func main() {
   - `expr - expr`
   - `expr * expr`
   - `expr / expr`
+- 比較:
+  - `expr == expr`
+  - `expr != expr`
 - グルーピング:
   - `(expr)`
 - 関数・拡張呼び出し:
   - `ext.namespace.name(expr, ...)`
+  - `recv()`
+  - `try_recv()`
+  - `yield()`
+  - `sleep()`
 
 この範囲について、コンパイラは定数畳み込みと型タグ付けを行います。
 
 ### 2.1 現在の制約
 
-- `if` / `match` / `while` / `for` は未実装です。
+- `match` / `while` / `for` は未実装です。
 - ユーザー定義 struct / class もまだありません。
 - `export let` は現状リテラル値のみです。
 
@@ -196,8 +209,8 @@ export func main() {
 - `send(worker_id, payload)` - 別 worker へメッセージを送ります
 - `recv()` - メッセージを待って worker を待機状態にします
 - `try_recv()` - 受信可能ならメッセージを1つ読み取ります
-- `yield` - 自発的に worker を譲ります
-- `sleep` - worker を睡眠状態に移します
+- `yield()` - 自発的に worker を譲ります
+- `sleep()` - worker を睡眠状態に移します
 
 ## 5. 実用上の補足
 
@@ -208,6 +221,9 @@ export func main() {
   `read:chapter_1:0001` のようなキーを `state.set(...)` で保存し、
   既読判定では `state.has(...)` を見る、というルールにすると
   エンジン側で制御しやすくなります。
+- 選択肢の分岐は、frontend が `ui.last_choice` に選択 id を保存し、
+  スクリプト側が `recv();` のあとで `state.get("ui.last_choice")` を
+  使って分岐するのが簡単です。
 
 ## 6. 参照サンプル
 

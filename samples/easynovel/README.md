@@ -1,9 +1,10 @@
 # Easy Novel Sample
 
 This sample is a tiny story-driven script. It keeps the structure of a visual-novel
-style project, but stays within the compiler's current expression and function model.
-The runtime example chooses which chapter to run via a command-line argument, and the
-frontend message window renders the returned chapter text as a narration block.
+style project, and now uses `state.has(...)` to decide whether a chapter should enable
+skip mode for already-read content. The runtime example chooses which chapter to run
+via a command-line argument, and the frontend message window renders the returned
+chapter text as a narration block.
 
 Source:
 
@@ -30,9 +31,8 @@ export func main() {
 
 Notes:
 
-- The current compiler can emit these functions directly because each body is a
-  simple `return` expression.
-- The sample is intentionally written to be easy to extend with branching later.
+- The sample marks each chapter as read with `state.set("read:...", true)`.
+- Re-running a chapter toggles message skip mode via `ext.message.skip(true)`.
 - The frontend reads the final returned string and places it in the message window.
 
 Run examples:

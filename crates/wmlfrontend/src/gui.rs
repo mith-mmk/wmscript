@@ -197,6 +197,12 @@ impl ReportApp {
 
     fn apply_choice(&mut self, choice: &UiChoice) {
         self.selected_choice = Some(choice.id.clone());
+        self.report
+            .runtime
+            .set_state_value("ui.last_choice", Value::String(choice.id.clone()));
+        self.report
+            .runtime
+            .set_state_value("ui.last_reply", Value::String(choice.id.clone()));
         self.send_user_reply(Value::String(choice.id.clone()));
     }
 
@@ -207,6 +213,12 @@ impl ReportApp {
         }
         self.player_input.clear();
         self.selected_choice = None;
+        self.report
+            .runtime
+            .set_state_value("ui.last_input", Value::String(text.clone()));
+        self.report
+            .runtime
+            .set_state_value("ui.last_reply", Value::String(text.clone()));
         self.send_user_reply(Value::String(text));
     }
 
@@ -432,25 +444,27 @@ impl ReportApp {
                                         .size(14.0 * scale.max(0.75))
                                         .color(egui::Color32::WHITE),
                                 );
-                                let mut speed = self.report.ui_state.scene.message_window.text_speed;
+                                let mut speed =
+                                    self.report.ui_state.scene.message_window.text_speed;
                                 if ui
                                     .add_sized(
                                         [message_rect.width() * 0.35, 18.0 * scale.max(0.75)],
-                                        egui::Slider::new(&mut speed, 0.0..=120.0)
-                                            .show_value(true),
+                                        egui::Slider::new(&mut speed, 0.0..=120.0).show_value(true),
                                     )
                                     .changed()
                                 {
                                     self.report.runtime.set_message_speed(speed);
                                     self.report.ui_state.scene.message_window.text_speed = speed;
                                 }
-                                let mut auto_mode = self.report.ui_state.scene.message_window.auto_mode;
+                                let mut auto_mode =
+                                    self.report.ui_state.scene.message_window.auto_mode;
                                 if ui.checkbox(&mut auto_mode, "Auto").changed() {
                                     self.report.runtime.set_message_auto_mode(auto_mode);
                                     self.report.ui_state.scene.message_window.auto_mode = auto_mode;
                                     self.auto_advance_sent = false;
                                 }
-                                let mut skip_mode = self.report.ui_state.scene.message_window.skip_mode;
+                                let mut skip_mode =
+                                    self.report.ui_state.scene.message_window.skip_mode;
                                 if ui.checkbox(&mut skip_mode, "Skip").changed() {
                                     self.report.runtime.set_message_skip_mode(skip_mode);
                                     self.report.ui_state.scene.message_window.skip_mode = skip_mode;
@@ -507,13 +521,21 @@ impl ReportApp {
                             ui.horizontal(|ui| {
                                 ui.checkbox(&mut self.message_history_open, "Text Log");
                                 ui.label(
-                                    egui::RichText::new(if self.report.ui_state.scene.message_window.skip_mode {
-                                        "skip"
-                                    } else if self.report.ui_state.scene.message_window.auto_mode {
-                                        "auto"
-                                    } else {
-                                        "manual"
-                                    })
+                                    egui::RichText::new(
+                                        if self.report.ui_state.scene.message_window.skip_mode {
+                                            "skip"
+                                        } else if self
+                                            .report
+                                            .ui_state
+                                            .scene
+                                            .message_window
+                                            .auto_mode
+                                        {
+                                            "auto"
+                                        } else {
+                                            "manual"
+                                        },
+                                    )
                                     .size(13.0 * scale.max(0.75))
                                     .color(egui::Color32::from_rgb(180, 220, 180)),
                                 );

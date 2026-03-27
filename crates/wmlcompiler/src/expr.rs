@@ -23,6 +23,8 @@ enum BinaryOp {
     Sub,
     Mul,
     Div,
+    Eq,
+    Ne,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -40,6 +42,17 @@ enum Expr {
     },
 }
 
+#[derive(Clone, Debug, PartialEq)]
+enum Stmt {
+    Expr(Expr),
+    Return(Option<Expr>),
+    If {
+        condition: Expr,
+        then_branch: Vec<Stmt>,
+        else_branch: Vec<Stmt>,
+    },
+}
+
 /// Compiles a `return` statement body into bytecode and a type tag.
 pub(crate) fn compile_return_body(
     body: &str,
@@ -47,44 +60,18 @@ pub(crate) fn compile_return_body(
     extension_registry: Option<&ExtensionRegistry>,
 ) -> Result<(Vec<u8>, TypeTag)> {
     let mut parser = ExprParser::new(body);
+    let statements = parser.parse_statements(None)?;
     let mut code = Vec::new();
-    let mut type_tag = TypeTag::Nil;
-    let mut saw_return = false;
-
-    loop {
-        parser.skip_ws_and_comments();
-        if parser.eof() {
-            break;
-        }
-
-        if parser.consume_keyword("return") {
-            parser.skip_ws_and_comments();
-            if !parser.consume_byte(b';') {
-                let expr = parser.parse_expression()?;
-                parser.skip_ws_and_comments();
-                parser.expect_byte(b';')?;
-                let optimized = optimize_expr(expr)?;
-                type_tag = infer_type(&optimized)?;
-                emit_expr_into(&optimized, program, extension_registry, &mut code)?;
-            }
-            encode_op(&Op::Return, &mut code);
-            saw_return = true;
-            parser.skip_ws_and_comments();
-            if !parser.eof() {
-                return Err(unsupported_expression(
-                    "unexpected trailing tokens after return",
-                ));
-            }
-            break;
-        }
-
-        let expr = parser.parse_expression()?;
-        parser.skip_ws_and_comments();
-        parser.expect_byte(b';')?;
-        let optimized = optimize_expr(expr)?;
-        emit_expr_into(&optimized, program, extension_registry, &mut code)?;
-        encode_op(&Op::Pop, &mut code);
-    }
+    let mut type_tag = None;
+    let emitted = emit_statements(
+        &statements,
+        program,
+        extension_registry,
+        &mut code,
+        &mut type_tag,
+    )?;
+    let saw_return = emitted.saw_return;
+    let type_tag = type_tag.or(emitted.return_type).unwrap_or(TypeTag::Nil);
 
     if !saw_return {
         encode_op(&Op::Return, &mut code);
@@ -125,6 +112,175 @@ fn optimize_expr(expr: Expr) -> Result<Expr> {
     }
 }
 
+fn emit_statements(
+    statements: &[Stmt],
+    program: &mut VmProgram,
+    extension_registry: Option<&ExtensionRegistry>,
+    out: &mut Vec<u8>,
+    type_tag: &mut Option<TypeTag>,
+) -> Result<EmitResult> {
+    let mut summary = EmitResult::default();
+    for stmt in statements {
+        let emitted = emit_statement(stmt, program, extension_registry, out, type_tag)?;
+        summary.saw_return |= emitted.saw_return;
+        if let Some(return_type) = emitted.return_type {
+            *type_tag = Some(match type_tag.take() {
+                Some(existing) => merge_type_tags(existing, return_type),
+                None => return_type,
+            });
+        }
+        summary.return_type = match (summary.return_type, emitted.return_type) {
+            (Some(existing), Some(next)) => Some(merge_type_tags(existing, next)),
+            (None, Some(next)) => Some(next),
+            (current, None) => current,
+        };
+    }
+    Ok(summary)
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct EmitResult {
+    saw_return: bool,
+    return_type: Option<TypeTag>,
+}
+
+fn emit_statement(
+    stmt: &Stmt,
+    program: &mut VmProgram,
+    extension_registry: Option<&ExtensionRegistry>,
+    out: &mut Vec<u8>,
+    type_tag: &mut Option<TypeTag>,
+) -> Result<EmitResult> {
+    match stmt {
+        Stmt::Expr(expr) => {
+            let optimized = optimize_expr(expr.clone())?;
+            emit_expr_into(&optimized, program, extension_registry, out)?;
+            encode_op(&Op::Pop, out);
+            Ok(EmitResult::default())
+        }
+        Stmt::Return(expr) => {
+            let return_type = if let Some(expr) = expr.clone() {
+                let optimized = optimize_expr(expr)?;
+                let return_type = infer_type(&optimized)?;
+                emit_expr_into(&optimized, program, extension_registry, out)?;
+                *type_tag = Some(match type_tag.take() {
+                    Some(existing) => merge_type_tags(existing, return_type),
+                    None => return_type,
+                });
+                Some(return_type)
+            } else {
+                Some(TypeTag::Nil)
+            };
+            encode_op(&Op::Return, out);
+            Ok(EmitResult {
+                saw_return: true,
+                return_type,
+            })
+        }
+        Stmt::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            let optimized = optimize_expr(condition.clone())?;
+            emit_expr_into(&optimized, program, extension_registry, out)?;
+            let jump_false_pos = emit_jump_placeholder(Op::JumpIfFalse(0), out);
+            let then_result =
+                emit_statements(then_branch, program, extension_registry, out, type_tag)?;
+            let mut else_result = EmitResult::default();
+            if else_branch.is_empty() {
+                let target = out.len();
+                patch_jump_target(out, jump_false_pos, target)?;
+            } else {
+                let jump_end_pos = emit_jump_placeholder(Op::Jump(0), out);
+                let target = out.len();
+                patch_jump_target(out, jump_false_pos, target)?;
+                else_result =
+                    emit_statements(else_branch, program, extension_registry, out, type_tag)?;
+                let target = out.len();
+                patch_jump_target(out, jump_end_pos, target)?;
+            }
+            let return_type = match (then_result, else_result) {
+                (
+                    EmitResult {
+                        saw_return: true,
+                        return_type: Some(left),
+                    },
+                    EmitResult {
+                        saw_return: true,
+                        return_type: Some(right),
+                    },
+                ) if left == right => Some(left),
+                _ => None,
+            };
+            let saw_return = then_result.saw_return || else_result.saw_return;
+            Ok(EmitResult {
+                saw_return,
+                return_type,
+            })
+        }
+    }
+}
+
+fn merge_type_tags(left: TypeTag, right: TypeTag) -> TypeTag {
+    match (left, right) {
+        (TypeTag::Unknown, _) | (_, TypeTag::Unknown) => TypeTag::Unknown,
+        (TypeTag::Nil, other) => other,
+        (other, TypeTag::Nil) => other,
+        (left, right) if left == right => left,
+        _ => TypeTag::Unknown,
+    }
+}
+
+fn emit_jump_placeholder(opcode: Op, out: &mut Vec<u8>) -> usize {
+    let pos = out.len();
+    match opcode {
+        Op::Jump(_) => encode_op(&Op::Jump(0), out),
+        Op::JumpIfFalse(_) => encode_op(&Op::JumpIfFalse(0), out),
+        Op::JumpIfTrue(_) => encode_op(&Op::JumpIfTrue(0), out),
+        other => encode_op(&other, out),
+    }
+    pos
+}
+
+fn patch_jump_target(out: &mut [u8], opcode_pos: usize, target: usize) -> Result<()> {
+    let target = u32::try_from(target).map_err(|_| CompileError::BytecodeOverflow {
+        what: "jump target",
+        value: target as u32,
+    })?;
+    let operand_pos = opcode_pos + 1;
+    let bytes = target.to_le_bytes();
+    let end = operand_pos + bytes.len();
+    if end > out.len() {
+        return Err(unsupported_expression("jump target patch out of range"));
+    }
+    out[operand_pos..end].copy_from_slice(&bytes);
+    Ok(())
+}
+
+fn parse_statements_until(
+    parser: &mut ExprParser<'_>,
+    terminator: Option<u8>,
+) -> Result<Vec<Stmt>> {
+    let mut statements = Vec::new();
+    loop {
+        parser.skip_ws_and_comments();
+        if parser.eof() {
+            if terminator.is_some() {
+                return Err(unsupported_expression("unexpected end of block"));
+            }
+            break;
+        }
+        if let Some(terminator) = terminator {
+            if parser.peek_byte() == Some(terminator) {
+                break;
+            }
+        }
+        statements.push(parser.parse_statement()?);
+    }
+    Ok(statements)
+}
+
 fn fold_unary_neg(expr: &Expr) -> Result<Option<VmValue>> {
     match expr {
         Expr::Literal(VmValue::Integer(value)) => Ok(Some(VmValue::Integer(-value))),
@@ -149,6 +305,8 @@ fn fold_binary(op: BinaryOp, left: &Expr, right: &Expr) -> Result<Option<VmValue
         BinaryOp::Sub => fold_sub(left, right)?,
         BinaryOp::Mul => fold_mul(left, right)?,
         BinaryOp::Div => fold_div(left, right)?,
+        BinaryOp::Eq => VmValue::Bool(left == right),
+        BinaryOp::Ne => VmValue::Bool(left != right),
     };
     Ok(Some(value))
 }
@@ -228,6 +386,9 @@ fn infer_type(expr: &Expr) -> Result<TypeTag> {
 }
 
 fn infer_binary_type(op: BinaryOp, left: TypeTag, right: TypeTag) -> Result<TypeTag> {
+    if matches!(op, BinaryOp::Eq | BinaryOp::Ne) {
+        return Ok(TypeTag::Bool);
+    }
     match (left, right) {
         (TypeTag::Unknown, _) | (_, TypeTag::Unknown) => Err(unsupported_expression(
             "binary operator requires statically known numeric operands",
@@ -277,15 +438,58 @@ fn emit_expr_into(
                 BinaryOp::Sub => encode_op(&Op::Sub, out),
                 BinaryOp::Mul => encode_op(&Op::Mul, out),
                 BinaryOp::Div => encode_op(&Op::Div, out),
+                BinaryOp::Eq => encode_op(&Op::Eq, out),
+                BinaryOp::Ne => encode_op(&Op::Ne, out),
             }
         }
         Expr::Call { path, args } => {
+            let full_name = path.join(".");
+            if path.len() == 1 {
+                match path[0].as_str() {
+                    "recv" => {
+                        if !args.is_empty() {
+                            return Err(unsupported_expression(
+                                "recv() does not take any arguments",
+                            ));
+                        }
+                        encode_op(&Op::Recv, out);
+                        return Ok(());
+                    }
+                    "try_recv" => {
+                        if !args.is_empty() {
+                            return Err(unsupported_expression(
+                                "try_recv() does not take any arguments",
+                            ));
+                        }
+                        encode_op(&Op::TryRecv, out);
+                        return Ok(());
+                    }
+                    "yield" => {
+                        if !args.is_empty() {
+                            return Err(unsupported_expression(
+                                "yield() does not take any arguments",
+                            ));
+                        }
+                        encode_op(&Op::Yield, out);
+                        return Ok(());
+                    }
+                    "sleep" => {
+                        if !args.is_empty() {
+                            return Err(unsupported_expression(
+                                "sleep() does not take any arguments",
+                            ));
+                        }
+                        encode_op(&Op::Sleep, out);
+                        return Ok(());
+                    }
+                    _ => {}
+                }
+            }
             let Some(extension_registry) = extension_registry else {
                 return Err(unsupported_expression(
                     "extension calls require an extension registry",
                 ));
             };
-            let full_name = path.join(".");
             let ext = extension_registry.resolve(&full_name).map_err(|error| {
                 unsupported_expression(format!("unknown extension call `{full_name}`: {error}"))
             })?;
@@ -322,8 +526,83 @@ impl<'a> ExprParser<'a> {
         Self { source, index: 0 }
     }
 
+    fn parse_statements(&mut self, terminator: Option<u8>) -> Result<Vec<Stmt>> {
+        parse_statements_until(self, terminator)
+    }
+
+    fn parse_statement(&mut self) -> Result<Stmt> {
+        self.skip_ws_and_comments();
+        if self.consume_keyword("return") {
+            self.skip_ws_and_comments();
+            if self.consume_byte(b';') {
+                return Ok(Stmt::Return(None));
+            }
+            let expr = self.parse_expression()?;
+            self.skip_ws_and_comments();
+            self.expect_byte(b';')?;
+            return Ok(Stmt::Return(Some(expr)));
+        }
+        if self.consume_keyword("if") {
+            let condition = self.parse_expression()?;
+            self.skip_ws_and_comments();
+            let then_branch = self.parse_block()?;
+            self.skip_ws_and_comments();
+            let else_branch = if self.consume_keyword("else") {
+                self.skip_ws_and_comments();
+                self.parse_block()?
+            } else {
+                Vec::new()
+            };
+            return Ok(Stmt::If {
+                condition,
+                then_branch,
+                else_branch,
+            });
+        }
+
+        let expr = self.parse_expression()?;
+        self.skip_ws_and_comments();
+        self.expect_byte(b';')?;
+        Ok(Stmt::Expr(expr))
+    }
+
+    fn parse_block(&mut self) -> Result<Vec<Stmt>> {
+        self.skip_ws_and_comments();
+        self.expect_byte(b'{')?;
+        let statements = self.parse_statements(Some(b'}'))?;
+        self.skip_ws_and_comments();
+        self.expect_byte(b'}')?;
+        Ok(statements)
+    }
+
     fn parse_expression(&mut self) -> Result<Expr> {
-        self.parse_additive()
+        self.parse_equality()
+    }
+
+    fn parse_equality(&mut self) -> Result<Expr> {
+        let mut expr = self.parse_additive()?;
+        loop {
+            self.skip_ws_and_comments();
+            let op = if self.source[self.index..].starts_with("==") {
+                self.index += 2;
+                Some(BinaryOp::Eq)
+            } else if self.source[self.index..].starts_with("!=") {
+                self.index += 2;
+                Some(BinaryOp::Ne)
+            } else {
+                None
+            };
+            let Some(op) = op else {
+                break;
+            };
+            let rhs = self.parse_additive()?;
+            expr = Expr::Binary {
+                op,
+                left: Box::new(expr),
+                right: Box::new(rhs),
+            };
+        }
+        Ok(expr)
     }
 
     fn parse_additive(&mut self) -> Result<Expr> {
@@ -627,5 +906,59 @@ mod tests {
                 Opcode::Return as u8,
             ]
         );
+    }
+
+    #[test]
+    fn if_statement_can_branch_on_state_flags() {
+        let mut registry = ExtensionRegistry::with_policy(NamespacePolicy::permissive());
+        registry
+            .register_extension(
+                "state",
+                &[
+                    ExtensionFunctionSpec::new("has", 11, 1, 1, 0),
+                    ExtensionFunctionSpec::new("set", 12, 2, 2, 0),
+                ],
+            )
+            .expect("register state extension");
+
+        let mut program = VmProgram::new();
+        let body = r#"
+            if state.has("read:chapter_1") {
+                return "skip";
+            } else {
+                state.set("read:chapter_1", true);
+                return "show";
+            }
+        "#;
+        let (code, type_tag) =
+            compile_return_body(body, &mut program, Some(&registry)).expect("compile body");
+        assert_eq!(type_tag, TypeTag::String);
+        assert!(code.contains(&(Opcode::JumpIfFalse as u8)));
+        assert!(code.contains(&(Opcode::Jump as u8)));
+        assert!(code.contains(&(Opcode::Return as u8)));
+    }
+
+    #[test]
+    fn recv_can_be_used_as_a_branch_input() {
+        let mut registry = ExtensionRegistry::with_policy(NamespacePolicy::permissive());
+        registry
+            .register_extension("state", &[ExtensionFunctionSpec::new("get", 173, 1, 1, 0)])
+            .expect("register state extension");
+
+        let mut program = VmProgram::new();
+        let body = r#"
+            recv();
+            if state.get("ui.last_choice") == "choice-1" {
+                return "prologue";
+            } else {
+                return "other";
+            }
+        "#;
+        let (code, type_tag) =
+            compile_return_body(body, &mut program, Some(&registry)).expect("compile body");
+        assert_eq!(type_tag, TypeTag::String);
+        assert!(code.contains(&(Opcode::Recv as u8)));
+        assert!(code.contains(&(Opcode::Eq as u8)));
+        assert!(code.contains(&(Opcode::JumpIfFalse as u8)));
     }
 }

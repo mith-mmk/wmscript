@@ -1,9 +1,26 @@
-worker engine {
+export func main() {
+    if state.has("read:engineworker:intro") {
+        ext.message.skip(true);
+    } else {
+        ext.message.skip(false);
+    }
     state.set("read:engineworker:intro", true);
-    send 2, "show", "Narrator", "The engine worker streams dialogue without touching window state.", "choices", "prologue", "chapter_1", "chapter_2";
-}
-
-worker ui {
+    ext.message.show(
+        "Engine",
+        "The engine-side script keeps the read flag in state and leaves window layout to the frontend."
+    );
+    ext.message.choices("prologue", "chapter_1", "chapter_2");
+    ext.message.prompt("Choose a chapter");
     recv();
-    return "UI worker owns the message window.";
+    if state.get("ui.last_choice") == "choice-1" {
+        state.set("read:engineworker:prologue", true);
+        return "Narrator: The prologue is now marked as read.\nNarrator: The engine waited for the choice and branched from state.";
+    } else if state.get("ui.last_choice") == "choice-2" {
+        state.set("read:engineworker:chapter_1", true);
+        return "Narrator: Chapter 1 is now marked as read.\nNarrator: The engine waited for the choice and branched from state.";
+    } else if state.get("ui.last_choice") == "choice-3" {
+        state.set("read:engineworker:chapter_2", true);
+        return "Narrator: Chapter 2 is now marked as read.\nNarrator: The engine waited for the choice and branched from state.";
+    }
+    return "Narrator: No chapter was selected.";
 }

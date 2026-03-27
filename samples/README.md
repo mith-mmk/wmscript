@@ -7,7 +7,7 @@
 - `workercomm/`
   - Two-worker message passing sample.
 - `engineworker/`
-  - Engine/UI worker split sample that streams dialogue commands to the UI worker.
+  - Engine-side message control sample that keeps read flags in `state`, waits on `recv()`, and branches from `state.get("ui.last_choice")`.
 - `assetload/`
   - Runtime archive and resource loading sample.
 - `imageaudio/`
