@@ -18,6 +18,7 @@ use wmlresource::{
     Handle as ResourceHandle, LoadResult, ResourceError, ResourceManager, ResourceState,
     ResourceType,
 };
+use wmlui::{UiRect, UiSceneLayoutState};
 use wmlverifier::{VerificationError, verify_program};
 use wmlvm::{
     HostApi, HostError, Message, Program, RunOutcome, Scheduler, Value, Vm, VmConfig, WorkerId,
@@ -182,6 +183,7 @@ struct RuntimeCheckpoint {
     loaded_archives: Vec<Manifest>,
     image_draws: Vec<ImageDrawState>,
     icon_sheets: BTreeMap<u64, IconSheetState>,
+    scene_layout: UiSceneLayoutState,
     message_window: MessageWindowState,
     debug_log: Vec<String>,
     audio_states: BTreeMap<u64, AudioPlaybackState>,
@@ -326,6 +328,7 @@ pub struct Runtime {
     loaded_archives: Rc<RefCell<Vec<Manifest>>>,
     image_draws: Rc<RefCell<Vec<ImageDrawState>>>,
     icon_sheets: Rc<RefCell<BTreeMap<u64, IconSheetState>>>,
+    scene_layout: Rc<RefCell<UiSceneLayoutState>>,
     message_window: Rc<RefCell<MessageWindowState>>,
     audio_states: Rc<RefCell<BTreeMap<u64, AudioPlaybackState>>>,
     state_manager: Rc<RefCell<StateManager>>,
@@ -349,6 +352,7 @@ impl Runtime {
             loaded_archives: Rc::new(RefCell::new(Vec::new())),
             image_draws: Rc::new(RefCell::new(Vec::new())),
             icon_sheets: Rc::new(RefCell::new(BTreeMap::new())),
+            scene_layout: Rc::new(RefCell::new(UiSceneLayoutState::default())),
             message_window: Rc::new(RefCell::new(MessageWindowState::default())),
             audio_states: Rc::new(RefCell::new(BTreeMap::new())),
             state_manager: Rc::new(RefCell::new(StateManager::default())),
@@ -760,6 +764,56 @@ impl Runtime {
             prompt_host_id,
             hide_host_id,
             clear_host_id,
+        })
+    }
+
+    pub fn install_scene_extension(&mut self) -> Result<SceneExtension, RuntimeError> {
+        let layout_host_id = 180;
+        let reset_host_id = 181;
+        let scene_layout = self.scene_layout.clone();
+
+        let _ = self.register_host_function(
+            HostFunction::new(layout_host_id, 8, 8, CAP_GUI),
+            move |args| {
+                let mut layout = scene_layout.borrow_mut();
+                layout.choice_panel = UiRect::new(
+                    expect_number_arg(args, 0, "choice_x")? as f32,
+                    expect_number_arg(args, 1, "choice_y")? as f32,
+                    expect_number_arg(args, 2, "choice_width")? as f32,
+                    expect_number_arg(args, 3, "choice_height")? as f32,
+                );
+                layout.message_window = UiRect::new(
+                    expect_number_arg(args, 4, "message_x")? as f32,
+                    expect_number_arg(args, 5, "message_y")? as f32,
+                    expect_number_arg(args, 6, "message_width")? as f32,
+                    expect_number_arg(args, 7, "message_height")? as f32,
+                );
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let scene_layout = self.scene_layout.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(reset_host_id, 0, 0, CAP_GUI),
+            move |_args| {
+                *scene_layout.borrow_mut() = UiSceneLayoutState::default();
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let ids = self.extensions.register_extension(
+            "ext.scene",
+            &[
+                ExtensionFunctionSpec::new("layout", layout_host_id, 8, 8, CAP_GUI),
+                ExtensionFunctionSpec::new("reset", reset_host_id, 0, 0, CAP_GUI),
+            ],
+        )?;
+
+        Ok(SceneExtension {
+            layout_ext_id: ids[0],
+            reset_ext_id: ids[1],
+            layout_host_id,
+            reset_host_id,
         })
     }
 
@@ -1311,6 +1365,7 @@ impl Runtime {
         let loaded_archives = self.loaded_archives.clone();
         let image_draws = self.image_draws.clone();
         let icon_sheets = self.icon_sheets.clone();
+        let scene_layout = self.scene_layout.clone();
         let message_window = self.message_window.clone();
         let audio_states = self.audio_states.clone();
         let state_manager = self.state_manager.clone();
@@ -1328,6 +1383,7 @@ impl Runtime {
                         loaded_archives: loaded_archives.borrow().clone(),
                         image_draws: image_draws.borrow().clone(),
                         icon_sheets: icon_sheets.borrow().clone(),
+                        scene_layout: scene_layout.borrow().clone(),
                         message_window: message_window.borrow().clone(),
                         debug_log: debug_log.borrow().clone(),
                         audio_states: audio_states.borrow().clone(),
@@ -1343,6 +1399,7 @@ impl Runtime {
         let loaded_archives = self.loaded_archives.clone();
         let image_draws = self.image_draws.clone();
         let icon_sheets = self.icon_sheets.clone();
+        let scene_layout = self.scene_layout.clone();
         let message_window = self.message_window.clone();
         let audio_states = self.audio_states.clone();
         let audio_backend = self.audio_backend.clone();
@@ -1362,6 +1419,7 @@ impl Runtime {
                 *loaded_archives.borrow_mut() = checkpoint.loaded_archives;
                 *image_draws.borrow_mut() = checkpoint.image_draws;
                 *icon_sheets.borrow_mut() = checkpoint.icon_sheets;
+                *scene_layout.borrow_mut() = checkpoint.scene_layout;
                 *message_window.borrow_mut() = checkpoint.message_window;
                 *debug_log.borrow_mut() = checkpoint.debug_log;
                 *audio_states.borrow_mut() = checkpoint.audio_states;
@@ -1412,6 +1470,7 @@ impl Runtime {
             debug: self.install_debug_extension()?,
             net: self.install_net_extension()?,
             llm: self.install_llm_extension()?,
+            scene: self.install_scene_extension()?,
             message: self.install_message_extension()?,
             image: self.install_image_extension()?,
             audio: self.install_audio_extension()?,
@@ -1473,6 +1532,10 @@ impl Runtime {
 
     pub fn image_draws(&self) -> Vec<ImageDrawState> {
         self.image_draws.borrow().clone()
+    }
+
+    pub fn scene_layout_state(&self) -> UiSceneLayoutState {
+        self.scene_layout.borrow().clone()
     }
 
     pub fn message_window_state(&self) -> MessageWindowState {
@@ -1592,6 +1655,15 @@ pub struct MessageExtension {
     pub clear_host_id: HostId,
 }
 
+/// Stable ids assigned to the built-in scene extension.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SceneExtension {
+    pub layout_ext_id: u32,
+    pub reset_ext_id: u32,
+    pub layout_host_id: HostId,
+    pub reset_host_id: HostId,
+}
+
 /// Stable ids assigned to the built-in image extension.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ImageExtension {
@@ -1671,6 +1743,7 @@ pub struct StandardExtensions {
     pub debug: DebugExtension,
     pub net: NetExtension,
     pub llm: LlmExtension,
+    pub scene: SceneExtension,
     pub message: MessageExtension,
     pub image: ImageExtension,
     pub audio: AudioExtension,
@@ -2303,6 +2376,57 @@ mod tests {
         assert_eq!(message.choices.len(), 2);
         assert_eq!(message.choices[0].label, "Continue");
         assert_eq!(message.input_prompt.as_deref(), Some("Your name?"));
+    }
+
+    #[test]
+    fn runtime_installs_and_executes_scene_extension() {
+        let mut runtime = Runtime::new(RuntimeConfig::new(PlatformProfile::native()));
+        let extension = runtime.install_scene_extension().expect("install scene");
+
+        assert_eq!(
+            runtime.extension_registry().resolve_id("ext.scene.layout"),
+            Ok(extension.layout_ext_id)
+        );
+
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(
+                    extension.layout_host_id,
+                    &[
+                        Value::Integer(240),
+                        Value::Integer(92),
+                        Value::Integer(520),
+                        Value::Integer(180),
+                        Value::Integer(18),
+                        Value::Integer(380),
+                        Value::Integer(1244),
+                        Value::Integer(130),
+                    ],
+                )
+                .expect("scene layout"),
+            Value::Bool(true)
+        );
+
+        let layout = runtime.scene_layout_state();
+        assert_eq!(layout.choice_panel.x, 240.0);
+        assert_eq!(layout.choice_panel.y, 92.0);
+        assert_eq!(layout.message_window.x, 18.0);
+        assert_eq!(layout.message_window.height, 130.0);
+
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(extension.reset_host_id, &[])
+                .expect("scene reset"),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            runtime.scene_layout_state(),
+            wmlui::UiSceneLayoutState::default()
+        );
     }
 
     #[test]

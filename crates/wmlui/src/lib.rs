@@ -37,6 +37,26 @@ impl UiSize {
     }
 }
 
+/// Rectangular region in logical UI coordinates.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct UiRect {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+impl UiRect {
+    pub const fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+}
+
 /// Input modifiers carried by keyboard and pointer events.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct UiModifiers {
@@ -247,7 +267,26 @@ pub struct UiSceneState {
     pub images: BTreeMap<UiImageSlot, UiImageSource>,
     pub draw_calls: Vec<UiImageDrawCall>,
     pub audio_playback: BTreeMap<u64, UiAudioPlaybackState>,
+    pub layout: UiSceneLayoutState,
     pub message_window: UiMessageWindowState,
+}
+
+/// Layout used by the frontend to place in-game panels.
+#[derive(Clone, Debug, PartialEq)]
+pub struct UiSceneLayoutState {
+    pub reference_size: UiSize,
+    pub choice_panel: UiRect,
+    pub message_window: UiRect,
+}
+
+impl Default for UiSceneLayoutState {
+    fn default() -> Self {
+        Self {
+            reference_size: UiSize::new(1280.0, 720.0),
+            choice_panel: UiRect::new(240.0, 80.0, 560.0, 200.0),
+            message_window: UiRect::new(18.0, 380.0, 1244.0, 130.0),
+        }
+    }
 }
 
 /// State maintained by the outer window shell.
@@ -348,7 +387,7 @@ pub enum UiEvent {
 }
 
 /// Commands emitted by the UI application layer and consumed by a backend.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum UiCommand {
     SetTitle(String),
     SetCursor(UiCursor),
@@ -366,6 +405,7 @@ pub enum UiCommand {
         image: UiImageSource,
     },
     ClearImage(UiImageSlot),
+    SetSceneLayout(UiSceneLayoutState),
     ShowMessageWindow {
         speaker: Option<String>,
         text: String,
@@ -473,6 +513,11 @@ impl<'a> UiContext<'a> {
 
     pub fn set_audio_playback(&mut self, audio_playback: BTreeMap<u64, UiAudioPlaybackState>) {
         self.state.scene.audio_playback = audio_playback;
+    }
+
+    pub fn set_scene_layout(&mut self, layout: UiSceneLayoutState) {
+        self.state.scene.layout = layout.clone();
+        self.emit(UiCommand::SetSceneLayout(layout));
     }
 
     pub fn clear_image(&mut self, slot: UiImageSlot) {

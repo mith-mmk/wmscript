@@ -8,7 +8,8 @@ use eframe::{egui, egui::Vec2};
 
 use crate::{FrontendError, FrontendReport, GuiFontPreset};
 use wmlui::{
-    UiChoice, UiImageDrawCall, UiImageSlot, UiImageSource, UiKey, UiMouseButton, UiPoint, UiTheme,
+    UiChoice, UiImageDrawCall, UiImageSlot, UiImageSource, UiKey, UiMouseButton, UiPoint, UiRect,
+    UiSceneLayoutState, UiTheme,
 };
 use wmlvm::{Message, Value};
 
@@ -226,6 +227,7 @@ impl ReportApp {
         let runtime_message = self.report.runtime.message_window_state();
         self.report.ui_state.scene.message_window =
             crate::to_ui_message_window_state(runtime_message);
+        self.report.ui_state.scene.layout = self.report.runtime.scene_layout_state();
         self.report.ui_state.scene.draw_calls = self
             .report
             .runtime
@@ -240,6 +242,192 @@ impl ReportApp {
             .into_iter()
             .map(|(handle, state)| (handle, crate::to_ui_audio_state(state)))
             .collect::<BTreeMap<_, _>>();
+    }
+
+    fn scene_canvas_rect(stage_rect: egui::Rect, layout: &UiSceneLayoutState) -> (egui::Rect, f32) {
+        let ref_size = layout.reference_size;
+        let scale_x = if ref_size.width > 0.0 {
+            stage_rect.width() / ref_size.width
+        } else {
+            1.0
+        };
+        let scale_y = if ref_size.height > 0.0 {
+            stage_rect.height() / ref_size.height
+        } else {
+            1.0
+        };
+        let scale = scale_x.min(scale_y).max(0.1);
+        let size = egui::vec2(ref_size.width * scale, ref_size.height * scale);
+        let min = stage_rect.center() - size / 2.0;
+        (egui::Rect::from_min_size(min, size), scale)
+    }
+
+    fn scale_scene_rect(rect: UiRect, canvas_rect: egui::Rect, scale: f32) -> egui::Rect {
+        let min = canvas_rect.min + egui::vec2(rect.x * scale, rect.y * scale);
+        egui::Rect::from_min_size(min, egui::vec2(rect.width * scale, rect.height * scale))
+    }
+
+    fn draw_scene_overlays(&mut self, ctx: &egui::Context, stage_rect: egui::Rect) {
+        let layout = self.report.ui_state.scene.layout.clone();
+        let message = self.report.ui_state.scene.message_window.clone();
+        let choices = message.choices.clone();
+        let input_prompt = message.input_prompt.clone();
+        let visible = message.visible;
+        let speaker = message
+            .speaker
+            .as_deref()
+            .filter(|speaker| !speaker.is_empty())
+            .unwrap_or("Narrator")
+            .to_owned();
+        let text_lines = message
+            .text
+            .lines()
+            .map(|line| line.to_owned())
+            .collect::<Vec<_>>();
+        let backlog = message.backlog.clone();
+        let (canvas_rect, scale) = Self::scene_canvas_rect(stage_rect, &layout);
+
+        let choice_rect = Self::scale_scene_rect(layout.choice_panel, canvas_rect, scale);
+        if visible && !choices.is_empty() {
+            egui::Area::new(egui::Id::new("choice_panel"))
+                .order(egui::Order::Foreground)
+                .fixed_pos(choice_rect.min)
+                .show(ctx, |ui| {
+                    ui.set_min_size(choice_rect.size());
+                    egui::Frame::NONE
+                        .fill(egui::Color32::from_black_alpha(180))
+                        .stroke(egui::Stroke::new(
+                            (2.0 * scale).max(1.0),
+                            egui::Color32::from_rgb(46, 140, 58),
+                        ))
+                        .show(ui, |ui| {
+                            ui.add_space(10.0 * scale);
+                            ui.label(
+                                egui::RichText::new("Choices")
+                                    .size(20.0 * scale.max(0.75))
+                                    .color(egui::Color32::WHITE),
+                            );
+                            ui.add_space(8.0 * scale);
+                            for choice in &choices {
+                                let selected = self
+                                    .selected_choice
+                                    .as_deref()
+                                    .is_some_and(|selected| selected == choice.id);
+                                let button = egui::Button::new(
+                                    egui::RichText::new(choice.label.clone())
+                                        .size(18.0 * scale.max(0.75))
+                                        .color(egui::Color32::WHITE),
+                                )
+                                .fill(egui::Color32::from_black_alpha(80))
+                                .stroke(egui::Stroke::new(
+                                    1.0,
+                                    if selected {
+                                        egui::Color32::from_rgb(110, 190, 120)
+                                    } else {
+                                        egui::Color32::from_rgb(40, 80, 40)
+                                    },
+                                ))
+                                .selected(selected);
+                                if ui.add_enabled(choice.enabled, button).clicked() {
+                                    self.apply_choice(choice);
+                                }
+                                ui.add_space(4.0 * scale.max(0.75));
+                            }
+                        });
+                });
+        }
+
+        let message_rect = Self::scale_scene_rect(layout.message_window, canvas_rect, scale);
+        if visible {
+            egui::Area::new(egui::Id::new("message_window"))
+                .order(egui::Order::Foreground)
+                .fixed_pos(message_rect.min)
+                .show(ctx, |ui| {
+                    ui.set_min_size(message_rect.size());
+                    egui::Frame::NONE
+                        .fill(egui::Color32::from_black_alpha(190))
+                        .stroke(egui::Stroke::new(
+                            (2.0 * scale).max(1.0),
+                            egui::Color32::from_rgb(46, 140, 58),
+                        ))
+                        .show(ui, |ui| {
+                            ui.add_space(10.0 * scale);
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    egui::RichText::new(&speaker)
+                                        .size(20.0 * scale.max(0.75))
+                                        .color(egui::Color32::WHITE)
+                                        .strong(),
+                                );
+                            });
+                            ui.add_space(6.0 * scale);
+                            ui.separator();
+                            egui::ScrollArea::vertical()
+                                .id_salt("message_window_text")
+                                .max_height(message_rect.height() * 0.55)
+                                .show(ui, |ui| {
+                                    if text_lines.is_empty() {
+                                        ui.label(
+                                            egui::RichText::new("...")
+                                                .size(18.0 * scale.max(0.75))
+                                                .color(egui::Color32::WHITE),
+                                        );
+                                    } else {
+                                        for line in &text_lines {
+                                            ui.label(
+                                                egui::RichText::new(line)
+                                                    .size(18.0 * scale.max(0.75))
+                                                    .color(egui::Color32::WHITE),
+                                            );
+                                        }
+                                    }
+                                });
+
+                            if let Some(prompt) = input_prompt.as_deref() {
+                                ui.add_space(8.0 * scale);
+                                ui.separator();
+                                ui.label(
+                                    egui::RichText::new(prompt)
+                                        .size(16.0 * scale.max(0.75))
+                                        .color(egui::Color32::WHITE),
+                                );
+                                ui.horizontal(|ui| {
+                                    let response = ui.add_sized(
+                                        [message_rect.width() * 0.55, 28.0 * scale.max(0.75)],
+                                        egui::TextEdit::singleline(&mut self.player_input)
+                                            .hint_text("Type a line and press Enter"),
+                                    );
+                                    let enter_pressed = response.lost_focus()
+                                        && ui.input(|input| input.key_pressed(egui::Key::Enter));
+                                    if ui.button("Send").clicked() || enter_pressed {
+                                        self.submit_player_input();
+                                    }
+                                });
+                            }
+
+                            if self.message_history_open && !backlog.is_empty() {
+                                ui.add_space(8.0 * scale);
+                                ui.separator();
+                                egui::ScrollArea::vertical()
+                                    .id_salt("message_window_backlog")
+                                    .max_height(message_rect.height() * 0.22)
+                                    .show(ui, |ui| {
+                                        for (index, line) in backlog.iter().enumerate() {
+                                            ui.label(
+                                                egui::RichText::new(format!(
+                                                    "{:02}. {}",
+                                                    index + 1,
+                                                    line
+                                                ))
+                                                .size(14.0 * scale.max(0.75))
+                                                .color(egui::Color32::WHITE),
+                                            );
+                                        }
+                                    });
+                            }
+                        });
+                });
+        }
     }
 }
 
@@ -377,7 +565,7 @@ impl eframe::App for ReportApp {
                     let painter = ui.painter_at(rect);
                     painter.rect_filled(rect, 6.0, ui.visuals().extreme_bg_color);
                     for draw in draw_calls {
-                        self.paint_draw_call(&painter, rect.min, draw);
+                        self.paint_draw_call(&painter, rect.min, 0.25, draw);
                     }
                 }
 
@@ -434,163 +622,24 @@ impl eframe::App for ReportApp {
                 }
             });
 
+        let mut stage_rect = None;
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.vertical(|ui| {
-                ui.heading("Game Body");
-                ui.add_space(8.0);
-
-                let draw_calls = self.report.ui_state.scene.draw_calls.clone();
-                egui::Frame::group(ui.style())
-                    .fill(ui.visuals().extreme_bg_color)
-                    .show(ui, |ui| {
-                        ui.set_min_height(240.0);
-                        if draw_calls.is_empty() {
-                            ui.centered_and_justified(|ui| {
-                                ui.label("No scene loaded yet.");
-                            });
-                        } else {
-                            let (rect, _) = ui.allocate_exact_size(
-                                egui::vec2(ui.available_width().max(1.0), 220.0),
-                                egui::Sense::hover(),
-                            );
-                            let painter = ui.painter_at(rect);
-                            for draw in &draw_calls {
-                                self.paint_draw_call(&painter, rect.min, draw);
-                            }
-                        }
-                    });
-
-                ui.add_space(10.0);
-                let window = self.report.ui_state.scene.message_window.clone();
-                let input_prompt = window.input_prompt.clone();
-                ui.group(|ui| {
-                    ui.vertical(|ui| {
-                        ui.label(egui::RichText::new("Input").strong());
-                        if let Some(prompt) = input_prompt.as_deref() {
-                            ui.label(prompt);
-                        }
-                        ui.horizontal(|ui| {
-                            let response = ui.add(
-                                egui::TextEdit::singleline(&mut self.player_input)
-                                    .hint_text("Type a line and press Enter"),
-                            );
-                            let enter_pressed = response.lost_focus()
-                                && ui.input(|input| input.key_pressed(egui::Key::Enter));
-                            if ui.button("Send").clicked() || enter_pressed {
-                                self.submit_player_input();
-                            }
-                        });
-                        if !self.player_input.is_empty() {
-                            ui.label(format!("draft: {}", self.player_input));
-                        }
-                    });
-                });
-
-                ui.add_space(10.0);
-                let visible = window.visible;
-                let speaker = window
-                    .speaker
-                    .as_deref()
-                    .filter(|speaker| !speaker.is_empty())
-                    .unwrap_or("Narrator")
-                    .to_owned();
-                let text_lines = window
-                    .text
-                    .lines()
-                    .map(|line| line.to_owned())
-                    .collect::<Vec<_>>();
-                let backlog = window.backlog.clone();
-                let choices = window.choices.clone();
-                egui::Frame::group(ui.style())
-                    .fill(ui.visuals().window_fill())
-                    .show(ui, |ui| {
-                        ui.set_min_height(260.0);
-                        ui.vertical(|ui| {
-                            ui.horizontal(|ui| {
-                                ui.label(egui::RichText::new(&speaker).strong().size(18.0));
-                                ui.separator();
-                                ui.label(format!("lines: {}", backlog.len()));
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        if ui
-                                            .button(if self.message_history_open {
-                                                "Hide History"
-                                            } else {
-                                                "Show History"
-                                            })
-                                            .clicked()
-                                        {
-                                            self.message_history_open = !self.message_history_open;
-                                        }
-                                        if ui
-                                            .button(if visible { "Hide" } else { "Show" })
-                                            .clicked()
-                                        {
-                                            self.report.ui_state.scene.message_window.visible =
-                                                !visible;
-                                        }
-                                    },
-                                );
-                            });
-                            ui.add_space(6.0);
-                            ui.separator();
-                            if visible {
-                                egui::ScrollArea::vertical()
-                                    .id_salt("message_window_text")
-                                    .max_height(160.0)
-                                    .show(ui, |ui| {
-                                        if text_lines.is_empty() {
-                                            ui.label("...");
-                                        } else {
-                                            for line in &text_lines {
-                                                ui.label(line);
-                                            }
-                                        }
-                                    });
-                            } else {
-                                ui.label(egui::RichText::new("Message window hidden.").italics());
-                            }
-
-                            if !choices.is_empty() {
-                                ui.add_space(8.0);
-                                ui.separator();
-                                ui.label(egui::RichText::new("Choices").strong());
-                                ui.horizontal_wrapped(|ui| {
-                                    for choice in &choices {
-                                        let selected = self
-                                            .selected_choice
-                                            .as_deref()
-                                            .is_some_and(|selected| selected == choice.id);
-                                        let response = ui.add_enabled(
-                                            choice.enabled,
-                                            egui::Button::new(choice.label.clone())
-                                                .selected(selected),
-                                        );
-                                        if response.clicked() {
-                                            self.apply_choice(choice);
-                                        }
-                                    }
-                                });
-                            }
-
-                            if self.message_history_open && !backlog.is_empty() {
-                                ui.add_space(8.0);
-                                ui.separator();
-                                ui.label(egui::RichText::new("Backlog").strong());
-                                egui::ScrollArea::vertical()
-                                    .id_salt("message_window_backlog")
-                                    .max_height(100.0)
-                                    .show(ui, |ui| {
-                                        for (index, line) in backlog.iter().enumerate() {
-                                            ui.label(format!("{:02}. {}", index + 1, line));
-                                        }
-                                    });
-                            }
-                        });
-                    });
-            });
+            let available = ui.available_size();
+            let (rect, _) = ui.allocate_exact_size(available, egui::Sense::hover());
+            stage_rect = Some(rect);
+            let painter = ui.painter_at(rect);
+            painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(12, 10, 10));
+            let layout = self.report.ui_state.scene.layout.clone();
+            let (canvas_rect, scale) = Self::scene_canvas_rect(rect, &layout);
+            painter.rect_filled(canvas_rect, 0.0, egui::Color32::from_rgb(28, 18, 16));
+            let draw_calls = self.report.ui_state.scene.draw_calls.clone();
+            for draw in &draw_calls {
+                self.paint_draw_call(&painter, canvas_rect.min, scale, draw);
+            }
         });
+        if let Some(stage_rect) = stage_rect {
+            self.draw_scene_overlays(ctx, stage_rect);
+        }
 
         if self.auto_close && !self.close_sent {
             self.close_sent = true;
@@ -600,10 +649,16 @@ impl eframe::App for ReportApp {
 }
 
 impl ReportApp {
-    fn paint_draw_call(&self, painter: &egui::Painter, origin: egui::Pos2, draw: &UiImageDrawCall) {
+    fn paint_draw_call(
+        &self,
+        painter: &egui::Painter,
+        origin: egui::Pos2,
+        scale: f32,
+        draw: &UiImageDrawCall,
+    ) {
         let Some(texture_entry) = self.textures_by_resource_id.get(&draw.resource_id) else {
             painter.text(
-                origin + egui::vec2(draw.x, draw.y),
+                origin + egui::vec2(draw.x * scale, draw.y * scale),
                 egui::Align2::LEFT_TOP,
                 format!("missing texture {}", draw.resource_id),
                 egui::TextStyle::Body.resolve(&egui::Style::default()),
@@ -614,10 +669,10 @@ impl ReportApp {
 
         let natural = texture_entry.size;
         let source = resolve_source_rect(draw, natural);
-        let width = draw.width.unwrap_or(source.width());
-        let height = draw.height.unwrap_or(source.height());
+        let width = draw.width.unwrap_or(source.width()) * scale;
+        let height = draw.height.unwrap_or(source.height()) * scale;
         let rect = egui::Rect::from_min_size(
-            origin + egui::vec2(draw.x, draw.y),
+            origin + egui::vec2(draw.x * scale, draw.y * scale),
             egui::vec2(width, height),
         );
         let uv = egui::Rect::from_min_max(

@@ -185,6 +185,8 @@ Toolchain
 
  [+] send / recv
 
+ [ ] time 時間コントロールAPI(wait キー待ち or 時間待ち /tick/sleep)
+
  asset/stateアクセスAPI
 
 2.2 内部コア構造

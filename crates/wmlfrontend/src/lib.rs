@@ -186,6 +186,17 @@ impl UiBackend for ConsoleBackend {
                 image.label
             ),
             UiCommand::ClearImage(slot) => println!("[ui] clear image: slot={slot:?}"),
+            UiCommand::SetSceneLayout(layout) => println!(
+                "[ui] scene layout: choice=({}, {}, {}, {}), message=({}, {}, {}, {})",
+                layout.choice_panel.x,
+                layout.choice_panel.y,
+                layout.choice_panel.width,
+                layout.choice_panel.height,
+                layout.message_window.x,
+                layout.message_window.y,
+                layout.message_window.width,
+                layout.message_window.height
+            ),
             UiCommand::ShowMessageWindow { speaker, text } => {
                 println!("[ui] message window: speaker={speaker:?} text={text}")
             }
@@ -285,6 +296,7 @@ impl UiApp for FrontendApp {
                 *self.log_lines.borrow_mut() = log_lines.clone();
                 let runtime_message = self.runtime.message_window_state();
                 let ui_message = to_ui_message_window_state(runtime_message);
+                ctx.set_scene_layout(self.runtime.scene_layout_state());
                 if ui_message.visible
                     || ui_message.speaker.is_some()
                     || !ui_message.text.is_empty()

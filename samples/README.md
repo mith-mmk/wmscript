@@ -12,5 +12,7 @@
   - Runtime archive and resource loading sample.
 - `imageaudio/`
   - Combined image draw and audio playback demo.
+- `uiimage/`
+  - Scene layout demo that mirrors `samples/uiimage.png`.
 - `easynovel/`
   - Small story-driven sample with chapters and narration that renders into the message window.

@@ -15,6 +15,10 @@
   - engine/UI のワーカー分離サンプル。UI ワーカーに会話コマンドを流します。
 - `assetload/`
   - アーカイブとリソース読み込みを確認するサンプル。
+- `imageaudio/`
+  - 画像描画と音声再生を組み合わせたデモ。
+- `uiimage/`
+  - `samples/uiimage.png` を再現する scene layout デモ。
 - `easynovel/`
   - 章構成とナレーションを持つ簡易ノベルサンプル。
 
@@ -148,7 +152,9 @@ cargo run -p wmlruntime --example worker_comm
 cargo run -p wmlruntime --example asset_load
 cargo run -p wmlruntime --example easynovel
 cargo run -p wmlfrontend -- samples/easynovel/main.wml --platform egui --font noto
+cargo run -p wmlfrontend -- --demo uiimage --platform egui --font noto
 cargo run -p wmlfrontend -- --demo image-audio --platform egui --font noto
+cargo run -p wmlfrontend -- --demo engineworker --platform egui --font noto
 ```
 
 egui フロントエンドの既定フォントは、日本語表示を優先して Noto Sans 系にしています。
@@ -156,7 +162,9 @@ egui フロントエンドの既定フォントは、日本語表示を優先し
 
 `wmlfrontend` には組み込みデモ起動もあります。
 
+- `--demo uiimage` でスクリプトファイルを読まずに scene layout デモを起動します。
 - `--demo image-audio` でスクリプトファイルを読まずに画像/音声デモを起動します。
+- `--demo engineworker` でスクリプトファイルを読まずに worker 分離デモを起動します。
 - `--package NAME` でデモのパッケージ名を上書きできます。
 - `--platform native|wasm|egui` で実行プロファイルを選べます。
 - `--image NAME=PATH` と `--asset NAME=PATH` はファイル指定の通常モードで追加アセットを付けるためのオプションです。

@@ -15,6 +15,10 @@ examples used in this workspace.
   - Engine/UI worker split sample that streams dialogue commands to the UI worker.
 - `assetload/`
   - Runtime archive and resource loading sample.
+- `imageaudio/`
+  - Combined image draw and audio playback demo.
+- `uiimage/`
+  - Scene layout demo that mirrors `samples/uiimage.png`.
 - `easynovel/`
   - Small story-driven sample with chapters and narration.
 
@@ -147,7 +151,9 @@ cargo run -p wmlruntime --example worker_comm
 cargo run -p wmlruntime --example asset_load
 cargo run -p wmlruntime --example easynovel
 cargo run -p wmlfrontend -- samples/easynovel/main.wml --platform egui --font noto
+cargo run -p wmlfrontend -- --demo uiimage --platform egui --font noto
 cargo run -p wmlfrontend -- --demo image-audio --platform egui --font noto
+cargo run -p wmlfrontend -- --demo engineworker --platform egui --font noto
 ```
 
 The egui frontend defaults to Noto Sans for Japanese-friendly rendering. Use
@@ -155,7 +161,9 @@ The egui frontend defaults to Noto Sans for Japanese-friendly rendering. Use
 
 `wmlfrontend` also supports a built-in demo mode:
 
+- `--demo uiimage` runs the embedded scene layout showcase without reading a script file.
 - `--demo image-audio` runs the embedded image/audio showcase without reading a script file.
+- `--demo engineworker` runs the embedded worker split showcase without reading a script file.
 - `--package NAME` overrides the demo package name.
 - `--platform native|wasm|egui` selects the runtime/backend profile.
 - `--image NAME=PATH` and `--asset NAME=PATH` attach extra resources in file-backed mode.

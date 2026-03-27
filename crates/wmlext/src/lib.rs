@@ -331,6 +331,13 @@ pub fn standard_extension_registry() -> Result<ExtensionRegistry> {
         )],
     )?;
     registry.register_extension(
+        "ext.scene",
+        &[
+            ExtensionFunctionSpec::new("layout", 180, 8, 8, CAP_GUI),
+            ExtensionFunctionSpec::new("reset", 181, 0, 0, CAP_GUI),
+        ],
+    )?;
+    registry.register_extension(
         "ext.message",
         &[
             ExtensionFunctionSpec::new("show", 135, 1, 2, CAP_GUI),

@@ -110,7 +110,16 @@ Requires: `CAP_ASYNC_IO`
 | --- | --- | --- | --- |
 | `ext.llm.generate` | `generate(prompt: string)` | `string` | Sends a prompt to the configured LLM backend. |
 
-### 3.5 `ext.message`
+### 3.5 `ext.scene`
+
+Requires: `CAP_GUI`
+
+| Function | Signature | Returns | Notes |
+| --- | --- | --- | --- |
+| `ext.scene.layout` | `layout(choice_x, choice_y, choice_w, choice_h, message_x, message_y, message_w, message_h)` | `bool` | Sets the frontend scene layout used for choice and message panels. |
+| `ext.scene.reset` | `reset()` | `bool` | Restores the default scene layout. |
+
+### 3.6 `ext.message`
 
 Requires: `CAP_GUI`
 
@@ -123,7 +132,7 @@ Requires: `CAP_GUI`
 | `ext.message.hide` | `hide()` | `bool` | Hides the message window. |
 | `ext.message.clear` | `clear()` | `bool` | Clears the message window text, prompt, and choices. |
 
-### 3.6 `ext.image`
+### 3.7 `ext.image`
 
 Requires: `CAP_GUI`
 
@@ -139,7 +148,7 @@ Requires: `CAP_GUI`
 | `ext.image.set_icon_sheet` | `set_icon_sheet(handle, cell_w, cell_h)` | `bool` | Stores sprite-sheet metadata for later icon draws. |
 | `ext.image.draw_icon` | `draw_icon(handle, index, x, y)` | `bool` | Records a sprite draw call from the configured icon sheet. |
 
-### 3.7 `ext.audio`
+### 3.8 `ext.audio`
 
 Requires: `CAP_ASYNC_IO`
 
@@ -155,7 +164,7 @@ Requires: `CAP_ASYNC_IO`
 | `ext.audio.status` | `status(handle)` | `int` | Returns the current playback state code. |
 | `ext.audio.release` | `release(handle)` | `bool` | Releases the audio handle. |
 
-### 3.8 `ext.vm`
+### 3.9 `ext.vm`
 
 Requires: no capability
 
@@ -164,7 +173,7 @@ Requires: no capability
 | `ext.vm.save` | `save(slot: int)` | `bool` | Stores a runtime checkpoint in memory. |
 | `ext.vm.load` | `load(slot: int)` | `bool` | Restores a previously stored checkpoint. |
 
-### 3.9 `state`
+### 3.10 `state`
 
 Requires: no capability
 
@@ -200,5 +209,8 @@ See:
 - `samples/helloworld`
 - `samples/inputlink`
 - `samples/workercomm`
+- `samples/engineworker`
 - `samples/assetload`
+- `samples/imageaudio`
+- `samples/uiimage`
 - `samples/easynovel`

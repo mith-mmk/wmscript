@@ -1,5 +1,19 @@
 use wmltoolchain::{GameAsset, GameProject};
 
+pub fn build_ui_image_demo_project() -> GameProject {
+    GameProject::new(
+        "ui-image-demo",
+        "samples/uiimage/main.wml",
+        include_str!("../../../samples/uiimage/main.wml"),
+    )
+    .push_asset(GameAsset::image(
+        "scene/background",
+        10,
+        100,
+        include_bytes!("../../../samples/uiimage.png").to_vec(),
+    ))
+}
+
 pub fn build_image_audio_demo_project() -> GameProject {
     GameProject::new(
         "image-audio-demo",
@@ -19,6 +33,14 @@ pub fn build_image_audio_demo_project() -> GameProject {
         include_bytes!("../../../samples/audio_and_images/sample02.jpg").to_vec(),
     ))
     .push_asset(GameAsset::audio("bgm/loop", 12, 200, make_demo_wav()))
+}
+
+pub fn build_engine_worker_demo_project() -> GameProject {
+    GameProject::new(
+        "engine-worker-split-demo",
+        "samples/engineworker/main.wml",
+        include_str!("../../../samples/engineworker/main.wml"),
+    )
 }
 
 fn make_demo_wav() -> Vec<u8> {

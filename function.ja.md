@@ -110,7 +110,16 @@ export func main() {
 | --- | --- | --- | --- |
 | `ext.llm.generate` | `generate(prompt: string)` | `string` | 設定済みの LLM バックエンドへプロンプトを送信します。 |
 
-### 3.5 `ext.message`
+### 3.5 `ext.scene`
+
+必要 capability: `CAP_GUI`
+
+| 関数 | シグネチャ | 戻り値 | 説明 |
+| --- | --- | --- | --- |
+| `ext.scene.layout` | `layout(choice_x, choice_y, choice_w, choice_h, message_x, message_y, message_w, message_h)` | `bool` | choice 窓と message 窓の配置を frontend 側に指示します。 |
+| `ext.scene.reset` | `reset()` | `bool` | 既定の scene layout に戻します。 |
+
+### 3.6 `ext.message`
 
 必要 capability: `CAP_GUI`
 
@@ -123,7 +132,7 @@ export func main() {
 | `ext.message.hide` | `hide()` | `bool` | メッセージ窓を隠します。 |
 | `ext.message.clear` | `clear()` | `bool` | メッセージ窓の本文、プロンプト、選択肢を消去します。 |
 
-### 3.6 `ext.image`
+### 3.7 `ext.image`
 
 必要 capability: `CAP_GUI`
 
@@ -139,7 +148,7 @@ export func main() {
 | `ext.image.set_icon_sheet` | `set_icon_sheet(handle, cell_w, cell_h)` | `bool` | スプライトシートのセル情報を保存します。 |
 | `ext.image.draw_icon` | `draw_icon(handle, index, x, y)` | `bool` | 設定済みのアイコンシートからスプライトを描画します。 |
 
-### 3.7 `ext.audio`
+### 3.8 `ext.audio`
 
 必要 capability: `CAP_ASYNC_IO`
 
@@ -155,7 +164,7 @@ export func main() {
 | `ext.audio.status` | `status(handle)` | `int` | 現在の再生状態コードを返します。 |
 | `ext.audio.release` | `release(handle)` | `bool` | 音声 handle を解放します。 |
 
-### 3.8 `ext.vm`
+### 3.9 `ext.vm`
 
 必要 capability: なし
 
@@ -164,7 +173,7 @@ export func main() {
 | `ext.vm.save` | `save(slot: int)` | `bool` | ランタイムのチェックポイントをメモリに保存します。 |
 | `ext.vm.load` | `load(slot: int)` | `bool` | 以前保存したチェックポイントを復元します。 |
 
-### 3.9 `state`
+### 3.10 `state`
 
 必要 capability: なし
 
@@ -199,5 +208,8 @@ export func main() {
 - `samples/helloworld`
 - `samples/inputlink`
 - `samples/workercomm`
+- `samples/engineworker`
 - `samples/assetload`
+- `samples/imageaudio`
+- `samples/uiimage`
 - `samples/easynovel`
