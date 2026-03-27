@@ -25,6 +25,7 @@ The compiler front end currently lowers a limited subset of function bodies:
 - `return <expr>;`
 - `if expr { ... }`
 - `if expr { ... } else { ... }`
+- `if expr { ... } else if expr { ... } else { ... }`
 - `recv();` to wait for the next message from the frontend or another worker
 
 ### 1.1 Module Example
@@ -48,6 +49,7 @@ The current expression grammar is intentionally small:
 - conditionals:
   - `if expr { ... }`
   - `if expr { ... } else { ... }`
+  - `if expr { ... } else if expr { ... } else { ... }`
 - literals:
   - `nil`
   - `true`

@@ -25,6 +25,7 @@
 - `return <expr>;`
 - `if expr { ... }`
 - `if expr { ... } else { ... }`
+- `if expr { ... } else if expr { ... } else { ... }`
 - `recv();` で frontend / worker からの次のメッセージを待つ
 
 ### 1.1 モジュール例
@@ -48,6 +49,7 @@ export func main() {
 - 条件分岐:
   - `if expr { ... }`
   - `if expr { ... } else { ... }`
+  - `if expr { ... } else if expr { ... } else { ... }`
 - リテラル:
   - `nil`
   - `true`

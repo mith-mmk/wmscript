@@ -543,27 +543,35 @@ impl<'a> ExprParser<'a> {
             return Ok(Stmt::Return(Some(expr)));
         }
         if self.consume_keyword("if") {
-            let condition = self.parse_expression()?;
-            self.skip_ws_and_comments();
-            let then_branch = self.parse_block()?;
-            self.skip_ws_and_comments();
-            let else_branch = if self.consume_keyword("else") {
-                self.skip_ws_and_comments();
-                self.parse_block()?
-            } else {
-                Vec::new()
-            };
-            return Ok(Stmt::If {
-                condition,
-                then_branch,
-                else_branch,
-            });
+            return self.parse_if_statement();
         }
 
         let expr = self.parse_expression()?;
         self.skip_ws_and_comments();
         self.expect_byte(b';')?;
         Ok(Stmt::Expr(expr))
+    }
+
+    fn parse_if_statement(&mut self) -> Result<Stmt> {
+        let condition = self.parse_expression()?;
+        self.skip_ws_and_comments();
+        let then_branch = self.parse_block()?;
+        self.skip_ws_and_comments();
+        let else_branch = if self.consume_keyword("else") {
+            self.skip_ws_and_comments();
+            if self.consume_keyword("if") {
+                vec![self.parse_if_statement()?]
+            } else {
+                self.parse_block()?
+            }
+        } else {
+            Vec::new()
+        };
+        Ok(Stmt::If {
+            condition,
+            then_branch,
+            else_branch,
+        })
     }
 
     fn parse_block(&mut self) -> Result<Vec<Stmt>> {
@@ -928,6 +936,31 @@ mod tests {
             } else {
                 state.set("read:chapter_1", true);
                 return "show";
+            }
+        "#;
+        let (code, type_tag) =
+            compile_return_body(body, &mut program, Some(&registry)).expect("compile body");
+        assert_eq!(type_tag, TypeTag::String);
+        assert!(code.contains(&(Opcode::JumpIfFalse as u8)));
+        assert!(code.contains(&(Opcode::Jump as u8)));
+        assert!(code.contains(&(Opcode::Return as u8)));
+    }
+
+    #[test]
+    fn else_if_chains_compile() {
+        let mut registry = ExtensionRegistry::with_policy(NamespacePolicy::permissive());
+        registry
+            .register_extension("state", &[ExtensionFunctionSpec::new("get", 173, 1, 1, 0)])
+            .expect("register state extension");
+
+        let mut program = VmProgram::new();
+        let body = r#"
+            if state.get("ui.last_choice") == "choice-1" {
+                return "one";
+            } else if state.get("ui.last_choice") == "choice-2" {
+                return "two";
+            } else {
+                return "other";
             }
         "#;
         let (code, type_tag) =

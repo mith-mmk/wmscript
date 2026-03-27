@@ -34,27 +34,24 @@ export func main() {
             return "Narrator: Prologue selected.\nAki: I'm ready to start.";
         }
         return "Narrator: Prologue selected.\nNarrator: The hero name was not Aki.";
-    } else {
-        if state.get("ui.last_choice") == "choice-2" {
-            state.set("read:engineworker:chapter_1", true);
-            ext.message.show("Engine", "Chapter 1 selected.");
-            ext.message.prompt("Enter the scene name");
-            recv();
-            if state.get("ui.last_input") == "station" {
-                return "Narrator: Chapter 1 selected.\nNarrator: The station scene opens.";
-            }
-            return "Narrator: Chapter 1 selected.\nNarrator: The scene name was different.";
+    } else if state.get("ui.last_choice") == "choice-2" {
+        state.set("read:engineworker:chapter_1", true);
+        ext.message.show("Engine", "Chapter 1 selected.");
+        ext.message.prompt("Enter the scene name");
+        recv();
+        if state.get("ui.last_input") == "station" {
+            return "Narrator: Chapter 1 selected.\nNarrator: The station scene opens.";
         }
-        if state.get("ui.last_choice") == "choice-3" {
-            state.set("read:engineworker:chapter_2", true);
-            ext.message.show("Engine", "Chapter 2 selected.");
-            ext.message.prompt("Enter the route name");
-            recv();
-            if state.get("ui.last_input") == "river" {
-                return "Narrator: Chapter 2 selected.\nNarrator: The river route opens.";
-            }
-            return "Narrator: Chapter 2 selected.\nNarrator: The route name was different.";
+        return "Narrator: Chapter 1 selected.\nNarrator: The scene name was different.";
+    } else if state.get("ui.last_choice") == "choice-3" {
+        state.set("read:engineworker:chapter_2", true);
+        ext.message.show("Engine", "Chapter 2 selected.");
+        ext.message.prompt("Enter the route name");
+        recv();
+        if state.get("ui.last_input") == "river" {
+            return "Narrator: Chapter 2 selected.\nNarrator: The river route opens.";
         }
+        return "Narrator: Chapter 2 selected.\nNarrator: The route name was different.";
     }
     return "Narrator: No chapter was selected.";
 }
