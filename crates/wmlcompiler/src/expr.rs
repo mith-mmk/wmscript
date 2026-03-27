@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use wmlbytecode::{Op, encode_op};
-use wmlext::ExtensionRegistry;
+use wmlext::{ExtValueType, ExtensionRegistry};
 use wmlvm::{Program as VmProgram, Value as VmValue};
 
 use super::{CompileError, Result, parse_literal_value};
@@ -217,7 +217,7 @@ fn emit_statement(
         Stmt::Return(expr) => {
             let return_type = if let Some(expr) = expr.clone() {
                 let optimized = optimize_expr(expr)?;
-                let return_type = infer_type(&optimized)?;
+                let return_type = infer_type(&optimized, extension_registry)?;
                 emit_expr_into(&optimized, program, extension_registry, locals, out)?;
                 *type_tag = Some(match type_tag.take() {
                     Some(existing) => merge_type_tags(existing, return_type),
@@ -461,23 +461,52 @@ fn literal_value(expr: &Expr) -> Option<VmValue> {
     }
 }
 
-fn infer_type(expr: &Expr) -> Result<TypeTag> {
+fn infer_type(expr: &Expr, extension_registry: Option<&ExtensionRegistry>) -> Result<TypeTag> {
     match expr {
         Expr::Literal(value) => Ok(type_of_value(value)),
         Expr::Variable(_) => Ok(TypeTag::Unknown),
-        Expr::UnaryNeg(inner) => match infer_type(inner)? {
-            TypeTag::Integer | TypeTag::Float => Ok(infer_type(inner)?),
+        Expr::UnaryNeg(inner) => match infer_type(inner, extension_registry)? {
+            TypeTag::Integer | TypeTag::Float => Ok(infer_type(inner, extension_registry)?),
             other => Err(unsupported_expression(format!(
                 "unary negation requires a numeric type, found {other:?}"
             ))),
         },
         Expr::UnaryNot(_) => Ok(TypeTag::Bool),
         Expr::Binary { op, left, right } => {
-            let left = infer_type(left)?;
-            let right = infer_type(right)?;
+            let left = infer_type(left, extension_registry)?;
+            let right = infer_type(right, extension_registry)?;
             infer_binary_type(*op, left, right)
         }
-        Expr::Call { .. } => Ok(TypeTag::Unknown),
+        Expr::Call { path, .. } => infer_call_type(path, extension_registry),
+    }
+}
+
+fn infer_call_type(
+    path: &[String],
+    extension_registry: Option<&ExtensionRegistry>,
+) -> Result<TypeTag> {
+    let Some(extension_registry) = extension_registry else {
+        return Ok(TypeTag::Unknown);
+    };
+    let full_name = path.join(".");
+    let ext = match extension_registry.resolve(&full_name) {
+        Ok(ext) => ext,
+        Err(_) => return Ok(TypeTag::Unknown),
+    };
+    Ok(match ext.return_type {
+        Some(return_type) => type_tag_from_ext_value_type(return_type),
+        None => TypeTag::Unknown,
+    })
+}
+
+fn type_tag_from_ext_value_type(value_type: ExtValueType) -> TypeTag {
+    match value_type {
+        ExtValueType::Unknown => TypeTag::Unknown,
+        ExtValueType::Nil => TypeTag::Nil,
+        ExtValueType::Bool => TypeTag::Bool,
+        ExtValueType::Integer => TypeTag::Integer,
+        ExtValueType::Float => TypeTag::Float,
+        ExtValueType::String => TypeTag::String,
     }
 }
 
@@ -1195,7 +1224,7 @@ fn is_literal_start(byte: u8) -> bool {
 mod tests {
     use super::*;
     use wmlbytecode::Opcode;
-    use wmlext::{ExtensionFunctionSpec, ExtensionRegistry, NamespacePolicy};
+    use wmlext::{ExtValueType, ExtensionFunctionSpec, ExtensionRegistry, NamespacePolicy};
     use wmlhost::CAP_GUI;
 
     #[test]
@@ -1273,6 +1302,28 @@ mod tests {
                 Opcode::Return as u8,
             ]
         );
+    }
+
+    #[test]
+    fn extension_return_type_metadata_updates_type_tags() {
+        let mut registry = ExtensionRegistry::with_policy(NamespacePolicy::permissive());
+        registry
+            .register_extension(
+                "ext.fs",
+                &[ExtensionFunctionSpec::new("exists", 20, 1, 1, 0)
+                    .with_return_type(ExtValueType::Bool)],
+            )
+            .expect("register fs extension");
+
+        let mut program = VmProgram::new();
+        let (code, type_tag) = compile_return_body(
+            r#"return ext.fs.exists("save.dat");"#,
+            &mut program,
+            Some(&registry),
+        )
+        .expect("compile body");
+        assert_eq!(type_tag, TypeTag::Bool);
+        assert!(code.contains(&(Opcode::CallHost as u8)));
     }
 
     #[test]

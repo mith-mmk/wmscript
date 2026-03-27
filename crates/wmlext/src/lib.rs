@@ -15,6 +15,17 @@ pub type ExtId = u32;
 /// Stable identifier assigned to a namespace.
 pub type NamespaceId = u32;
 
+/// Best-effort static return type metadata for extension functions.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExtValueType {
+    Unknown,
+    Nil,
+    Bool,
+    Integer,
+    Float,
+    String,
+}
+
 /// Result type used by the extension registry.
 pub type Result<T> = core::result::Result<T, ExtError>;
 
@@ -120,6 +131,7 @@ pub struct ExtFunction {
     pub min_args: u8,
     pub max_args: u8,
     pub required_capabilities: CapabilityMask,
+    pub return_type: Option<ExtValueType>,
 }
 
 impl ExtFunction {
@@ -225,6 +237,7 @@ impl ExtensionRegistry {
                 min_args,
                 max_args,
                 required_capabilities,
+                return_type: None,
             },
         );
         Ok(ext_id)
@@ -238,14 +251,20 @@ impl ExtensionRegistry {
     ) -> Result<Vec<ExtId>> {
         let mut ids = Vec::with_capacity(functions.len());
         for spec in functions {
-            ids.push(self.register_function(
+            let ext_id = self.register_function(
                 namespace,
                 spec.name,
                 spec.host_id,
                 spec.min_args,
                 spec.max_args,
                 spec.required_capabilities,
-            )?);
+            )?;
+            ids.push(ext_id);
+            if let Some(return_type) = spec.return_type {
+                if let Some(function) = self.functions.get_mut(&ext_id) {
+                    function.return_type = Some(return_type);
+                }
+            }
         }
         Ok(ids)
     }
@@ -422,6 +441,7 @@ pub struct ExtensionFunctionSpec<'a> {
     pub min_args: u8,
     pub max_args: u8,
     pub required_capabilities: CapabilityMask,
+    pub return_type: Option<ExtValueType>,
 }
 
 impl<'a> ExtensionFunctionSpec<'a> {
@@ -438,7 +458,38 @@ impl<'a> ExtensionFunctionSpec<'a> {
             min_args,
             max_args,
             required_capabilities,
+            return_type: None,
         }
+    }
+
+    pub const fn with_return_type(mut self, return_type: ExtValueType) -> Self {
+        self.return_type = Some(return_type);
+        self
+    }
+}
+
+impl ExtValueType {
+    pub const fn is_unknown(self) -> bool {
+        matches!(self, Self::Unknown)
+    }
+}
+
+impl Default for ExtValueType {
+    fn default() -> Self {
+        Self::Unknown
+    }
+}
+
+impl<'a> ExtensionFunctionSpec<'a> {
+    pub const fn with_optional_return_type(mut self, return_type: Option<ExtValueType>) -> Self {
+        self.return_type = return_type;
+        self
+    }
+}
+
+impl ExtFunction {
+    pub fn return_type(&self) -> Option<ExtValueType> {
+        self.return_type
     }
 }
 

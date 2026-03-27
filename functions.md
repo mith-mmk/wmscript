@@ -89,6 +89,8 @@ The current expression grammar is intentionally small:
   - bare identifiers bound earlier in the same function body by `let`
 
 The compiler performs constant folding and type tagging for this subset.
+When extension metadata provides a return type hint, the compiler uses it for
+type tagging of `ext.*` calls.
 
 ### 2.1 Current Limitations
 
