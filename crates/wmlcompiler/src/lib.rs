@@ -364,6 +364,7 @@ impl Compiler {
                 &function.body,
                 &mut program,
                 self.config.extension_registry(),
+                self.config.platform.capabilities,
                 &initial_locals,
             )?;
             let local_count =
@@ -982,10 +983,17 @@ fn lower_function_body(
     body: &str,
     program: &mut VmProgram,
     extension_registry: Option<&ExtensionRegistry>,
+    platform_capabilities: wmlplatform::PlatformCapabilities,
     initial_locals: &[String],
 ) -> Result<(Vec<u8>, usize)> {
     let (code, _type_tag, local_count) =
-        expr::compile_function_body(body, program, extension_registry, initial_locals)?;
+        expr::compile_function_body(
+            body,
+            program,
+            extension_registry,
+            platform_capabilities,
+            initial_locals,
+        )?;
     Ok((code, local_count))
 }
 

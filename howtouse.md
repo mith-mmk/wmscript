@@ -159,6 +159,10 @@ cargo run -p wmlfrontend -- --demo engineworker --platform egui --font noto
 The egui frontend defaults to Noto Sans for Japanese-friendly rendering. Use
 `--font default`, `--font noto`, or `--font mono` to switch presets.
 
+The compiler also rejects `ext.*` calls that require capabilities missing from
+the selected platform profile. For example, `ext.fs.*` and `ext.net.*` are not
+available under `wasm`, while `state.*` and `ext.vm.*` remain portable.
+
 `wmlfrontend` also supports a built-in demo mode:
 
 - `--demo uiimage` runs the embedded scene layout showcase without reading a script file.

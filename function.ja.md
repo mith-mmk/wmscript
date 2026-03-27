@@ -103,6 +103,28 @@ export func main() {
 デフォルトランタイムは `ext.*` 名前空間で拡張関数を公開します。
 以下は現在利用できる呼び出し先です。
 
+### 3.0 capability ゲート
+
+コンパイラは、選択した platform profile に必要な capability が無い
+`ext.*` 呼び出しを拒否します。対応は次のとおりです。
+
+- `CAP_FILE_SYSTEM` が必要: `ext.fs.*`
+- `CAP_NETWORK` が必要: `ext.net.*`
+- `CAP_ASYNC_IO` が必要: `ext.llm.*` / `ext.audio.*`
+- `CAP_GUI` が必要: `ext.scene.*` / `ext.message.*` / `ext.image.*`
+- `state.*` と `ext.vm.*` は platform capability 不要
+
+既定 profile の対応は次の表です。
+
+| Profile | File system | Async I/O | GUI | Network | Web compat |
+| --- | --- | --- | --- | --- | --- |
+| `native` | yes | yes | yes | yes | no |
+| `egui` | yes | yes | yes | yes | no |
+| `wasm` | no | yes | no | no | yes |
+
+この条件に合わない拡張を参照した場合、bytecode を出力する前に
+コンパイルエラーになります。
+
 ### 3.1 `ext.fs`
 
 必要 capability: `CAP_FILE_SYSTEM`

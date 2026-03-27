@@ -160,6 +160,10 @@ cargo run -p wmlfrontend -- --demo engineworker --platform egui --font noto
 egui フロントエンドの既定フォントは、日本語表示を優先して Noto Sans 系にしています。
 `--font default`、`--font noto`、`--font mono` で切り替えられます。
 
+コンパイラは、選択した platform profile に無い capability を必要とする
+`ext.*` 呼び出しを拒否します。たとえば `wasm` では `ext.fs.*` と
+`ext.net.*` は使えませんが、`state.*` と `ext.vm.*` はそのまま使えます。
+
 `wmlfrontend` には組み込みデモ起動もあります。
 
 - `--demo uiimage` でスクリプトファイルを読まずに scene layout デモを起動します。

@@ -28,17 +28,26 @@ pub struct PlatformCapabilities {
     pub async_io: bool,
     /// Whether a GUI event loop is available.
     pub gui: bool,
+    /// Whether network access is expected to be available.
+    pub network: bool,
     /// Whether the build can rely on wasm target assumptions.
     pub web_compat: bool,
 }
 
 impl PlatformCapabilities {
     /// Creates a new capability set.
-    pub const fn new(file_system: bool, async_io: bool, gui: bool, web_compat: bool) -> Self {
+    pub const fn new(
+        file_system: bool,
+        async_io: bool,
+        gui: bool,
+        network: bool,
+        web_compat: bool,
+    ) -> Self {
         Self {
             file_system,
             async_io,
             gui,
+            network,
             web_compat,
         }
     }
@@ -58,7 +67,7 @@ impl PlatformProfile {
     pub const fn native() -> Self {
         Self {
             kind: PlatformKind::Native,
-            capabilities: PlatformCapabilities::new(true, true, true, false),
+            capabilities: PlatformCapabilities::new(true, true, true, true, false),
         }
     }
 
@@ -66,7 +75,7 @@ impl PlatformProfile {
     pub const fn wasm() -> Self {
         Self {
             kind: PlatformKind::Wasm,
-            capabilities: PlatformCapabilities::new(false, true, false, true),
+            capabilities: PlatformCapabilities::new(false, true, false, false, true),
         }
     }
 
@@ -74,7 +83,7 @@ impl PlatformProfile {
     pub const fn egui() -> Self {
         Self {
             kind: PlatformKind::Egui,
-            capabilities: PlatformCapabilities::new(true, true, true, false),
+            capabilities: PlatformCapabilities::new(true, true, true, true, false),
         }
     }
 }
@@ -128,7 +137,19 @@ mod tests {
         assert!(profile.capabilities.file_system);
         assert!(profile.capabilities.async_io);
         assert!(profile.capabilities.gui);
+        assert!(profile.capabilities.network);
         assert!(!profile.capabilities.web_compat);
+    }
+
+    #[test]
+    fn wasm_profile_reports_expected_capabilities() {
+        let profile = PlatformProfile::wasm();
+        assert_eq!(profile.kind, PlatformKind::Wasm);
+        assert!(!profile.capabilities.file_system);
+        assert!(profile.capabilities.async_io);
+        assert!(!profile.capabilities.gui);
+        assert!(!profile.capabilities.network);
+        assert!(profile.capabilities.web_compat);
     }
 
     #[test]

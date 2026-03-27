@@ -103,6 +103,28 @@ type tagging of `ext.*` calls.
 The runtime installs a small set of extension namespaces under `ext.*`.
 These are the callable entry points currently exposed by the default runtime.
 
+### 3.0 Capability Gate
+
+The compiler rejects `ext.*` calls when the selected platform profile does not
+provide the required capability bit. In practice:
+
+- `CAP_FILE_SYSTEM` is required by `ext.fs.*`
+- `CAP_NETWORK` is required by `ext.net.*`
+- `CAP_ASYNC_IO` is required by `ext.llm.*` and `ext.audio.*`
+- `CAP_GUI` is required by `ext.scene.*`, `ext.message.*`, and `ext.image.*`
+- `state.*` and `ext.vm.*` do not require a platform capability
+
+Current default profiles:
+
+| Profile | File system | Async I/O | GUI | Network | Web compat |
+| --- | --- | --- | --- | --- | --- |
+| `native` | yes | yes | yes | yes | no |
+| `egui` | yes | yes | yes | yes | no |
+| `wasm` | no | yes | no | no | yes |
+
+If a script references an extension that is unavailable on the chosen profile,
+compilation fails before bytecode is emitted.
+
 ### 3.1 `ext.fs`
 
 Requires: `CAP_FILE_SYSTEM`

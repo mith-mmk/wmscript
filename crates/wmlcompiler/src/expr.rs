@@ -3,7 +3,11 @@
 use std::collections::BTreeMap;
 
 use wmlbytecode::{Op, encode_op};
-use wmlext::{ExtValueType, ExtensionRegistry};
+use wmlhost::{
+    CAP_ASYNC_IO, CAP_FILE_SYSTEM, CAP_GUI, CAP_NETWORK, CAP_WEB_COMPAT, CapabilityMask,
+};
+use wmlext::{ExtFunction, ExtValueType, ExtensionRegistry};
+use wmlplatform::PlatformCapabilities;
 use wmlvm::{Program as VmProgram, Value as VmValue};
 
 use super::{CompileError, Result, parse_literal_value};
@@ -68,12 +72,20 @@ enum Stmt {
 }
 
 /// Compiles a `return` statement body into bytecode and a type tag.
+#[cfg(test)]
 pub(crate) fn compile_return_body(
     body: &str,
     program: &mut VmProgram,
     extension_registry: Option<&ExtensionRegistry>,
+    platform_capabilities: PlatformCapabilities,
 ) -> Result<(Vec<u8>, TypeTag)> {
-    let (code, type_tag, _) = compile_body(body, program, extension_registry, &[])?;
+    let (code, type_tag, _) = compile_body(
+        body,
+        program,
+        extension_registry,
+        platform_capabilities,
+        &[],
+    )?;
     Ok((code, type_tag))
 }
 
@@ -81,15 +93,23 @@ pub(crate) fn compile_function_body(
     body: &str,
     program: &mut VmProgram,
     extension_registry: Option<&ExtensionRegistry>,
+    platform_capabilities: PlatformCapabilities,
     initial_locals: &[String],
 ) -> Result<(Vec<u8>, TypeTag, usize)> {
-    compile_body(body, program, extension_registry, initial_locals)
+    compile_body(
+        body,
+        program,
+        extension_registry,
+        platform_capabilities,
+        initial_locals,
+    )
 }
 
 fn compile_body(
     body: &str,
     program: &mut VmProgram,
     extension_registry: Option<&ExtensionRegistry>,
+    platform_capabilities: PlatformCapabilities,
     initial_locals: &[String],
 ) -> Result<(Vec<u8>, TypeTag, usize)> {
     let mut parser = ExprParser::new(body);
@@ -101,6 +121,7 @@ fn compile_body(
         &statements,
         program,
         extension_registry,
+        platform_capabilities,
         &mut locals,
         &mut code,
         &mut type_tag,
@@ -159,13 +180,22 @@ fn emit_statements(
     statements: &[Stmt],
     program: &mut VmProgram,
     extension_registry: Option<&ExtensionRegistry>,
+    platform_capabilities: PlatformCapabilities,
     locals: &mut LocalScope,
     out: &mut Vec<u8>,
     type_tag: &mut Option<TypeTag>,
 ) -> Result<EmitResult> {
     let mut summary = EmitResult::default();
     for stmt in statements {
-        let emitted = emit_statement(stmt, program, extension_registry, locals, out, type_tag)?;
+        let emitted = emit_statement(
+            stmt,
+            program,
+            extension_registry,
+            platform_capabilities,
+            locals,
+            out,
+            type_tag,
+        )?;
         summary.saw_return |= emitted.saw_return;
         if let Some(return_type) = emitted.return_type {
             *type_tag = Some(match type_tag.take() {
@@ -192,6 +222,7 @@ fn emit_statement(
     stmt: &Stmt,
     program: &mut VmProgram,
     extension_registry: Option<&ExtensionRegistry>,
+    platform_capabilities: PlatformCapabilities,
     locals: &mut LocalScope,
     out: &mut Vec<u8>,
     type_tag: &mut Option<TypeTag>,
@@ -199,14 +230,28 @@ fn emit_statement(
     match stmt {
         Stmt::Expr(expr) => {
             let optimized = optimize_expr(expr.clone())?;
-            emit_expr_into(&optimized, program, extension_registry, locals, out)?;
+            emit_expr_into(
+                &optimized,
+                program,
+                extension_registry,
+                platform_capabilities,
+                locals,
+                out,
+            )?;
             encode_op(&Op::Pop, out);
             Ok(EmitResult::default())
         }
         Stmt::Let { name, value } => {
             if let Some(expr) = value.clone() {
                 let optimized = optimize_expr(expr)?;
-                emit_expr_into(&optimized, program, extension_registry, locals, out)?;
+                emit_expr_into(
+                    &optimized,
+                    program,
+                    extension_registry,
+                    platform_capabilities,
+                    locals,
+                    out,
+                )?;
             } else {
                 encode_op(&Op::PushNil, out);
             }
@@ -217,8 +262,19 @@ fn emit_statement(
         Stmt::Return(expr) => {
             let return_type = if let Some(expr) = expr.clone() {
                 let optimized = optimize_expr(expr)?;
-                let return_type = infer_type(&optimized, extension_registry)?;
-                emit_expr_into(&optimized, program, extension_registry, locals, out)?;
+                let return_type = infer_type(
+                    &optimized,
+                    extension_registry,
+                    platform_capabilities,
+                )?;
+                emit_expr_into(
+                    &optimized,
+                    program,
+                    extension_registry,
+                    platform_capabilities,
+                    locals,
+                    out,
+                )?;
                 *type_tag = Some(match type_tag.take() {
                     Some(existing) => merge_type_tags(existing, return_type),
                     None => return_type,
@@ -239,13 +295,21 @@ fn emit_statement(
             else_branch,
         } => {
             let optimized = optimize_expr(condition.clone())?;
-            emit_expr_into(&optimized, program, extension_registry, locals, out)?;
+            emit_expr_into(
+                &optimized,
+                program,
+                extension_registry,
+                platform_capabilities,
+                locals,
+                out,
+            )?;
             let jump_false_pos = emit_jump_placeholder(Op::JumpIfFalse(0), out);
             let mut then_locals = locals.clone();
             let then_result = emit_statements(
                 then_branch,
                 program,
                 extension_registry,
+                platform_capabilities,
                 &mut then_locals,
                 out,
                 type_tag,
@@ -264,6 +328,7 @@ fn emit_statement(
                     else_branch,
                     program,
                     extension_registry,
+                    platform_capabilities,
                     &mut else_locals,
                     out,
                     type_tag,
@@ -461,29 +526,37 @@ fn literal_value(expr: &Expr) -> Option<VmValue> {
     }
 }
 
-fn infer_type(expr: &Expr, extension_registry: Option<&ExtensionRegistry>) -> Result<TypeTag> {
+fn infer_type(
+    expr: &Expr,
+    extension_registry: Option<&ExtensionRegistry>,
+    platform_capabilities: PlatformCapabilities,
+) -> Result<TypeTag> {
     match expr {
         Expr::Literal(value) => Ok(type_of_value(value)),
         Expr::Variable(_) => Ok(TypeTag::Unknown),
-        Expr::UnaryNeg(inner) => match infer_type(inner, extension_registry)? {
-            TypeTag::Integer | TypeTag::Float => Ok(infer_type(inner, extension_registry)?),
+        Expr::UnaryNeg(inner) => match infer_type(inner, extension_registry, platform_capabilities)?
+        {
+            TypeTag::Integer | TypeTag::Float => {
+                Ok(infer_type(inner, extension_registry, platform_capabilities)?)
+            }
             other => Err(unsupported_expression(format!(
                 "unary negation requires a numeric type, found {other:?}"
             ))),
         },
         Expr::UnaryNot(_) => Ok(TypeTag::Bool),
         Expr::Binary { op, left, right } => {
-            let left = infer_type(left, extension_registry)?;
-            let right = infer_type(right, extension_registry)?;
+            let left = infer_type(left, extension_registry, platform_capabilities)?;
+            let right = infer_type(right, extension_registry, platform_capabilities)?;
             infer_binary_type(*op, left, right)
         }
-        Expr::Call { path, .. } => infer_call_type(path, extension_registry),
+        Expr::Call { path, .. } => infer_call_type(path, extension_registry, platform_capabilities),
     }
 }
 
 fn infer_call_type(
     path: &[String],
     extension_registry: Option<&ExtensionRegistry>,
+    platform_capabilities: PlatformCapabilities,
 ) -> Result<TypeTag> {
     let Some(extension_registry) = extension_registry else {
         return Ok(TypeTag::Unknown);
@@ -493,6 +566,7 @@ fn infer_call_type(
         Ok(ext) => ext,
         Err(_) => return Ok(TypeTag::Unknown),
     };
+    ensure_extension_capabilities(ext, platform_capabilities, &full_name)?;
     Ok(match ext.return_type {
         Some(return_type) => type_tag_from_ext_value_type(return_type),
         None => TypeTag::Unknown,
@@ -554,6 +628,7 @@ fn emit_expr_into(
     expr: &Expr,
     program: &mut VmProgram,
     extension_registry: Option<&ExtensionRegistry>,
+    platform_capabilities: PlatformCapabilities,
     locals: &LocalScope,
     out: &mut Vec<u8>,
 ) -> Result<()> {
@@ -567,68 +642,238 @@ fn emit_expr_into(
             encode_op(&Op::LoadLocal(slot), out);
         }
         Expr::UnaryNeg(inner) => {
-            emit_expr_into(inner, program, extension_registry, locals, out)?;
+            emit_expr_into(
+                inner,
+                program,
+                extension_registry,
+                platform_capabilities,
+                locals,
+                out,
+            )?;
             encode_op(&Op::Neg, out);
         }
         Expr::UnaryNot(inner) => {
-            emit_expr_into(inner, program, extension_registry, locals, out)?;
+            emit_expr_into(
+                inner,
+                program,
+                extension_registry,
+                platform_capabilities,
+                locals,
+                out,
+            )?;
             encode_op(&Op::Not, out);
         }
         Expr::Binary { op, left, right } => match op {
             BinaryOp::And => {
-                emit_short_circuit_and(left, right, program, extension_registry, locals, out)?
+                emit_short_circuit_and(
+                    left,
+                    right,
+                    program,
+                    extension_registry,
+                    platform_capabilities,
+                    locals,
+                    out,
+                )?
             }
             BinaryOp::Or => {
-                emit_short_circuit_or(left, right, program, extension_registry, locals, out)?
+                emit_short_circuit_or(
+                    left,
+                    right,
+                    program,
+                    extension_registry,
+                    platform_capabilities,
+                    locals,
+                    out,
+                )?
             }
             BinaryOp::Add => {
-                emit_expr_into(left, program, extension_registry, locals, out)?;
-                emit_expr_into(right, program, extension_registry, locals, out)?;
+                emit_expr_into(
+                    left,
+                    program,
+                    extension_registry,
+                    platform_capabilities,
+                    locals,
+                    out,
+                )?;
+                emit_expr_into(
+                    right,
+                    program,
+                    extension_registry,
+                    platform_capabilities,
+                    locals,
+                    out,
+                )?;
                 encode_op(&Op::Add, out);
             }
             BinaryOp::Sub => {
-                emit_expr_into(left, program, extension_registry, locals, out)?;
-                emit_expr_into(right, program, extension_registry, locals, out)?;
+                emit_expr_into(
+                    left,
+                    program,
+                    extension_registry,
+                    platform_capabilities,
+                    locals,
+                    out,
+                )?;
+                emit_expr_into(
+                    right,
+                    program,
+                    extension_registry,
+                    platform_capabilities,
+                    locals,
+                    out,
+                )?;
                 encode_op(&Op::Sub, out);
             }
             BinaryOp::Mul => {
-                emit_expr_into(left, program, extension_registry, locals, out)?;
-                emit_expr_into(right, program, extension_registry, locals, out)?;
+                emit_expr_into(
+                    left,
+                    program,
+                    extension_registry,
+                    platform_capabilities,
+                    locals,
+                    out,
+                )?;
+                emit_expr_into(
+                    right,
+                    program,
+                    extension_registry,
+                    platform_capabilities,
+                    locals,
+                    out,
+                )?;
                 encode_op(&Op::Mul, out);
             }
             BinaryOp::Div => {
-                emit_expr_into(left, program, extension_registry, locals, out)?;
-                emit_expr_into(right, program, extension_registry, locals, out)?;
+                emit_expr_into(
+                    left,
+                    program,
+                    extension_registry,
+                    platform_capabilities,
+                    locals,
+                    out,
+                )?;
+                emit_expr_into(
+                    right,
+                    program,
+                    extension_registry,
+                    platform_capabilities,
+                    locals,
+                    out,
+                )?;
                 encode_op(&Op::Div, out);
             }
             BinaryOp::Eq => {
-                emit_expr_into(left, program, extension_registry, locals, out)?;
-                emit_expr_into(right, program, extension_registry, locals, out)?;
+                emit_expr_into(
+                    left,
+                    program,
+                    extension_registry,
+                    platform_capabilities,
+                    locals,
+                    out,
+                )?;
+                emit_expr_into(
+                    right,
+                    program,
+                    extension_registry,
+                    platform_capabilities,
+                    locals,
+                    out,
+                )?;
                 encode_op(&Op::Eq, out);
             }
             BinaryOp::Ne => {
-                emit_expr_into(left, program, extension_registry, locals, out)?;
-                emit_expr_into(right, program, extension_registry, locals, out)?;
+                emit_expr_into(
+                    left,
+                    program,
+                    extension_registry,
+                    platform_capabilities,
+                    locals,
+                    out,
+                )?;
+                emit_expr_into(
+                    right,
+                    program,
+                    extension_registry,
+                    platform_capabilities,
+                    locals,
+                    out,
+                )?;
                 encode_op(&Op::Ne, out);
             }
             BinaryOp::Lt => {
-                emit_expr_into(left, program, extension_registry, locals, out)?;
-                emit_expr_into(right, program, extension_registry, locals, out)?;
+                emit_expr_into(
+                    left,
+                    program,
+                    extension_registry,
+                    platform_capabilities,
+                    locals,
+                    out,
+                )?;
+                emit_expr_into(
+                    right,
+                    program,
+                    extension_registry,
+                    platform_capabilities,
+                    locals,
+                    out,
+                )?;
                 encode_op(&Op::Lt, out);
             }
             BinaryOp::Le => {
-                emit_expr_into(left, program, extension_registry, locals, out)?;
-                emit_expr_into(right, program, extension_registry, locals, out)?;
+                emit_expr_into(
+                    left,
+                    program,
+                    extension_registry,
+                    platform_capabilities,
+                    locals,
+                    out,
+                )?;
+                emit_expr_into(
+                    right,
+                    program,
+                    extension_registry,
+                    platform_capabilities,
+                    locals,
+                    out,
+                )?;
                 encode_op(&Op::Le, out);
             }
             BinaryOp::Gt => {
-                emit_expr_into(left, program, extension_registry, locals, out)?;
-                emit_expr_into(right, program, extension_registry, locals, out)?;
+                emit_expr_into(
+                    left,
+                    program,
+                    extension_registry,
+                    platform_capabilities,
+                    locals,
+                    out,
+                )?;
+                emit_expr_into(
+                    right,
+                    program,
+                    extension_registry,
+                    platform_capabilities,
+                    locals,
+                    out,
+                )?;
                 encode_op(&Op::Gt, out);
             }
             BinaryOp::Ge => {
-                emit_expr_into(left, program, extension_registry, locals, out)?;
-                emit_expr_into(right, program, extension_registry, locals, out)?;
+                emit_expr_into(
+                    left,
+                    program,
+                    extension_registry,
+                    platform_capabilities,
+                    locals,
+                    out,
+                )?;
+                emit_expr_into(
+                    right,
+                    program,
+                    extension_registry,
+                    platform_capabilities,
+                    locals,
+                    out,
+                )?;
                 encode_op(&Op::Ge, out);
             }
         },
@@ -683,6 +928,7 @@ fn emit_expr_into(
             let ext = extension_registry.resolve(&full_name).map_err(|error| {
                 unsupported_expression(format!("unknown extension call `{full_name}`: {error}"))
             })?;
+            ensure_extension_capabilities(ext, platform_capabilities, &full_name)?;
             if args.len() < ext.min_args as usize || args.len() > ext.max_args as usize {
                 return Err(unsupported_expression(format!(
                     "extension call `{full_name}` expected {}..={} args, got {}",
@@ -692,7 +938,14 @@ fn emit_expr_into(
                 )));
             }
             for arg in args {
-                emit_expr_into(arg, program, Some(extension_registry), locals, out)?;
+                emit_expr_into(
+                    arg,
+                    program,
+                    Some(extension_registry),
+                    platform_capabilities,
+                    locals,
+                    out,
+                )?;
             }
             encode_op(&Op::CallHost(ext.host_id, args.len() as u8), out);
         }
@@ -705,13 +958,28 @@ fn emit_short_circuit_and(
     right: &Expr,
     program: &mut VmProgram,
     extension_registry: Option<&ExtensionRegistry>,
+    platform_capabilities: PlatformCapabilities,
     locals: &LocalScope,
     out: &mut Vec<u8>,
 ) -> Result<()> {
-    emit_expr_into(left, program, extension_registry, locals, out)?;
+    emit_expr_into(
+        left,
+        program,
+        extension_registry,
+        platform_capabilities,
+        locals,
+        out,
+    )?;
     let jump_false_pos = emit_jump_placeholder(Op::JumpIfFalse(0), out);
     encode_op(&Op::Pop, out);
-    emit_expr_into(right, program, extension_registry, locals, out)?;
+    emit_expr_into(
+        right,
+        program,
+        extension_registry,
+        platform_capabilities,
+        locals,
+        out,
+    )?;
     let jump_false_pos_right = emit_jump_placeholder(Op::JumpIfFalse(0), out);
     encode_op(&Op::Pop, out);
     encode_op(&Op::PushTrue, out);
@@ -730,13 +998,28 @@ fn emit_short_circuit_or(
     right: &Expr,
     program: &mut VmProgram,
     extension_registry: Option<&ExtensionRegistry>,
+    platform_capabilities: PlatformCapabilities,
     locals: &LocalScope,
     out: &mut Vec<u8>,
 ) -> Result<()> {
-    emit_expr_into(left, program, extension_registry, locals, out)?;
+    emit_expr_into(
+        left,
+        program,
+        extension_registry,
+        platform_capabilities,
+        locals,
+        out,
+    )?;
     let jump_true_pos = emit_jump_placeholder(Op::JumpIfTrue(0), out);
     encode_op(&Op::Pop, out);
-    emit_expr_into(right, program, extension_registry, locals, out)?;
+    emit_expr_into(
+        right,
+        program,
+        extension_registry,
+        platform_capabilities,
+        locals,
+        out,
+    )?;
     let jump_true_pos_right = emit_jump_placeholder(Op::JumpIfTrue(0), out);
     encode_op(&Op::Pop, out);
     encode_op(&Op::PushFalse, out);
@@ -753,6 +1036,66 @@ fn emit_short_circuit_or(
 fn unsupported_expression(message: impl Into<String>) -> CompileError {
     CompileError::UnsupportedExpression {
         source: message.into(),
+    }
+}
+
+fn ensure_extension_capabilities(
+    ext: &ExtFunction,
+    platform_capabilities: PlatformCapabilities,
+    full_name: &str,
+) -> Result<()> {
+    let supported = platform_capability_mask(platform_capabilities);
+    let missing = ext.required_capabilities & !supported;
+    if missing == 0 {
+        return Ok(());
+    }
+    let missing = missing_capability_names(missing);
+    Err(unsupported_expression(format!(
+        "extension call `{full_name}` requires unsupported capabilities: {missing}"
+    )))
+}
+
+fn platform_capability_mask(capabilities: PlatformCapabilities) -> CapabilityMask {
+    let mut mask = 0;
+    if capabilities.file_system {
+        mask |= CAP_FILE_SYSTEM;
+    }
+    if capabilities.async_io {
+        mask |= CAP_ASYNC_IO;
+    }
+    if capabilities.gui {
+        mask |= CAP_GUI;
+    }
+    if capabilities.network {
+        mask |= CAP_NETWORK;
+    }
+    if capabilities.web_compat {
+        mask |= CAP_WEB_COMPAT;
+    }
+    mask
+}
+
+fn missing_capability_names(mask: CapabilityMask) -> String {
+    let mut names = Vec::new();
+    if mask & CAP_FILE_SYSTEM != 0 {
+        names.push("file_system");
+    }
+    if mask & CAP_ASYNC_IO != 0 {
+        names.push("async_io");
+    }
+    if mask & CAP_GUI != 0 {
+        names.push("gui");
+    }
+    if mask & CAP_NETWORK != 0 {
+        names.push("network");
+    }
+    if mask & CAP_WEB_COMPAT != 0 {
+        names.push("web_compat");
+    }
+    if names.is_empty() {
+        format!("0x{mask:08x}")
+    } else {
+        names.join(", ")
     }
 }
 
@@ -1225,13 +1568,19 @@ mod tests {
     use super::*;
     use wmlbytecode::Opcode;
     use wmlext::{ExtValueType, ExtensionFunctionSpec, ExtensionRegistry, NamespacePolicy};
-    use wmlhost::CAP_GUI;
+    use wmlhost::{CAP_FILE_SYSTEM, CAP_GUI};
+    use wmlplatform::PlatformProfile;
 
     #[test]
     fn optimizer_folds_constant_return_expression() {
         let mut program = VmProgram::new();
-        let (code, type_tag) =
-            compile_return_body("return 1 + 2 * 3;", &mut program, None).expect("compile body");
+        let (code, type_tag) = compile_return_body(
+            "return 1 + 2 * 3;",
+            &mut program,
+            None,
+            PlatformProfile::native().capabilities,
+        )
+        .expect("compile body");
         assert_eq!(type_tag, TypeTag::Integer);
         assert_eq!(program.constant_count(), 1);
         assert_eq!(
@@ -1243,8 +1592,13 @@ mod tests {
     #[test]
     fn type_tag_tracks_string_literal() {
         let mut program = VmProgram::new();
-        let (code, type_tag) =
-            compile_return_body(r#"return "hello";"#, &mut program, None).expect("compile body");
+        let (code, type_tag) = compile_return_body(
+            r#"return "hello";"#,
+            &mut program,
+            None,
+            PlatformProfile::native().capabilities,
+        )
+        .expect("compile body");
         assert_eq!(type_tag, TypeTag::String);
         assert_eq!(program.constant_count(), 1);
         assert_eq!(
@@ -1256,8 +1610,13 @@ mod tests {
     #[test]
     fn bare_return_emits_empty_frame_return() {
         let mut program = VmProgram::new();
-        let (code, type_tag) =
-            compile_return_body("return;", &mut program, None).expect("compile body");
+        let (code, type_tag) = compile_return_body(
+            "return;",
+            &mut program,
+            None,
+            PlatformProfile::native().capabilities,
+        )
+        .expect("compile body");
         assert_eq!(type_tag, TypeTag::Nil);
         assert_eq!(program.constant_count(), 0);
         assert_eq!(code, vec![Opcode::Return as u8]);
@@ -1278,8 +1637,13 @@ mod tests {
             ext.message.show("Narrator", "Hello");
             return "Prologue";
         "#;
-        let (code, type_tag) =
-            compile_return_body(body, &mut program, Some(&registry)).expect("compile body");
+        let (code, type_tag) = compile_return_body(
+            body,
+            &mut program,
+            Some(&registry),
+            PlatformProfile::native().capabilities,
+        )
+        .expect("compile body");
         assert_eq!(type_tag, TypeTag::String);
         assert_eq!(program.constant_count(), 3);
         assert_eq!(
@@ -1310,20 +1674,50 @@ mod tests {
         registry
             .register_extension(
                 "ext.fs",
-                &[ExtensionFunctionSpec::new("exists", 20, 1, 1, 0)
+                &[ExtensionFunctionSpec::new("exists", 20, 1, 1, CAP_FILE_SYSTEM)
                     .with_return_type(ExtValueType::Bool)],
             )
             .expect("register fs extension");
+        assert_eq!(
+            registry.resolve("ext.fs.exists").unwrap().required_capabilities,
+            CAP_FILE_SYSTEM
+        );
 
         let mut program = VmProgram::new();
         let (code, type_tag) = compile_return_body(
             r#"return ext.fs.exists("save.dat");"#,
             &mut program,
             Some(&registry),
+            PlatformProfile::native().capabilities,
         )
         .expect("compile body");
         assert_eq!(type_tag, TypeTag::Bool);
         assert!(code.contains(&(Opcode::CallHost as u8)));
+    }
+
+    #[test]
+    fn compiler_rejects_extension_calls_without_platform_capabilities() {
+        let mut registry = ExtensionRegistry::with_policy(NamespacePolicy::permissive());
+        registry
+            .register_extension(
+                "ext.fs",
+                &[ExtensionFunctionSpec::new("exists", 20, 1, 1, CAP_FILE_SYSTEM)
+                    .with_return_type(ExtValueType::Bool)],
+            )
+            .expect("register fs extension");
+
+        let mut program = VmProgram::new();
+        let error = compile_return_body(
+            r#"return ext.fs.exists("save.dat");"#,
+            &mut program,
+            Some(&registry),
+            PlatformProfile::wasm().capabilities,
+        )
+        .expect_err("compile should reject unsupported extension");
+        assert!(matches!(
+            error,
+            CompileError::UnsupportedExpression { source } if source.contains("unsupported capabilities") && source.contains("file_system")
+        ));
     }
 
     #[test]
@@ -1348,8 +1742,13 @@ mod tests {
                 return "show";
             }
         "#;
-        let (code, type_tag) =
-            compile_return_body(body, &mut program, Some(&registry)).expect("compile body");
+        let (code, type_tag) = compile_return_body(
+            body,
+            &mut program,
+            Some(&registry),
+            PlatformProfile::native().capabilities,
+        )
+        .expect("compile body");
         assert_eq!(type_tag, TypeTag::String);
         assert!(code.contains(&(Opcode::JumpIfFalse as u8)));
         assert!(code.contains(&(Opcode::Jump as u8)));
@@ -1373,8 +1772,13 @@ mod tests {
                 return "other";
             }
         "#;
-        let (code, type_tag) =
-            compile_return_body(body, &mut program, Some(&registry)).expect("compile body");
+        let (code, type_tag) = compile_return_body(
+            body,
+            &mut program,
+            Some(&registry),
+            PlatformProfile::native().capabilities,
+        )
+        .expect("compile body");
         assert_eq!(type_tag, TypeTag::String);
         assert!(code.contains(&(Opcode::JumpIfFalse as u8)));
         assert!(code.contains(&(Opcode::Jump as u8)));
@@ -1398,7 +1802,13 @@ mod tests {
                 return "maybe";
             }
         "#;
-        let (code, type_tag) = compile_return_body(body, &mut program, None).expect("compile body");
+        let (code, type_tag) = compile_return_body(
+            body,
+            &mut program,
+            None,
+            PlatformProfile::native().capabilities,
+        )
+        .expect("compile body");
         assert_eq!(type_tag, TypeTag::String);
         assert!(code.contains(&(Opcode::Not as u8)));
         assert!(code.contains(&(Opcode::Lt as u8)));
@@ -1418,7 +1828,13 @@ mod tests {
                 return "no";
             }
         "#;
-        let (code, type_tag) = compile_return_body(body, &mut program, None).expect("compile body");
+        let (code, type_tag) = compile_return_body(
+            body,
+            &mut program,
+            None,
+            PlatformProfile::native().capabilities,
+        )
+        .expect("compile body");
         assert_eq!(type_tag, TypeTag::String);
         assert!(code.contains(&(Opcode::JumpIfFalse as u8)));
         assert!(code.contains(&(Opcode::JumpIfTrue as u8)));
@@ -1441,8 +1857,13 @@ mod tests {
                 return state.get("ui.last_choice");
             }
         "#;
-        let (code, type_tag) =
-            compile_return_body(body, &mut program, Some(&registry)).expect("compile body");
+        let (code, type_tag) = compile_return_body(
+            body,
+            &mut program,
+            Some(&registry),
+            PlatformProfile::native().capabilities,
+        )
+        .expect("compile body");
         assert_eq!(type_tag, TypeTag::Unknown);
         assert!(code.contains(&(Opcode::Recv as u8)));
         assert!(code.contains(&(Opcode::StoreLocal as u8)));
@@ -1466,8 +1887,13 @@ mod tests {
                 return "other";
             }
         "#;
-        let (code, type_tag) =
-            compile_return_body(body, &mut program, Some(&registry)).expect("compile body");
+        let (code, type_tag) = compile_return_body(
+            body,
+            &mut program,
+            Some(&registry),
+            PlatformProfile::native().capabilities,
+        )
+        .expect("compile body");
         assert_eq!(type_tag, TypeTag::String);
         assert!(code.contains(&(Opcode::Recv as u8)));
         assert!(code.contains(&(Opcode::Eq as u8)));
