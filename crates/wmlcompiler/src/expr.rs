@@ -27,6 +27,10 @@ enum BinaryOp {
     Div,
     Eq,
     Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -34,6 +38,7 @@ enum Expr {
     Literal(VmValue),
     Variable(String),
     UnaryNeg(Box<Expr>),
+    UnaryNot(Box<Expr>),
     Binary {
         op: BinaryOp,
         left: Box<Expr>,
@@ -117,6 +122,13 @@ fn optimize_expr(expr: Expr) -> Result<Expr> {
                 return Ok(Expr::Literal(value));
             }
             Ok(Expr::UnaryNeg(Box::new(inner)))
+        }
+        Expr::UnaryNot(inner) => {
+            let inner = optimize_expr(*inner)?;
+            if let Some(value) = fold_unary_not(&inner)? {
+                return Ok(Expr::Literal(value));
+            }
+            Ok(Expr::UnaryNot(Box::new(inner)))
         }
         Expr::Binary { op, left, right } => {
             let left = optimize_expr(*left)?;
@@ -350,6 +362,13 @@ fn fold_unary_neg(expr: &Expr) -> Result<Option<VmValue>> {
     }
 }
 
+fn fold_unary_not(expr: &Expr) -> Result<Option<VmValue>> {
+    match expr {
+        Expr::Literal(value) => Ok(Some(VmValue::Bool(!value.truthy()))),
+        _ => Ok(None),
+    }
+}
+
 fn fold_binary(op: BinaryOp, left: &Expr, right: &Expr) -> Result<Option<VmValue>> {
     let Some(left) = literal_value(left) else {
         return Ok(None);
@@ -365,6 +384,10 @@ fn fold_binary(op: BinaryOp, left: &Expr, right: &Expr) -> Result<Option<VmValue
         BinaryOp::Div => fold_div(left, right)?,
         BinaryOp::Eq => VmValue::Bool(left == right),
         BinaryOp::Ne => VmValue::Bool(left != right),
+        BinaryOp::Lt => VmValue::Bool(fold_ordering(&left, &right, |a, b| a < b)?),
+        BinaryOp::Le => VmValue::Bool(fold_ordering(&left, &right, |a, b| a <= b)?),
+        BinaryOp::Gt => VmValue::Bool(fold_ordering(&left, &right, |a, b| a > b)?),
+        BinaryOp::Ge => VmValue::Bool(fold_ordering(&left, &right, |a, b| a >= b)?),
     };
     Ok(Some(value))
 }
@@ -408,6 +431,15 @@ fn fold_div(left: VmValue, right: VmValue) -> Result<VmValue> {
     }
 }
 
+fn fold_ordering<F>(left: &VmValue, right: &VmValue, predicate: F) -> Result<bool>
+where
+    F: FnOnce(f64, f64) -> bool,
+{
+    let left = as_number(left)?;
+    let right = as_number(right)?;
+    Ok(predicate(left, right))
+}
+
 fn as_number(value: &VmValue) -> Result<f64> {
     match value {
         VmValue::Integer(value) => Ok(*value as f64),
@@ -435,6 +467,7 @@ fn infer_type(expr: &Expr) -> Result<TypeTag> {
                 "unary negation requires a numeric type, found {other:?}"
             ))),
         },
+        Expr::UnaryNot(_) => Ok(TypeTag::Bool),
         Expr::Binary { op, left, right } => {
             let left = infer_type(left)?;
             let right = infer_type(right)?;
@@ -445,7 +478,10 @@ fn infer_type(expr: &Expr) -> Result<TypeTag> {
 }
 
 fn infer_binary_type(op: BinaryOp, left: TypeTag, right: TypeTag) -> Result<TypeTag> {
-    if matches!(op, BinaryOp::Eq | BinaryOp::Ne) {
+    if matches!(
+        op,
+        BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge
+    ) {
         return Ok(TypeTag::Bool);
     }
     match (left, right) {
@@ -494,6 +530,10 @@ fn emit_expr_into(
             emit_expr_into(inner, program, extension_registry, locals, out)?;
             encode_op(&Op::Neg, out);
         }
+        Expr::UnaryNot(inner) => {
+            emit_expr_into(inner, program, extension_registry, locals, out)?;
+            encode_op(&Op::Not, out);
+        }
         Expr::Binary { op, left, right } => {
             emit_expr_into(left, program, extension_registry, locals, out)?;
             emit_expr_into(right, program, extension_registry, locals, out)?;
@@ -504,6 +544,10 @@ fn emit_expr_into(
                 BinaryOp::Div => encode_op(&Op::Div, out),
                 BinaryOp::Eq => encode_op(&Op::Eq, out),
                 BinaryOp::Ne => encode_op(&Op::Ne, out),
+                BinaryOp::Lt => encode_op(&Op::Lt, out),
+                BinaryOp::Le => encode_op(&Op::Le, out),
+                BinaryOp::Gt => encode_op(&Op::Gt, out),
+                BinaryOp::Ge => encode_op(&Op::Ge, out),
             }
         }
         Expr::Call { path, args } => {
@@ -713,7 +757,7 @@ impl<'a> ExprParser<'a> {
     }
 
     fn parse_equality(&mut self) -> Result<Expr> {
-        let mut expr = self.parse_additive()?;
+        let mut expr = self.parse_comparison()?;
         loop {
             self.skip_ws_and_comments();
             let op = if self.source[self.index..].starts_with("==") {
@@ -722,6 +766,36 @@ impl<'a> ExprParser<'a> {
             } else if self.source[self.index..].starts_with("!=") {
                 self.index += 2;
                 Some(BinaryOp::Ne)
+            } else {
+                None
+            };
+            let Some(op) = op else {
+                break;
+            };
+            let rhs = self.parse_comparison()?;
+            expr = Expr::Binary {
+                op,
+                left: Box::new(expr),
+                right: Box::new(rhs),
+            };
+        }
+        Ok(expr)
+    }
+
+    fn parse_comparison(&mut self) -> Result<Expr> {
+        let mut expr = self.parse_additive()?;
+        loop {
+            self.skip_ws_and_comments();
+            let op = if self.source[self.index..].starts_with("<=") {
+                self.index += 2;
+                Some(BinaryOp::Le)
+            } else if self.source[self.index..].starts_with(">=") {
+                self.index += 2;
+                Some(BinaryOp::Ge)
+            } else if self.consume_byte(b'<') {
+                Some(BinaryOp::Lt)
+            } else if self.consume_byte(b'>') {
+                Some(BinaryOp::Gt)
             } else {
                 None
             };
@@ -791,6 +865,9 @@ impl<'a> ExprParser<'a> {
         if self.consume_byte(b'-') {
             return Ok(Expr::UnaryNeg(Box::new(self.parse_unary()?)));
         }
+        if self.consume_byte(b'!') {
+            return Ok(Expr::UnaryNot(Box::new(self.parse_unary()?)));
+        }
         self.parse_primary()
     }
 
@@ -851,9 +928,23 @@ impl<'a> ExprParser<'a> {
         let start = self.index;
         while let Some(byte) = self.peek_byte() {
             if byte.is_ascii_whitespace()
-                || matches!(byte, b'+' | b'-' | b'*' | b'/' | b'(' | b')' | b';')
-                || byte == b','
-                || byte == b'.'
+                || matches!(
+                    byte,
+                    b'+' | b'-'
+                        | b'*'
+                        | b'/'
+                        | b'('
+                        | b')'
+                        | b';'
+                        | b','
+                        | b'.'
+                        | b'='
+                        | b'<'
+                        | b'>'
+                        | b'!'
+                        | b'&'
+                        | b'|'
+                )
             {
                 break;
             }
@@ -1098,6 +1189,31 @@ mod tests {
         assert!(code.contains(&(Opcode::JumpIfFalse as u8)));
         assert!(code.contains(&(Opcode::Jump as u8)));
         assert!(code.contains(&(Opcode::Return as u8)));
+    }
+
+    #[test]
+    fn comparison_and_not_operators_compile() {
+        let mut program = VmProgram::new();
+        let body = r#"
+            let flag = recv();
+            let limit = recv();
+            let threshold = recv();
+            if !flag {
+                return "no";
+            } else if limit < threshold {
+                return "lt";
+            } else if limit >= threshold {
+                return "ge";
+            } else {
+                return "maybe";
+            }
+        "#;
+        let (code, type_tag) = compile_return_body(body, &mut program, None).expect("compile body");
+        assert_eq!(type_tag, TypeTag::String);
+        assert!(code.contains(&(Opcode::Not as u8)));
+        assert!(code.contains(&(Opcode::Lt as u8)));
+        assert!(code.contains(&(Opcode::Ge as u8)));
+        assert!(code.contains(&(Opcode::JumpIfFalse as u8)));
     }
 
     #[test]

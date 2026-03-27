@@ -62,6 +62,7 @@ The current expression grammar is intentionally small:
   - string literals
 - unary:
   - `-expr`
+  - `!expr`
 - binary:
   - `expr + expr`
   - `expr - expr`
@@ -70,6 +71,10 @@ The current expression grammar is intentionally small:
 - comparison:
   - `expr == expr`
   - `expr != expr`
+  - `expr < expr`
+  - `expr <= expr`
+  - `expr > expr`
+  - `expr >= expr`
 - grouping:
   - `(expr)`
 - call expressions:

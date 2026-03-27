@@ -62,6 +62,7 @@ export func main() {
   - 文字列
 - 単項演算:
   - `-expr`
+  - `!expr`
 - 二項演算:
   - `expr + expr`
   - `expr - expr`
@@ -70,6 +71,10 @@ export func main() {
 - 比較:
   - `expr == expr`
   - `expr != expr`
+  - `expr < expr`
+  - `expr <= expr`
+  - `expr > expr`
+  - `expr >= expr`
 - グルーピング:
   - `(expr)`
 - 関数・拡張呼び出し:
