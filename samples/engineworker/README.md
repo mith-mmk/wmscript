@@ -5,8 +5,8 @@ This sample shows the engine-side part of the separation:
 - it owns read flags through `state`
 - it controls message window mode through `ext.message`
 - the frontend still owns the actual window layout and rendering
-- it waits on `recv()` and branches from `state.get("ui.last_choice")`
-- it then asks for a second input and branches from `state.get("ui.last_input")`
+- it waits on `recv()` into a local binding and branches from that value
+- it then asks for a second input and branches from a second local binding
 
 Source:
 
@@ -24,31 +24,31 @@ export func main() {
     );
     ext.message.choices("prologue", "chapter_1", "chapter_2");
     ext.message.prompt("Choose a chapter");
-    recv();
-    if state.get("ui.last_choice") == "choice-1" {
+    let choice = recv();
+    if choice == "choice-1" {
         state.set("read:engineworker:prologue", true);
         ext.message.show("Engine", "Prologue selected.");
         ext.message.prompt("Enter the hero name");
-        recv();
-        if state.get("ui.last_input") == "Aki" {
+        let hero_name = recv();
+        if hero_name == "Aki" {
             return "Narrator: Prologue selected.\nAki: I'm ready to start.";
         }
         return "Narrator: Prologue selected.\nNarrator: The hero name was not Aki.";
-    } else if state.get("ui.last_choice") == "choice-2" {
+    } else if choice == "choice-2" {
         state.set("read:engineworker:chapter_1", true);
         ext.message.show("Engine", "Chapter 1 selected.");
         ext.message.prompt("Enter the scene name");
-        recv();
-        if state.get("ui.last_input") == "station" {
+        let scene_name = recv();
+        if scene_name == "station" {
             return "Narrator: Chapter 1 selected.\nNarrator: The station scene opens.";
         }
         return "Narrator: Chapter 1 selected.\nNarrator: The scene name was different.";
-    } else if state.get("ui.last_choice") == "choice-3" {
+    } else if choice == "choice-3" {
         state.set("read:engineworker:chapter_2", true);
         ext.message.show("Engine", "Chapter 2 selected.");
         ext.message.prompt("Enter the route name");
-        recv();
-        if state.get("ui.last_input") == "river" {
+        let route_name = recv();
+        if route_name == "river" {
             return "Narrator: Chapter 2 selected.\nNarrator: The river route opens.";
         }
         return "Narrator: Chapter 2 selected.\nNarrator: The route name was different.";
@@ -63,6 +63,6 @@ Runtime behavior:
 - Re-running it turns on skip mode for the frontend message window.
 - The frontend still renders the actual choice and message panels.
 - Clicking a choice stores the selection in `ui.last_choice` and wakes the waiting worker.
-- The worker resumes, reads `state.get("ui.last_choice")`, and branches to the selected chapter text.
-- The sample then asks for a second input and reads it from `ui.last_input`.
+- The worker resumes, binds the selection with `let choice = recv();`, and branches on that local.
+- The sample then asks for a second input, binds it with `let hero_name = recv();`, and branches on that local too.
 - The two-worker split example lives in `crates/wmlruntime/examples/engine_worker_split.rs`.

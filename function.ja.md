@@ -21,6 +21,7 @@
 コンパイラ前端が現在扱える関数本体は、かなり限定されています。
 
 - `;` で終わる式文
+- 関数本体内の `let name = expr;` による局所束縛
 - `return;`
 - `return <expr>;`
 - `if expr { ... }`
@@ -46,6 +47,8 @@ export func main() {
 
 - 式文:
   - `expr;`
+- 局所束縛:
+  - `let name = expr;`
 - 条件分岐:
   - `if expr { ... }`
   - `if expr { ... } else { ... }`
@@ -75,6 +78,8 @@ export func main() {
   - `try_recv()`
   - `yield()`
   - `sleep()`
+- 局所変数参照:
+  - 同じ関数本体で前に `let` した裸の識別子
 
 この範囲について、コンパイラは定数畳み込みと型タグ付けを行います。
 

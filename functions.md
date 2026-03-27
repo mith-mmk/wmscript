@@ -21,6 +21,7 @@ WMLScript currently supports a small module-based script format:
 The compiler front end currently lowers a limited subset of function bodies:
 
 - expression statements terminated by `;`
+- local bindings with `let name = expr;`
 - `return;`
 - `return <expr>;`
 - `if expr { ... }`
@@ -46,6 +47,8 @@ The current expression grammar is intentionally small:
 
 - expression statements:
   - `expr;`
+- local bindings:
+  - `let name = expr;`
 - conditionals:
   - `if expr { ... }`
   - `if expr { ... } else { ... }`
@@ -75,6 +78,8 @@ The current expression grammar is intentionally small:
   - `try_recv()`
   - `yield()`
   - `sleep()`
+- local variable references:
+  - bare identifiers bound earlier in the same function body by `let`
 
 The compiler performs constant folding and type tagging for this subset.
 

@@ -359,17 +359,18 @@ impl Compiler {
                     value: function.params.len() as u32,
                 }
             })?;
-            let local_count = u8::try_from(function.locals.iter().count()).map_err(|_| {
-                CompileError::BytecodeOverflow {
-                    what: "local count",
-                    value: function.locals.iter().count() as u32,
-                }
-            })?;
-            let code = lower_function_body(
+            let initial_locals = ordered_local_names(&function.locals);
+            let (code, local_count) = lower_function_body(
                 &function.body,
                 &mut program,
                 self.config.extension_registry(),
+                &initial_locals,
             )?;
+            let local_count =
+                u8::try_from(local_count).map_err(|_| CompileError::BytecodeOverflow {
+                    what: "local count",
+                    value: local_count as u32,
+                })?;
             program.insert_function(VmFunction::new(func_id, code, arg_count, local_count));
             if entry.is_none() && function.name == "main" {
                 entry = Some(func_id);
@@ -981,9 +982,21 @@ fn lower_function_body(
     body: &str,
     program: &mut VmProgram,
     extension_registry: Option<&ExtensionRegistry>,
-) -> Result<Vec<u8>> {
-    let (code, _type_tag) = expr::compile_return_body(body, program, extension_registry)?;
-    Ok(code)
+    initial_locals: &[String],
+) -> Result<(Vec<u8>, usize)> {
+    let (code, _type_tag, local_count) =
+        expr::compile_function_body(body, program, extension_registry, initial_locals)?;
+    Ok((code, local_count))
+}
+
+fn ordered_local_names(locals: &SymbolTable) -> Vec<String> {
+    let mut entries = locals
+        .iter()
+        .filter(|(_, entry)| matches!(entry.kind, SymbolKind::Parameter))
+        .map(|(name, entry)| (entry.symbol_id, name.to_owned()))
+        .collect::<Vec<_>>();
+    entries.sort_by_key(|(symbol_id, _)| *symbol_id);
+    entries.into_iter().map(|(_, name)| name).collect()
 }
 
 fn parse_literal_value(source: &str) -> Result<VmValue> {

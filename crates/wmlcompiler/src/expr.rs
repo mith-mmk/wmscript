@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+use std::collections::BTreeMap;
+
 use wmlbytecode::{Op, encode_op};
 use wmlext::ExtensionRegistry;
 use wmlvm::{Program as VmProgram, Value as VmValue};
@@ -30,6 +32,7 @@ enum BinaryOp {
 #[derive(Clone, Debug, PartialEq)]
 enum Expr {
     Literal(VmValue),
+    Variable(String),
     UnaryNeg(Box<Expr>),
     Binary {
         op: BinaryOp,
@@ -45,6 +48,10 @@ enum Expr {
 #[derive(Clone, Debug, PartialEq)]
 enum Stmt {
     Expr(Expr),
+    Let {
+        name: String,
+        value: Option<Expr>,
+    },
     Return(Option<Expr>),
     If {
         condition: Expr,
@@ -59,25 +66,47 @@ pub(crate) fn compile_return_body(
     program: &mut VmProgram,
     extension_registry: Option<&ExtensionRegistry>,
 ) -> Result<(Vec<u8>, TypeTag)> {
+    let (code, type_tag, _) = compile_body(body, program, extension_registry, &[])?;
+    Ok((code, type_tag))
+}
+
+pub(crate) fn compile_function_body(
+    body: &str,
+    program: &mut VmProgram,
+    extension_registry: Option<&ExtensionRegistry>,
+    initial_locals: &[String],
+) -> Result<(Vec<u8>, TypeTag, usize)> {
+    compile_body(body, program, extension_registry, initial_locals)
+}
+
+fn compile_body(
+    body: &str,
+    program: &mut VmProgram,
+    extension_registry: Option<&ExtensionRegistry>,
+    initial_locals: &[String],
+) -> Result<(Vec<u8>, TypeTag, usize)> {
     let mut parser = ExprParser::new(body);
     let statements = parser.parse_statements(None)?;
+    let mut locals = LocalScope::new(initial_locals)?;
     let mut code = Vec::new();
     let mut type_tag = None;
     let emitted = emit_statements(
         &statements,
         program,
         extension_registry,
+        &mut locals,
         &mut code,
         &mut type_tag,
     )?;
     let saw_return = emitted.saw_return;
     let type_tag = type_tag.or(emitted.return_type).unwrap_or(TypeTag::Nil);
+    let local_count = locals.local_count();
 
     if !saw_return {
         encode_op(&Op::Return, &mut code);
     }
 
-    Ok((code, type_tag))
+    Ok((code, type_tag, local_count))
 }
 
 fn optimize_expr(expr: Expr) -> Result<Expr> {
@@ -116,12 +145,13 @@ fn emit_statements(
     statements: &[Stmt],
     program: &mut VmProgram,
     extension_registry: Option<&ExtensionRegistry>,
+    locals: &mut LocalScope,
     out: &mut Vec<u8>,
     type_tag: &mut Option<TypeTag>,
 ) -> Result<EmitResult> {
     let mut summary = EmitResult::default();
     for stmt in statements {
-        let emitted = emit_statement(stmt, program, extension_registry, out, type_tag)?;
+        let emitted = emit_statement(stmt, program, extension_registry, locals, out, type_tag)?;
         summary.saw_return |= emitted.saw_return;
         if let Some(return_type) = emitted.return_type {
             *type_tag = Some(match type_tag.take() {
@@ -148,21 +178,33 @@ fn emit_statement(
     stmt: &Stmt,
     program: &mut VmProgram,
     extension_registry: Option<&ExtensionRegistry>,
+    locals: &mut LocalScope,
     out: &mut Vec<u8>,
     type_tag: &mut Option<TypeTag>,
 ) -> Result<EmitResult> {
     match stmt {
         Stmt::Expr(expr) => {
             let optimized = optimize_expr(expr.clone())?;
-            emit_expr_into(&optimized, program, extension_registry, out)?;
+            emit_expr_into(&optimized, program, extension_registry, locals, out)?;
             encode_op(&Op::Pop, out);
+            Ok(EmitResult::default())
+        }
+        Stmt::Let { name, value } => {
+            if let Some(expr) = value.clone() {
+                let optimized = optimize_expr(expr)?;
+                emit_expr_into(&optimized, program, extension_registry, locals, out)?;
+            } else {
+                encode_op(&Op::PushNil, out);
+            }
+            let slot = locals.declare(name.clone())?;
+            encode_op(&Op::StoreLocal(slot), out);
             Ok(EmitResult::default())
         }
         Stmt::Return(expr) => {
             let return_type = if let Some(expr) = expr.clone() {
                 let optimized = optimize_expr(expr)?;
                 let return_type = infer_type(&optimized)?;
-                emit_expr_into(&optimized, program, extension_registry, out)?;
+                emit_expr_into(&optimized, program, extension_registry, locals, out)?;
                 *type_tag = Some(match type_tag.take() {
                     Some(existing) => merge_type_tags(existing, return_type),
                     None => return_type,
@@ -183,10 +225,18 @@ fn emit_statement(
             else_branch,
         } => {
             let optimized = optimize_expr(condition.clone())?;
-            emit_expr_into(&optimized, program, extension_registry, out)?;
+            emit_expr_into(&optimized, program, extension_registry, locals, out)?;
             let jump_false_pos = emit_jump_placeholder(Op::JumpIfFalse(0), out);
-            let then_result =
-                emit_statements(then_branch, program, extension_registry, out, type_tag)?;
+            let mut then_locals = locals.clone();
+            let then_result = emit_statements(
+                then_branch,
+                program,
+                extension_registry,
+                &mut then_locals,
+                out,
+                type_tag,
+            )?;
+            locals.merge_max(then_locals.local_count());
             let mut else_result = EmitResult::default();
             if else_branch.is_empty() {
                 let target = out.len();
@@ -195,8 +245,16 @@ fn emit_statement(
                 let jump_end_pos = emit_jump_placeholder(Op::Jump(0), out);
                 let target = out.len();
                 patch_jump_target(out, jump_false_pos, target)?;
-                else_result =
-                    emit_statements(else_branch, program, extension_registry, out, type_tag)?;
+                let mut else_locals = locals.clone();
+                else_result = emit_statements(
+                    else_branch,
+                    program,
+                    extension_registry,
+                    &mut else_locals,
+                    out,
+                    type_tag,
+                )?;
+                locals.merge_max(else_locals.local_count());
                 let target = out.len();
                 patch_jump_target(out, jump_end_pos, target)?;
             }
@@ -370,6 +428,7 @@ fn literal_value(expr: &Expr) -> Option<VmValue> {
 fn infer_type(expr: &Expr) -> Result<TypeTag> {
     match expr {
         Expr::Literal(value) => Ok(type_of_value(value)),
+        Expr::Variable(_) => Ok(TypeTag::Unknown),
         Expr::UnaryNeg(inner) => match infer_type(inner)? {
             TypeTag::Integer | TypeTag::Float => Ok(infer_type(inner)?),
             other => Err(unsupported_expression(format!(
@@ -419,6 +478,7 @@ fn emit_expr_into(
     expr: &Expr,
     program: &mut VmProgram,
     extension_registry: Option<&ExtensionRegistry>,
+    locals: &LocalScope,
     out: &mut Vec<u8>,
 ) -> Result<()> {
     match expr {
@@ -426,13 +486,17 @@ fn emit_expr_into(
             let const_id = program.push_constant(value.clone());
             encode_op(&Op::PushConst(const_id), out);
         }
+        Expr::Variable(name) => {
+            let slot = locals.lookup(name)?;
+            encode_op(&Op::LoadLocal(slot), out);
+        }
         Expr::UnaryNeg(inner) => {
-            emit_expr_into(inner, program, extension_registry, out)?;
+            emit_expr_into(inner, program, extension_registry, locals, out)?;
             encode_op(&Op::Neg, out);
         }
         Expr::Binary { op, left, right } => {
-            emit_expr_into(left, program, extension_registry, out)?;
-            emit_expr_into(right, program, extension_registry, out)?;
+            emit_expr_into(left, program, extension_registry, locals, out)?;
+            emit_expr_into(right, program, extension_registry, locals, out)?;
             match op {
                 BinaryOp::Add => encode_op(&Op::Add, out),
                 BinaryOp::Sub => encode_op(&Op::Sub, out),
@@ -502,7 +566,7 @@ fn emit_expr_into(
                 )));
             }
             for arg in args {
-                emit_expr_into(arg, program, Some(extension_registry), out)?;
+                emit_expr_into(arg, program, Some(extension_registry), locals, out)?;
             }
             encode_op(&Op::CallHost(ext.host_id, args.len() as u8), out);
         }
@@ -513,6 +577,54 @@ fn emit_expr_into(
 fn unsupported_expression(message: impl Into<String>) -> CompileError {
     CompileError::UnsupportedExpression {
         source: message.into(),
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+struct LocalScope {
+    slots: BTreeMap<String, u8>,
+    next_slot: u8,
+    max_slot: u8,
+}
+
+impl LocalScope {
+    fn new(initial_locals: &[String]) -> Result<Self> {
+        let mut scope = Self::default();
+        for name in initial_locals {
+            scope.declare(name.clone())?;
+        }
+        Ok(scope)
+    }
+
+    fn lookup(&self, name: &str) -> Result<u8> {
+        self.slots
+            .get(name)
+            .copied()
+            .ok_or_else(|| unsupported_expression(format!("unknown local `{name}`")))
+    }
+
+    fn declare(&mut self, name: String) -> Result<u8> {
+        if self.slots.contains_key(&name) {
+            return Err(unsupported_expression(format!("duplicate local `{name}`")));
+        }
+        let slot = self.next_slot;
+        self.next_slot = self
+            .next_slot
+            .checked_add(1)
+            .ok_or_else(|| unsupported_expression("too many local variables"))?;
+        self.max_slot = self.max_slot.max(self.next_slot);
+        self.slots.insert(name, slot);
+        Ok(slot)
+    }
+
+    fn local_count(&self) -> usize {
+        self.max_slot as usize
+    }
+
+    fn merge_max(&mut self, other_local_count: usize) {
+        self.max_slot = self
+            .max_slot
+            .max(other_local_count.min(u8::MAX as usize) as u8);
     }
 }
 
@@ -544,6 +656,19 @@ impl<'a> ExprParser<'a> {
         }
         if self.consume_keyword("if") {
             return self.parse_if_statement();
+        }
+        if self.consume_keyword("let") {
+            self.skip_ws_and_comments();
+            let name = self.read_identifier_source()?;
+            self.skip_ws_and_comments();
+            let value = if self.consume_byte(b'=') {
+                Some(self.parse_expression()?)
+            } else {
+                None
+            };
+            self.skip_ws_and_comments();
+            self.expect_byte(b';')?;
+            return Ok(Stmt::Let { name, value });
         }
 
         let expr = self.parse_expression()?;
@@ -705,7 +830,11 @@ impl<'a> ExprParser<'a> {
                     }
                     Ok(Expr::Call { path, args })
                 } else if path.len() == 1 {
-                    Ok(Expr::Literal(parse_literal_value(&path[0])?))
+                    if let Ok(value) = parse_literal_value(&path[0]) {
+                        Ok(Expr::Literal(value))
+                    } else {
+                        Ok(Expr::Variable(path[0].clone()))
+                    }
                 } else {
                     Err(unsupported_expression(format!(
                         "unexpected path expression `{}`",
@@ -969,6 +1098,31 @@ mod tests {
         assert!(code.contains(&(Opcode::JumpIfFalse as u8)));
         assert!(code.contains(&(Opcode::Jump as u8)));
         assert!(code.contains(&(Opcode::Return as u8)));
+    }
+
+    #[test]
+    fn let_bindings_can_drive_branching() {
+        let mut registry = ExtensionRegistry::with_policy(NamespacePolicy::permissive());
+        registry
+            .register_extension("state", &[ExtensionFunctionSpec::new("get", 173, 1, 1, 0)])
+            .expect("register state extension");
+
+        let mut program = VmProgram::new();
+        let body = r#"
+            let choice = recv();
+            if choice == "choice-1" {
+                return "one";
+            } else {
+                return state.get("ui.last_choice");
+            }
+        "#;
+        let (code, type_tag) =
+            compile_return_body(body, &mut program, Some(&registry)).expect("compile body");
+        assert_eq!(type_tag, TypeTag::Unknown);
+        assert!(code.contains(&(Opcode::Recv as u8)));
+        assert!(code.contains(&(Opcode::StoreLocal as u8)));
+        assert!(code.contains(&(Opcode::LoadLocal as u8)));
+        assert!(code.contains(&(Opcode::Eq as u8)));
     }
 
     #[test]
