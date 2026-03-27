@@ -320,54 +320,68 @@ pub fn standard_extension_registry() -> Result<ExtensionRegistry> {
     registry.register_extension(
         "ext.fs",
         &[
-            ExtensionFunctionSpec::new("read", 100, 1, 1, CAP_FILE_SYSTEM),
-            ExtensionFunctionSpec::new("write", 101, 2, 2, CAP_FILE_SYSTEM),
-            ExtensionFunctionSpec::new("exists", 102, 1, 1, CAP_FILE_SYSTEM),
+            ExtensionFunctionSpec::new("read", 100, 1, 1, CAP_FILE_SYSTEM)
+                .with_return_type(ExtValueType::String),
+            ExtensionFunctionSpec::new("write", 101, 2, 2, CAP_FILE_SYSTEM)
+                .with_return_type(ExtValueType::Nil),
+            ExtensionFunctionSpec::new("exists", 102, 1, 1, CAP_FILE_SYSTEM)
+                .with_return_type(ExtValueType::Bool),
         ],
     )?;
     registry.register_extension(
         "ext.debug",
         &[
-            ExtensionFunctionSpec::new("log", 110, 1, 1, 0),
-            ExtensionFunctionSpec::new("inspect", 111, 1, 1, 0),
+            ExtensionFunctionSpec::new("log", 110, 1, 1, 0).with_return_type(ExtValueType::Nil),
+            ExtensionFunctionSpec::new("inspect", 111, 1, 1, 0)
+                .with_return_type(ExtValueType::String),
         ],
     )?;
     registry.register_extension(
         "ext.net",
         &[
-            ExtensionFunctionSpec::new("get", 120, 1, 1, CAP_NETWORK),
-            ExtensionFunctionSpec::new("post", 121, 2, 2, CAP_NETWORK),
+            ExtensionFunctionSpec::new("get", 120, 1, 1, CAP_NETWORK)
+                .with_return_type(ExtValueType::String),
+            ExtensionFunctionSpec::new("post", 121, 2, 2, CAP_NETWORK)
+                .with_return_type(ExtValueType::String),
         ],
     )?;
     registry.register_extension(
         "ext.llm",
-        &[ExtensionFunctionSpec::new(
-            "generate",
-            130,
-            1,
-            1,
-            CAP_ASYNC_IO,
-        )],
+        &[
+            ExtensionFunctionSpec::new("generate", 130, 1, 1, CAP_ASYNC_IO)
+                .with_return_type(ExtValueType::String),
+        ],
     )?;
     registry.register_extension(
         "ext.scene",
         &[
-            ExtensionFunctionSpec::new("layout", 180, 8, 8, CAP_GUI),
-            ExtensionFunctionSpec::new("reset", 181, 0, 0, CAP_GUI),
+            ExtensionFunctionSpec::new("layout", 180, 8, 8, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("reset", 181, 0, 0, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
         ],
     )?;
     registry.register_extension(
         "ext.message",
         &[
-            ExtensionFunctionSpec::new("show", 135, 1, 2, CAP_GUI),
-            ExtensionFunctionSpec::new("append", 136, 1, 1, CAP_GUI),
-            ExtensionFunctionSpec::new("choices", 137, 1, 16, CAP_GUI),
-            ExtensionFunctionSpec::new("prompt", 138, 1, 1, CAP_GUI),
-            ExtensionFunctionSpec::new("hide", 139, 0, 0, CAP_GUI),
-            ExtensionFunctionSpec::new("speed", 131, 1, 1, CAP_GUI),
-            ExtensionFunctionSpec::new("auto", 132, 1, 1, CAP_GUI),
-            ExtensionFunctionSpec::new("skip", 133, 1, 1, CAP_GUI),
-            ExtensionFunctionSpec::new("clear", 149, 0, 0, CAP_GUI),
+            ExtensionFunctionSpec::new("show", 135, 1, 2, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("append", 136, 1, 1, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("choices", 137, 1, 16, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("prompt", 138, 1, 1, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("hide", 139, 0, 0, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("speed", 131, 1, 1, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("auto", 132, 1, 1, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("skip", 133, 1, 1, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("clear", 149, 0, 0, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
         ],
     )?;
     registry.register_extension(
@@ -375,45 +389,60 @@ pub fn standard_extension_registry() -> Result<ExtensionRegistry> {
         &[
             ExtensionFunctionSpec::new("load", 140, 1, 1, CAP_GUI),
             ExtensionFunctionSpec::new("info", 141, 1, 1, CAP_GUI),
-            ExtensionFunctionSpec::new("status", 142, 1, 1, CAP_GUI),
-            ExtensionFunctionSpec::new("release", 143, 1, 1, CAP_GUI),
-            ExtensionFunctionSpec::new("draw", 144, 3, 3, CAP_GUI),
-            ExtensionFunctionSpec::new("draw_part", 145, 7, 7, CAP_GUI),
-            ExtensionFunctionSpec::new("draw_ext", 146, 11, 11, CAP_GUI),
-            ExtensionFunctionSpec::new("set_icon_sheet", 147, 3, 3, CAP_GUI),
-            ExtensionFunctionSpec::new("draw_icon", 148, 4, 4, CAP_GUI),
+            ExtensionFunctionSpec::new("status", 142, 1, 1, CAP_GUI)
+                .with_return_type(ExtValueType::Integer),
+            ExtensionFunctionSpec::new("release", 143, 1, 1, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("draw", 144, 3, 3, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("draw_part", 145, 7, 7, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("draw_ext", 146, 11, 11, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("set_icon_sheet", 147, 3, 3, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("draw_icon", 148, 4, 4, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
         ],
     )?;
     registry.register_extension(
         "ext.audio",
         &[
             ExtensionFunctionSpec::new("load", 150, 1, 1, CAP_ASYNC_IO),
-            ExtensionFunctionSpec::new("play", 151, 1, 2, CAP_ASYNC_IO),
-            ExtensionFunctionSpec::new("playback", 158, 1, 2, CAP_ASYNC_IO),
-            ExtensionFunctionSpec::new("pause", 152, 1, 1, CAP_ASYNC_IO),
-            ExtensionFunctionSpec::new("stop", 153, 1, 1, CAP_ASYNC_IO),
-            ExtensionFunctionSpec::new("seek", 154, 2, 2, CAP_ASYNC_IO),
-            ExtensionFunctionSpec::new("volume", 155, 2, 2, CAP_ASYNC_IO),
-            ExtensionFunctionSpec::new("release", 156, 1, 1, CAP_ASYNC_IO),
-            ExtensionFunctionSpec::new("status", 157, 1, 1, CAP_ASYNC_IO),
+            ExtensionFunctionSpec::new("play", 151, 1, 2, CAP_ASYNC_IO)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("playback", 158, 1, 2, CAP_ASYNC_IO)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("pause", 152, 1, 1, CAP_ASYNC_IO)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("stop", 153, 1, 1, CAP_ASYNC_IO)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("seek", 154, 2, 2, CAP_ASYNC_IO)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("volume", 155, 2, 2, CAP_ASYNC_IO)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("release", 156, 1, 1, CAP_ASYNC_IO)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("status", 157, 1, 1, CAP_ASYNC_IO)
+                .with_return_type(ExtValueType::Integer),
         ],
     )?;
     registry.register_extension(
         "ext.vm",
         &[
-            ExtensionFunctionSpec::new("save", 160, 1, 1, 0),
-            ExtensionFunctionSpec::new("load", 161, 1, 1, 0),
+            ExtensionFunctionSpec::new("save", 160, 1, 1, 0).with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("load", 161, 1, 1, 0).with_return_type(ExtValueType::Bool),
         ],
     )?;
     registry.register_extension(
         "state",
         &[
-            ExtensionFunctionSpec::new("save", 170, 1, 1, 0),
-            ExtensionFunctionSpec::new("load", 171, 1, 1, 0),
-            ExtensionFunctionSpec::new("has", 172, 1, 1, 0),
+            ExtensionFunctionSpec::new("save", 170, 1, 1, 0).with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("load", 171, 1, 1, 0).with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("has", 172, 1, 1, 0).with_return_type(ExtValueType::Bool),
             ExtensionFunctionSpec::new("get", 173, 1, 1, 0),
-            ExtensionFunctionSpec::new("set", 174, 2, 2, 0),
-            ExtensionFunctionSpec::new("erase", 175, 1, 1, 0),
+            ExtensionFunctionSpec::new("set", 174, 2, 2, 0).with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("erase", 175, 1, 1, 0).with_return_type(ExtValueType::Bool),
         ],
     )?;
     Ok(registry)

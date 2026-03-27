@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 use crate::{AudioBackend, SharedAudioBackend, create_disabled_audio_backend};
 use wmlarchive::{Archive, ArchiveError, Manifest};
-use wmlext::{ExtError, ExtensionFunctionSpec, ExtensionRegistry, NamespacePolicy};
+use wmlext::{ExtError, ExtValueType, ExtensionFunctionSpec, ExtensionRegistry, NamespacePolicy};
 use wmlhost::{
     CAP_ASYNC_IO, CAP_FILE_SYSTEM, CAP_GUI, CAP_NETWORK, CapabilityMask, HostFunction, HostId,
     HostRegistry,
@@ -456,9 +456,12 @@ impl Runtime {
         let ids = self.extensions.register_extension(
             "ext.fs",
             &[
-                ExtensionFunctionSpec::new("read", read_host_id, 1, 1, CAP_FILE_SYSTEM),
-                ExtensionFunctionSpec::new("write", write_host_id, 2, 2, CAP_FILE_SYSTEM),
-                ExtensionFunctionSpec::new("exists", exists_host_id, 1, 1, CAP_FILE_SYSTEM),
+                ExtensionFunctionSpec::new("read", read_host_id, 1, 1, CAP_FILE_SYSTEM)
+                    .with_return_type(ExtValueType::String),
+                ExtensionFunctionSpec::new("write", write_host_id, 2, 2, CAP_FILE_SYSTEM)
+                    .with_return_type(ExtValueType::Nil),
+                ExtensionFunctionSpec::new("exists", exists_host_id, 1, 1, CAP_FILE_SYSTEM)
+                    .with_return_type(ExtValueType::Bool),
             ],
         )?;
 
@@ -491,8 +494,10 @@ impl Runtime {
         let ids = self.extensions.register_extension(
             "ext.debug",
             &[
-                ExtensionFunctionSpec::new("log", log_host_id, 1, 1, 0),
-                ExtensionFunctionSpec::new("inspect", inspect_host_id, 1, 1, 0),
+                ExtensionFunctionSpec::new("log", log_host_id, 1, 1, 0)
+                    .with_return_type(ExtValueType::Nil),
+                ExtensionFunctionSpec::new("inspect", inspect_host_id, 1, 1, 0)
+                    .with_return_type(ExtValueType::String),
             ],
         )?;
 
@@ -557,12 +562,17 @@ impl Runtime {
         let ids = self.extensions.register_extension(
             "state",
             &[
-                ExtensionFunctionSpec::new("save", save_host_id, 1, 1, 0),
-                ExtensionFunctionSpec::new("load", load_host_id, 1, 1, 0),
-                ExtensionFunctionSpec::new("has", has_host_id, 1, 1, 0),
+                ExtensionFunctionSpec::new("save", save_host_id, 1, 1, 0)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("load", load_host_id, 1, 1, 0)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("has", has_host_id, 1, 1, 0)
+                    .with_return_type(ExtValueType::Bool),
                 ExtensionFunctionSpec::new("get", get_host_id, 1, 1, 0),
-                ExtensionFunctionSpec::new("set", set_host_id, 2, 2, 0),
-                ExtensionFunctionSpec::new("erase", erase_host_id, 1, 1, 0),
+                ExtensionFunctionSpec::new("set", set_host_id, 2, 2, 0)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("erase", erase_host_id, 1, 1, 0)
+                    .with_return_type(ExtValueType::Bool),
             ],
         )?;
 
@@ -611,8 +621,10 @@ impl Runtime {
         let ids = self.extensions.register_extension(
             "ext.net",
             &[
-                ExtensionFunctionSpec::new("get", get_host_id, 1, 1, CAP_NETWORK),
-                ExtensionFunctionSpec::new("post", post_host_id, 2, 2, CAP_NETWORK),
+                ExtensionFunctionSpec::new("get", get_host_id, 1, 1, CAP_NETWORK)
+                    .with_return_type(ExtValueType::String),
+                ExtensionFunctionSpec::new("post", post_host_id, 2, 2, CAP_NETWORK)
+                    .with_return_type(ExtValueType::String),
             ],
         )?;
 
@@ -641,13 +653,10 @@ impl Runtime {
 
         let ids = self.extensions.register_extension(
             "ext.llm",
-            &[ExtensionFunctionSpec::new(
-                "generate",
-                generate_host_id,
-                1,
-                1,
-                CAP_ASYNC_IO,
-            )],
+            &[
+                ExtensionFunctionSpec::new("generate", generate_host_id, 1, 1, CAP_ASYNC_IO)
+                    .with_return_type(ExtValueType::String),
+            ],
         )?;
 
         Ok(LlmExtension {
@@ -794,15 +803,24 @@ impl Runtime {
         let ids = self.extensions.register_extension(
             "ext.message",
             &[
-                ExtensionFunctionSpec::new("show", show_host_id, 1, 2, CAP_GUI),
-                ExtensionFunctionSpec::new("append", append_host_id, 1, 1, CAP_GUI),
-                ExtensionFunctionSpec::new("choices", choices_host_id, 1, 16, CAP_GUI),
-                ExtensionFunctionSpec::new("prompt", prompt_host_id, 1, 1, CAP_GUI),
-                ExtensionFunctionSpec::new("hide", hide_host_id, 0, 0, CAP_GUI),
-                ExtensionFunctionSpec::new("speed", speed_host_id, 1, 1, CAP_GUI),
-                ExtensionFunctionSpec::new("auto", auto_host_id, 1, 1, CAP_GUI),
-                ExtensionFunctionSpec::new("skip", skip_host_id, 1, 1, CAP_GUI),
-                ExtensionFunctionSpec::new("clear", clear_host_id, 0, 0, CAP_GUI),
+                ExtensionFunctionSpec::new("show", show_host_id, 1, 2, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("append", append_host_id, 1, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("choices", choices_host_id, 1, 16, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("prompt", prompt_host_id, 1, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("hide", hide_host_id, 0, 0, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("speed", speed_host_id, 1, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("auto", auto_host_id, 1, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("skip", skip_host_id, 1, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("clear", clear_host_id, 0, 0, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
             ],
         )?;
 
@@ -865,8 +883,10 @@ impl Runtime {
         let ids = self.extensions.register_extension(
             "ext.scene",
             &[
-                ExtensionFunctionSpec::new("layout", layout_host_id, 8, 8, CAP_GUI),
-                ExtensionFunctionSpec::new("reset", reset_host_id, 0, 0, CAP_GUI),
+                ExtensionFunctionSpec::new("layout", layout_host_id, 8, 8, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("reset", reset_host_id, 0, 0, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
             ],
         )?;
 
@@ -1147,14 +1167,22 @@ impl Runtime {
             "ext.image",
             &[
                 ExtensionFunctionSpec::new("load", load_host_id, 1, 1, CAP_GUI),
-                ExtensionFunctionSpec::new("info", info_host_id, 1, 1, CAP_GUI),
-                ExtensionFunctionSpec::new("status", status_host_id, 1, 1, CAP_GUI),
-                ExtensionFunctionSpec::new("release", release_host_id, 1, 1, CAP_GUI),
-                ExtensionFunctionSpec::new("draw", draw_host_id, 3, 3, CAP_GUI),
-                ExtensionFunctionSpec::new("draw_part", draw_part_host_id, 7, 7, CAP_GUI),
-                ExtensionFunctionSpec::new("draw_ext", draw_ext_host_id, 11, 11, CAP_GUI),
-                ExtensionFunctionSpec::new("set_icon_sheet", set_icon_sheet_host_id, 3, 3, CAP_GUI),
-                ExtensionFunctionSpec::new("draw_icon", draw_icon_host_id, 4, 4, CAP_GUI),
+                ExtensionFunctionSpec::new("info", info_host_id, 1, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::Unknown),
+                ExtensionFunctionSpec::new("status", status_host_id, 1, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::Integer),
+                ExtensionFunctionSpec::new("release", release_host_id, 1, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("draw", draw_host_id, 3, 3, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("draw_part", draw_part_host_id, 7, 7, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("draw_ext", draw_ext_host_id, 11, 11, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("set_icon_sheet", set_icon_sheet_host_id, 3, 3, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("draw_icon", draw_icon_host_id, 4, 4, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
             ],
         )?;
 
@@ -1384,14 +1412,22 @@ impl Runtime {
             "ext.audio",
             &[
                 ExtensionFunctionSpec::new("load", load_host_id, 1, 1, CAP_ASYNC_IO),
-                ExtensionFunctionSpec::new("play", play_host_id, 1, 2, CAP_ASYNC_IO),
-                ExtensionFunctionSpec::new("playback", playback_host_id, 1, 2, CAP_ASYNC_IO),
-                ExtensionFunctionSpec::new("pause", pause_host_id, 1, 1, CAP_ASYNC_IO),
-                ExtensionFunctionSpec::new("stop", stop_host_id, 1, 1, CAP_ASYNC_IO),
-                ExtensionFunctionSpec::new("seek", seek_host_id, 2, 2, CAP_ASYNC_IO),
-                ExtensionFunctionSpec::new("volume", volume_host_id, 2, 2, CAP_ASYNC_IO),
-                ExtensionFunctionSpec::new("release", release_host_id, 1, 1, CAP_ASYNC_IO),
-                ExtensionFunctionSpec::new("status", status_host_id, 1, 1, CAP_ASYNC_IO),
+                ExtensionFunctionSpec::new("play", play_host_id, 1, 2, CAP_ASYNC_IO)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("playback", playback_host_id, 1, 2, CAP_ASYNC_IO)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("pause", pause_host_id, 1, 1, CAP_ASYNC_IO)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("stop", stop_host_id, 1, 1, CAP_ASYNC_IO)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("seek", seek_host_id, 2, 2, CAP_ASYNC_IO)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("volume", volume_host_id, 2, 2, CAP_ASYNC_IO)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("release", release_host_id, 1, 1, CAP_ASYNC_IO)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("status", status_host_id, 1, 1, CAP_ASYNC_IO)
+                    .with_return_type(ExtValueType::Integer),
             ],
         )?;
 
@@ -1512,8 +1548,10 @@ impl Runtime {
         let ids = self.extensions.register_extension(
             "ext.vm",
             &[
-                ExtensionFunctionSpec::new("save", save_host_id, 1, 1, 0),
-                ExtensionFunctionSpec::new("load", load_host_id, 1, 1, 0),
+                ExtensionFunctionSpec::new("save", save_host_id, 1, 1, 0)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("load", load_host_id, 1, 1, 0)
+                    .with_return_type(ExtValueType::Bool),
             ],
         )?;
 
