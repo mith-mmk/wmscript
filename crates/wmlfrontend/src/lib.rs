@@ -210,6 +210,9 @@ impl UiBackend for ConsoleBackend {
                     .join(", ")
             ),
             UiCommand::SetInputPrompt(prompt) => println!("[ui] input prompt: {prompt:?}"),
+            UiCommand::SetMessageSpeed(speed) => println!("[ui] message speed: {speed}"),
+            UiCommand::SetMessageAuto(enabled) => println!("[ui] message auto: {enabled}"),
+            UiCommand::SetMessageSkip(enabled) => println!("[ui] message skip: {enabled}"),
             UiCommand::HideMessageWindow => println!("[ui] hide message window"),
             UiCommand::ResetScene => println!("[ui] reset scene"),
         }
@@ -297,6 +300,9 @@ impl UiApp for FrontendApp {
                 let runtime_message = self.runtime.message_window_state();
                 let ui_message = to_ui_message_window_state(runtime_message);
                 ctx.set_scene_layout(self.runtime.scene_layout_state());
+                ctx.set_message_speed(ui_message.text_speed);
+                ctx.set_message_auto(ui_message.auto_mode);
+                ctx.set_message_skip(ui_message.skip_mode);
                 if ui_message.visible
                     || ui_message.speaker.is_some()
                     || !ui_message.text.is_empty()
@@ -457,6 +463,9 @@ fn to_ui_message_window_state(state: RuntimeMessageWindowState) -> wmlui::UiMess
         backlog: state.backlog,
         choices: state.choices.into_iter().map(to_ui_choice).collect(),
         input_prompt: state.input_prompt,
+        text_speed: state.text_speed,
+        auto_mode: state.auto_mode,
+        skip_mode: state.skip_mode,
     }
 }
 

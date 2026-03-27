@@ -53,6 +53,9 @@ struct ReportApp {
     player_input: String,
     selected_choice: Option<String>,
     message_history_open: bool,
+    message_reveal_chars: usize,
+    message_signature: Option<String>,
+    auto_advance_sent: bool,
     font_preset: GuiFontPreset,
     applied_font_preset: Option<GuiFontPreset>,
 }
@@ -82,6 +85,9 @@ impl ReportApp {
             player_input: String::new(),
             selected_choice: None,
             message_history_open: false,
+            message_reveal_chars: 0,
+            message_signature: None,
+            auto_advance_sent: false,
             font_preset,
             applied_font_preset: None,
         }
@@ -244,6 +250,65 @@ impl ReportApp {
             .collect::<BTreeMap<_, _>>();
     }
 
+    fn message_signature(message: &wmlui::UiMessageWindowState) -> String {
+        format!(
+            "{}|{}|{}|{}|{}|{}|{}",
+            message.visible,
+            message.speaker.as_deref().unwrap_or_default(),
+            message.text,
+            message.choices.len(),
+            message.input_prompt.as_deref().unwrap_or_default(),
+            message.text_speed.to_bits(),
+            message.auto_mode as u8 ^ ((message.skip_mode as u8) << 1),
+        )
+    }
+
+    fn update_message_reveal(&mut self, ctx: &egui::Context) {
+        let message = &self.report.ui_state.scene.message_window;
+        let signature = Self::message_signature(message);
+        if self.message_signature.as_deref() != Some(signature.as_str()) {
+            self.message_signature = Some(signature);
+            self.message_reveal_chars = 0;
+            self.auto_advance_sent = false;
+        }
+
+        let text_len = message.text.chars().count();
+        if !message.visible || text_len == 0 {
+            self.message_reveal_chars = 0;
+            return;
+        }
+
+        if message.skip_mode || message.text_speed <= 0.0 {
+            self.message_reveal_chars = text_len;
+            return;
+        }
+
+        let dt = ctx.input(|input| input.stable_dt).max(0.0);
+        let advance = (message.text_speed * dt).ceil() as usize;
+        self.message_reveal_chars = self
+            .message_reveal_chars
+            .saturating_add(advance)
+            .min(text_len);
+
+        if message.auto_mode
+            && self.message_reveal_chars >= text_len
+            && !self.auto_advance_sent
+            && message.choices.is_empty()
+            && message.input_prompt.is_none()
+            && !self.report.runtime.waiting_workers().is_empty()
+        {
+            self.auto_advance_sent = true;
+            self.send_user_reply(Value::Nil);
+        }
+    }
+
+    fn revealed_message_text(&self, text: &str) -> String {
+        if self.message_reveal_chars == 0 {
+            return String::new();
+        }
+        text.chars().take(self.message_reveal_chars).collect()
+    }
+
     fn scene_canvas_rect(stage_rect: egui::Rect, layout: &UiSceneLayoutState) -> (egui::Rect, f32) {
         let ref_size = layout.reference_size;
         let scale_x = if ref_size.width > 0.0 {
@@ -279,8 +344,8 @@ impl ReportApp {
             .filter(|speaker| !speaker.is_empty())
             .unwrap_or("Narrator")
             .to_owned();
-        let text_lines = message
-            .text
+        let revealed_text = self.revealed_message_text(&message.text);
+        let text_lines = revealed_text
             .lines()
             .map(|line| line.to_owned())
             .collect::<Vec<_>>();
@@ -361,6 +426,39 @@ impl ReportApp {
                                 );
                             });
                             ui.add_space(6.0 * scale);
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    egui::RichText::new("Speed")
+                                        .size(14.0 * scale.max(0.75))
+                                        .color(egui::Color32::WHITE),
+                                );
+                                let mut speed = self.report.ui_state.scene.message_window.text_speed;
+                                if ui
+                                    .add_sized(
+                                        [message_rect.width() * 0.35, 18.0 * scale.max(0.75)],
+                                        egui::Slider::new(&mut speed, 0.0..=120.0)
+                                            .show_value(true),
+                                    )
+                                    .changed()
+                                {
+                                    self.report.runtime.set_message_speed(speed);
+                                    self.report.ui_state.scene.message_window.text_speed = speed;
+                                }
+                                let mut auto_mode = self.report.ui_state.scene.message_window.auto_mode;
+                                if ui.checkbox(&mut auto_mode, "Auto").changed() {
+                                    self.report.runtime.set_message_auto_mode(auto_mode);
+                                    self.report.ui_state.scene.message_window.auto_mode = auto_mode;
+                                    self.auto_advance_sent = false;
+                                }
+                                let mut skip_mode = self.report.ui_state.scene.message_window.skip_mode;
+                                if ui.checkbox(&mut skip_mode, "Skip").changed() {
+                                    self.report.runtime.set_message_skip_mode(skip_mode);
+                                    self.report.ui_state.scene.message_window.skip_mode = skip_mode;
+                                    if skip_mode {
+                                        self.message_reveal_chars = message.text.chars().count();
+                                    }
+                                }
+                            });
                             ui.separator();
                             egui::ScrollArea::vertical()
                                 .id_salt("message_window_text")
@@ -405,9 +503,23 @@ impl ReportApp {
                                 });
                             }
 
+                            ui.add_space(6.0 * scale);
+                            ui.horizontal(|ui| {
+                                ui.checkbox(&mut self.message_history_open, "Text Log");
+                                ui.label(
+                                    egui::RichText::new(if self.report.ui_state.scene.message_window.skip_mode {
+                                        "skip"
+                                    } else if self.report.ui_state.scene.message_window.auto_mode {
+                                        "auto"
+                                    } else {
+                                        "manual"
+                                    })
+                                    .size(13.0 * scale.max(0.75))
+                                    .color(egui::Color32::from_rgb(180, 220, 180)),
+                                );
+                            });
                             if self.message_history_open && !backlog.is_empty() {
-                                ui.add_space(8.0 * scale);
-                                ui.separator();
+                                ui.add_space(4.0 * scale);
                                 egui::ScrollArea::vertical()
                                     .id_salt("message_window_backlog")
                                     .max_height(message_rect.height() * 0.22)
@@ -452,8 +564,7 @@ impl eframe::App for ReportApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
         if ctx.input(|input| input.key_pressed(egui::Key::Space)) {
-            self.report.ui_state.scene.message_window.visible =
-                !self.report.ui_state.scene.message_window.visible;
+            self.message_history_open = !self.message_history_open;
         }
         if ctx.input(|input| input.key_pressed(egui::Key::Enter))
             && let Some(choice) = self
@@ -468,6 +579,7 @@ impl eframe::App for ReportApp {
         {
             self.apply_choice(&choice);
         }
+        self.update_message_reveal(ctx);
 
         egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
             ui.horizontal_wrapped(|ui| {

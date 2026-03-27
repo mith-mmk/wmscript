@@ -151,7 +151,7 @@ pub struct MessageChoiceState {
     pub enabled: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct MessageWindowState {
     pub visible: bool,
     pub speaker: Option<String>,
@@ -159,6 +159,25 @@ pub struct MessageWindowState {
     pub backlog: Vec<String>,
     pub choices: Vec<MessageChoiceState>,
     pub input_prompt: Option<String>,
+    pub text_speed: f32,
+    pub auto_mode: bool,
+    pub skip_mode: bool,
+}
+
+impl Default for MessageWindowState {
+    fn default() -> Self {
+        Self {
+            visible: false,
+            speaker: None,
+            text: String::new(),
+            backlog: Vec::new(),
+            choices: Vec::new(),
+            input_prompt: None,
+            text_speed: 48.0,
+            auto_mode: false,
+            skip_mode: false,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -643,6 +662,9 @@ impl Runtime {
         let choices_host_id = 137;
         let prompt_host_id = 138;
         let hide_host_id = 139;
+        let speed_host_id = 131;
+        let auto_host_id = 132;
+        let skip_host_id = 133;
         let clear_host_id = 149;
         let message_window = self.message_window.clone();
 
@@ -732,6 +754,36 @@ impl Runtime {
 
         let message_window = self.message_window.clone();
         let _ = self.register_host_function(
+            HostFunction::new(speed_host_id, 1, 1, CAP_GUI),
+            move |args| {
+                let speed = expect_number_arg(args, 0, "speed")? as f32;
+                message_window.borrow_mut().text_speed = speed.max(0.0);
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let message_window = self.message_window.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(auto_host_id, 1, 1, CAP_GUI),
+            move |args| {
+                let enabled = expect_bool_arg(args, 0, "enabled")?;
+                message_window.borrow_mut().auto_mode = enabled;
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let message_window = self.message_window.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(skip_host_id, 1, 1, CAP_GUI),
+            move |args| {
+                let enabled = expect_bool_arg(args, 0, "enabled")?;
+                message_window.borrow_mut().skip_mode = enabled;
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let message_window = self.message_window.clone();
+        let _ = self.register_host_function(
             HostFunction::new(clear_host_id, 0, 0, CAP_GUI),
             move |_args| {
                 *message_window.borrow_mut() = MessageWindowState::default();
@@ -747,6 +799,9 @@ impl Runtime {
                 ExtensionFunctionSpec::new("choices", choices_host_id, 1, 16, CAP_GUI),
                 ExtensionFunctionSpec::new("prompt", prompt_host_id, 1, 1, CAP_GUI),
                 ExtensionFunctionSpec::new("hide", hide_host_id, 0, 0, CAP_GUI),
+                ExtensionFunctionSpec::new("speed", speed_host_id, 1, 1, CAP_GUI),
+                ExtensionFunctionSpec::new("auto", auto_host_id, 1, 1, CAP_GUI),
+                ExtensionFunctionSpec::new("skip", skip_host_id, 1, 1, CAP_GUI),
                 ExtensionFunctionSpec::new("clear", clear_host_id, 0, 0, CAP_GUI),
             ],
         )?;
@@ -757,12 +812,18 @@ impl Runtime {
             choices_ext_id: ids[2],
             prompt_ext_id: ids[3],
             hide_ext_id: ids[4],
-            clear_ext_id: ids[5],
+            speed_ext_id: ids[5],
+            auto_ext_id: ids[6],
+            skip_ext_id: ids[7],
+            clear_ext_id: ids[8],
             show_host_id,
             append_host_id,
             choices_host_id,
             prompt_host_id,
             hide_host_id,
+            speed_host_id,
+            auto_host_id,
+            skip_host_id,
             clear_host_id,
         })
     }
@@ -1542,6 +1603,18 @@ impl Runtime {
         self.message_window.borrow().clone()
     }
 
+    pub fn set_message_speed(&self, speed: f32) {
+        self.message_window.borrow_mut().text_speed = speed.max(0.0);
+    }
+
+    pub fn set_message_auto_mode(&self, enabled: bool) {
+        self.message_window.borrow_mut().auto_mode = enabled;
+    }
+
+    pub fn set_message_skip_mode(&self, enabled: bool) {
+        self.message_window.borrow_mut().skip_mode = enabled;
+    }
+
     pub fn audio_playback_states(&self) -> BTreeMap<u64, AudioPlaybackState> {
         self.audio_states.borrow().clone()
     }
@@ -1646,12 +1719,18 @@ pub struct MessageExtension {
     pub choices_ext_id: u32,
     pub prompt_ext_id: u32,
     pub hide_ext_id: u32,
+    pub speed_ext_id: u32,
+    pub auto_ext_id: u32,
+    pub skip_ext_id: u32,
     pub clear_ext_id: u32,
     pub show_host_id: HostId,
     pub append_host_id: HostId,
     pub choices_host_id: HostId,
     pub prompt_host_id: HostId,
     pub hide_host_id: HostId,
+    pub speed_host_id: HostId,
+    pub auto_host_id: HostId,
+    pub skip_host_id: HostId,
     pub clear_host_id: HostId,
 }
 
@@ -1873,6 +1952,19 @@ fn expect_number_arg(args: &[Value], index: usize, name: &'static str) -> Result
         Some(Value::Float(value)) => Ok(*value),
         Some(found) => Err(HostError::InvalidArguments(format!(
             "expected {name} argument {index} to be numeric, found {found:?}"
+        ))),
+        None => Err(HostError::InvalidArguments(format!(
+            "missing required argument {name} at index {index}"
+        ))),
+    }
+}
+
+fn expect_bool_arg(args: &[Value], index: usize, name: &'static str) -> Result<bool, HostError> {
+    match args.get(index) {
+        Some(Value::Bool(value)) => Ok(*value),
+        Some(Value::Integer(value)) => Ok(*value != 0),
+        Some(found) => Err(HostError::InvalidArguments(format!(
+            "expected {name} argument {index} to be bool, found {found:?}"
         ))),
         None => Err(HostError::InvalidArguments(format!(
             "missing required argument {name} at index {index}"
@@ -2369,6 +2461,42 @@ mod tests {
                 .resolve_id("ext.message.prompt"),
             Ok(extension.prompt_ext_id)
         );
+        assert_eq!(
+            runtime.extension_registry().resolve_id("ext.message.speed"),
+            Ok(extension.speed_ext_id)
+        );
+        assert_eq!(
+            runtime.extension_registry().resolve_id("ext.message.auto"),
+            Ok(extension.auto_ext_id)
+        );
+        assert_eq!(
+            runtime.extension_registry().resolve_id("ext.message.skip"),
+            Ok(extension.skip_ext_id)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(extension.speed_host_id, &[Value::Float(24.0)])
+                .expect("message speed"),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(extension.auto_host_id, &[Value::Bool(true)])
+                .expect("message auto"),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(extension.skip_host_id, &[Value::Bool(false)])
+                .expect("message skip"),
+            Value::Bool(true)
+        );
         let message = runtime.message_window_state();
         assert!(message.visible);
         assert_eq!(message.speaker.as_deref(), Some("Narrator"));
@@ -2376,6 +2504,9 @@ mod tests {
         assert_eq!(message.choices.len(), 2);
         assert_eq!(message.choices[0].label, "Continue");
         assert_eq!(message.input_prompt.as_deref(), Some("Your name?"));
+        assert_eq!(message.text_speed, 24.0);
+        assert!(message.auto_mode);
+        assert!(!message.skip_mode);
     }
 
     #[test]

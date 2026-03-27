@@ -130,6 +130,9 @@ Requires: `CAP_GUI`
 | `ext.message.choices` | `choices(label1, label2, ...)` | `bool` | Populates the current choice list shown in the message window. |
 | `ext.message.prompt` | `prompt(text: string)` | `bool` | Sets the input prompt shown above the player input field. |
 | `ext.message.hide` | `hide()` | `bool` | Hides the message window. |
+| `ext.message.speed` | `speed(value)` | `bool` | Sets the text reveal speed used by the frontend message window. |
+| `ext.message.auto` | `auto(enabled)` | `bool` | Enables or disables auto progression mode in the message window. |
+| `ext.message.skip` | `skip(enabled)` | `bool` | Enables or disables skip mode in the message window. |
 | `ext.message.clear` | `clear()` | `bool` | Clears the message window text, prompt, and choices. |
 
 ### 3.7 `ext.image`
@@ -202,6 +205,9 @@ current execution model and are useful to know when reading the runtime code.
 - `wmltoolchain` compiles the current source subset into an archive.
 - `wmlfrontend` can run the same project in `native`, `wasm`, or `egui` mode.
 - The `egui` frontend defaults to a Japanese-friendly Noto Sans preset.
+- A simple read-flag convention works well with `state`: set keys like
+  `read:chapter_1:0001` with `state.set(...)` and check them with
+  `state.has(...)` when you decide whether to skip already-read content.
 
 ## 6. Examples
 

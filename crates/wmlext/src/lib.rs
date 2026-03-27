@@ -345,6 +345,9 @@ pub fn standard_extension_registry() -> Result<ExtensionRegistry> {
             ExtensionFunctionSpec::new("choices", 137, 1, 16, CAP_GUI),
             ExtensionFunctionSpec::new("prompt", 138, 1, 1, CAP_GUI),
             ExtensionFunctionSpec::new("hide", 139, 0, 0, CAP_GUI),
+            ExtensionFunctionSpec::new("speed", 131, 1, 1, CAP_GUI),
+            ExtensionFunctionSpec::new("auto", 132, 1, 1, CAP_GUI),
+            ExtensionFunctionSpec::new("skip", 133, 1, 1, CAP_GUI),
             ExtensionFunctionSpec::new("clear", 149, 0, 0, CAP_GUI),
         ],
     )?;

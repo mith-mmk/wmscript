@@ -251,7 +251,7 @@ impl UiChoice {
 }
 
 /// State of the message window.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct UiMessageWindowState {
     pub visible: bool,
     pub speaker: Option<String>,
@@ -259,6 +259,25 @@ pub struct UiMessageWindowState {
     pub backlog: Vec<String>,
     pub choices: Vec<UiChoice>,
     pub input_prompt: Option<String>,
+    pub text_speed: f32,
+    pub auto_mode: bool,
+    pub skip_mode: bool,
+}
+
+impl Default for UiMessageWindowState {
+    fn default() -> Self {
+        Self {
+            visible: false,
+            speaker: None,
+            text: String::new(),
+            backlog: Vec::new(),
+            choices: Vec::new(),
+            input_prompt: None,
+            text_speed: 48.0,
+            auto_mode: false,
+            skip_mode: false,
+        }
+    }
 }
 
 /// State of the active scene.
@@ -413,6 +432,9 @@ pub enum UiCommand {
     AppendMessageLine(String),
     SetMessageChoices(Vec<UiChoice>),
     SetInputPrompt(Option<String>),
+    SetMessageSpeed(f32),
+    SetMessageAuto(bool),
+    SetMessageSkip(bool),
     HideMessageWindow,
     ResetScene,
 }
@@ -553,6 +575,23 @@ impl<'a> UiContext<'a> {
     pub fn set_input_prompt(&mut self, prompt: Option<String>) {
         self.state.scene.message_window.input_prompt = prompt.clone();
         self.emit(UiCommand::SetInputPrompt(prompt));
+    }
+
+    pub fn set_message_speed(&mut self, speed: f32) {
+        self.state.scene.message_window.text_speed = speed.max(0.0);
+        self.emit(UiCommand::SetMessageSpeed(
+            self.state.scene.message_window.text_speed,
+        ));
+    }
+
+    pub fn set_message_auto(&mut self, enabled: bool) {
+        self.state.scene.message_window.auto_mode = enabled;
+        self.emit(UiCommand::SetMessageAuto(enabled));
+    }
+
+    pub fn set_message_skip(&mut self, enabled: bool) {
+        self.state.scene.message_window.skip_mode = enabled;
+        self.emit(UiCommand::SetMessageSkip(enabled));
     }
 
     pub fn hide_message_window(&mut self) {

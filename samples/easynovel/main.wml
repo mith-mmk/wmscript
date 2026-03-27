@@ -2,14 +2,17 @@ export let protagonist = "Aki";
 export let setting = "last train platform";
 
 export func prologue() {
+    state.set("read:prologue", true);
     return "Narrator: The last train platform is almost empty.\nNarrator: Aki stops under the lantern light and listens to the rails.\nAki: The city feels farther away than usual.";
 }
 
 export func chapter_1() {
+    state.set("read:chapter_1", true);
     return "Narrator: A lantern lights the stairs down to the station.\nAki: The next train is still ten minutes away.\nNarrator: A quiet voice answers from the ticket gate.";
 }
 
 export func chapter_2() {
+    state.set("read:chapter_2", true);
     return "Narrator: Aki chooses the quiet route home.\nAki: I'll take the river path tonight.\nNarrator: The station lights fade behind the empty road.";
 }
 

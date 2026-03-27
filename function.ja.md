@@ -130,6 +130,9 @@ export func main() {
 | `ext.message.choices` | `choices(label1, label2, ...)` | `bool` | メッセージ窓の選択肢一覧を更新します。 |
 | `ext.message.prompt` | `prompt(text: string)` | `bool` | プレイヤー入力欄の上に表示するプロンプトを設定します。 |
 | `ext.message.hide` | `hide()` | `bool` | メッセージ窓を隠します。 |
+| `ext.message.speed` | `speed(value)` | `bool` | メッセージ窓の文字表示速度を設定します。 |
+| `ext.message.auto` | `auto(enabled)` | `bool` | メッセージ窓の auto 進行モードを切り替えます。 |
+| `ext.message.skip` | `skip(enabled)` | `bool` | メッセージ窓の skip モードを切り替えます。 |
 | `ext.message.clear` | `clear()` | `bool` | メッセージ窓の本文、プロンプト、選択肢を消去します。 |
 
 ### 3.7 `ext.image`
@@ -201,6 +204,10 @@ export func main() {
 - `wmltoolchain` は現在のサブセットを archive にまとめます。
 - `wmlfrontend` は `native` / `wasm` / `egui` で同じプロジェクトを実行できます。
 - `egui` フロントエンドの既定フォントは、日本語向けに Noto Sans 系です。
+- 既読フラグは `state` で管理するのが素直です。たとえば
+  `read:chapter_1:0001` のようなキーを `state.set(...)` で保存し、
+  既読判定では `state.has(...)` を見る、というルールにすると
+  エンジン側で制御しやすくなります。
 
 ## 6. 参照サンプル
 
