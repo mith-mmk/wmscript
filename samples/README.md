@@ -7,7 +7,7 @@
 - `workercomm/`
   - Two-worker message passing sample.
 - `engineworker/`
-  - Engine-side message control sample that keeps read flags in `state`, waits on `recv()`, and branches from `state.get("ui.last_choice")`.
+  - Engine-side message control sample that keeps read flags in `state`, waits on `recv()`, branches from `state.get("ui.last_choice")`, and then reads `ui.last_input`.
 - `assetload/`
   - Runtime archive and resource loading sample.
 - `imageaudio/`
