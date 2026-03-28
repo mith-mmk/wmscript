@@ -382,6 +382,8 @@ pub fn standard_extension_registry() -> Result<ExtensionRegistry> {
                 .with_return_type(ExtValueType::Bool),
             ExtensionFunctionSpec::new("skip", 133, 1, 1, CAP_GUI)
                 .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("log_clear", 159, 0, 0, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
             ExtensionFunctionSpec::new("clear", 149, 0, 0, CAP_GUI)
                 .with_return_type(ExtValueType::Bool),
         ],

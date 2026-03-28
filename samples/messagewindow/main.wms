@@ -1,5 +1,6 @@
 export func main() {
     ext.message.clear();
+    ext.message.log_clear();
     ext.message.speed(28);
     ext.message.auto(false);
     ext.message.show(

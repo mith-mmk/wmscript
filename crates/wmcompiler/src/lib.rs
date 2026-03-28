@@ -986,14 +986,13 @@ fn lower_function_body(
     platform_capabilities: wmplatform::PlatformCapabilities,
     initial_locals: &[String],
 ) -> Result<(Vec<u8>, usize)> {
-    let (code, _type_tag, local_count) =
-        expr::compile_function_body(
-            body,
-            program,
-            extension_registry,
-            platform_capabilities,
-            initial_locals,
-        )?;
+    let (code, _type_tag, local_count) = expr::compile_function_body(
+        body,
+        program,
+        extension_registry,
+        platform_capabilities,
+        initial_locals,
+    )?;
     Ok((code, local_count))
 }
 

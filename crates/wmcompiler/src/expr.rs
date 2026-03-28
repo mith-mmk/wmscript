@@ -3,10 +3,8 @@
 use std::collections::BTreeMap;
 
 use wmbytecode::{Op, encode_op};
-use wmhost::{
-    CAP_ASYNC_IO, CAP_FILE_SYSTEM, CAP_GUI, CAP_NETWORK, CAP_WEB_COMPAT, CapabilityMask,
-};
 use wmext::{ExtFunction, ExtValueType, ExtensionRegistry};
+use wmhost::{CAP_ASYNC_IO, CAP_FILE_SYSTEM, CAP_GUI, CAP_NETWORK, CAP_WEB_COMPAT, CapabilityMask};
 use wmplatform::PlatformCapabilities;
 use wmvm::{Program as VmProgram, Value as VmValue};
 
@@ -262,11 +260,8 @@ fn emit_statement(
         Stmt::Return(expr) => {
             let return_type = if let Some(expr) = expr.clone() {
                 let optimized = optimize_expr(expr)?;
-                let return_type = infer_type(
-                    &optimized,
-                    extension_registry,
-                    platform_capabilities,
-                )?;
+                let return_type =
+                    infer_type(&optimized, extension_registry, platform_capabilities)?;
                 emit_expr_into(
                     &optimized,
                     program,
@@ -534,15 +529,18 @@ fn infer_type(
     match expr {
         Expr::Literal(value) => Ok(type_of_value(value)),
         Expr::Variable(_) => Ok(TypeTag::Unknown),
-        Expr::UnaryNeg(inner) => match infer_type(inner, extension_registry, platform_capabilities)?
-        {
-            TypeTag::Integer | TypeTag::Float => {
-                Ok(infer_type(inner, extension_registry, platform_capabilities)?)
+        Expr::UnaryNeg(inner) => {
+            match infer_type(inner, extension_registry, platform_capabilities)? {
+                TypeTag::Integer | TypeTag::Float => Ok(infer_type(
+                    inner,
+                    extension_registry,
+                    platform_capabilities,
+                )?),
+                other => Err(unsupported_expression(format!(
+                    "unary negation requires a numeric type, found {other:?}"
+                ))),
             }
-            other => Err(unsupported_expression(format!(
-                "unary negation requires a numeric type, found {other:?}"
-            ))),
-        },
+        }
         Expr::UnaryNot(_) => Ok(TypeTag::Bool),
         Expr::Binary { op, left, right } => {
             let left = infer_type(left, extension_registry, platform_capabilities)?;
@@ -664,28 +662,24 @@ fn emit_expr_into(
             encode_op(&Op::Not, out);
         }
         Expr::Binary { op, left, right } => match op {
-            BinaryOp::And => {
-                emit_short_circuit_and(
-                    left,
-                    right,
-                    program,
-                    extension_registry,
-                    platform_capabilities,
-                    locals,
-                    out,
-                )?
-            }
-            BinaryOp::Or => {
-                emit_short_circuit_or(
-                    left,
-                    right,
-                    program,
-                    extension_registry,
-                    platform_capabilities,
-                    locals,
-                    out,
-                )?
-            }
+            BinaryOp::And => emit_short_circuit_and(
+                left,
+                right,
+                program,
+                extension_registry,
+                platform_capabilities,
+                locals,
+                out,
+            )?,
+            BinaryOp::Or => emit_short_circuit_or(
+                left,
+                right,
+                program,
+                extension_registry,
+                platform_capabilities,
+                locals,
+                out,
+            )?,
             BinaryOp::Add => {
                 emit_expr_into(
                     left,
@@ -1674,12 +1668,17 @@ mod tests {
         registry
             .register_extension(
                 "ext.fs",
-                &[ExtensionFunctionSpec::new("exists", 20, 1, 1, CAP_FILE_SYSTEM)
-                    .with_return_type(ExtValueType::Bool)],
+                &[
+                    ExtensionFunctionSpec::new("exists", 20, 1, 1, CAP_FILE_SYSTEM)
+                        .with_return_type(ExtValueType::Bool),
+                ],
             )
             .expect("register fs extension");
         assert_eq!(
-            registry.resolve("ext.fs.exists").unwrap().required_capabilities,
+            registry
+                .resolve("ext.fs.exists")
+                .unwrap()
+                .required_capabilities,
             CAP_FILE_SYSTEM
         );
 
@@ -1701,8 +1700,10 @@ mod tests {
         registry
             .register_extension(
                 "ext.fs",
-                &[ExtensionFunctionSpec::new("exists", 20, 1, 1, CAP_FILE_SYSTEM)
-                    .with_return_type(ExtValueType::Bool)],
+                &[
+                    ExtensionFunctionSpec::new("exists", 20, 1, 1, CAP_FILE_SYSTEM)
+                        .with_return_type(ExtValueType::Bool),
+                ],
             )
             .expect("register fs extension");
 

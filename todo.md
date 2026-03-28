@@ -379,6 +379,7 @@ Toolchain
  [+] UI抽象レイヤ
 
  [+] メッセージウィンドウ / 画像スロットのUI状態
+ [+] text log / backlog制御
 
 10.2 egui
 
@@ -386,6 +387,7 @@ Toolchain
  [+] 画像ロード
  [+] 入力
  [+] 音声再生バックエンド
+ [+] auto / skip進行制御
 
 10.3 WebGL
 
@@ -421,6 +423,8 @@ Toolchain
  [+] ext.image.set_icon_sheet/draw_icon
 
  [+] ext.audio.playback
+
+ [+] ext.message
 
 12. 総合サンプル
 12.1 フロント

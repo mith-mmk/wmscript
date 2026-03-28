@@ -675,6 +675,7 @@ impl Runtime {
         let speed_host_id = 131;
         let auto_host_id = 132;
         let skip_host_id = 133;
+        let log_clear_host_id = 159;
         let clear_host_id = 149;
         let message_window = self.message_window.clone();
 
@@ -830,6 +831,15 @@ impl Runtime {
 
         let message_window = self.message_window.clone();
         let _ = self.register_host_function(
+            HostFunction::new(log_clear_host_id, 0, 0, CAP_GUI),
+            move |_args| {
+                message_window.borrow_mut().backlog.clear();
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let message_window = self.message_window.clone();
+        let _ = self.register_host_function(
             HostFunction::new(clear_host_id, 0, 0, CAP_GUI),
             move |_args| {
                 *message_window.borrow_mut() = MessageWindowState::default();
@@ -846,13 +856,7 @@ impl Runtime {
                     .with_return_type(ExtValueType::Bool),
                 ExtensionFunctionSpec::new("choices", choices_host_id, 0, 16, CAP_GUI)
                     .with_return_type(ExtValueType::Bool),
-                ExtensionFunctionSpec::new(
-                    "choices_named",
-                    choices_named_host_id,
-                    0,
-                    16,
-                    CAP_GUI,
-                )
+                ExtensionFunctionSpec::new("choices_named", choices_named_host_id, 0, 16, CAP_GUI)
                     .with_return_type(ExtValueType::Bool),
                 ExtensionFunctionSpec::new("prompt", prompt_host_id, 0, 1, CAP_GUI)
                     .with_return_type(ExtValueType::Bool),
@@ -863,6 +867,8 @@ impl Runtime {
                 ExtensionFunctionSpec::new("auto", auto_host_id, 1, 1, CAP_GUI)
                     .with_return_type(ExtValueType::Bool),
                 ExtensionFunctionSpec::new("skip", skip_host_id, 1, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("log_clear", log_clear_host_id, 0, 0, CAP_GUI)
                     .with_return_type(ExtValueType::Bool),
                 ExtensionFunctionSpec::new("clear", clear_host_id, 0, 0, CAP_GUI)
                     .with_return_type(ExtValueType::Bool),
@@ -879,7 +885,8 @@ impl Runtime {
             speed_ext_id: ids[6],
             auto_ext_id: ids[7],
             skip_ext_id: ids[8],
-            clear_ext_id: ids[9],
+            log_clear_ext_id: ids[9],
+            clear_ext_id: ids[10],
             show_host_id,
             append_host_id,
             choices_host_id,
@@ -889,6 +896,7 @@ impl Runtime {
             speed_host_id,
             auto_host_id,
             skip_host_id,
+            log_clear_host_id,
             clear_host_id,
         })
     }
@@ -1812,6 +1820,7 @@ pub struct MessageExtension {
     pub speed_ext_id: u32,
     pub auto_ext_id: u32,
     pub skip_ext_id: u32,
+    pub log_clear_ext_id: u32,
     pub clear_ext_id: u32,
     pub show_host_id: HostId,
     pub append_host_id: HostId,
@@ -1822,6 +1831,7 @@ pub struct MessageExtension {
     pub speed_host_id: HostId,
     pub auto_host_id: HostId,
     pub skip_host_id: HostId,
+    pub log_clear_host_id: HostId,
     pub clear_host_id: HostId,
 }
 
@@ -2572,6 +2582,12 @@ mod tests {
         );
         assert_eq!(
             runtime
+                .extension_registry()
+                .resolve_id("ext.message.log_clear"),
+            Ok(extension.log_clear_ext_id)
+        );
+        assert_eq!(
+            runtime
                 .host
                 .borrow_mut()
                 .call(extension.speed_host_id, &[Value::Float(24.0)])
@@ -2633,6 +2649,18 @@ mod tests {
         assert_eq!(message.choices[0].id, "prologue");
         assert_eq!(message.choices[0].label, "Prologue");
         assert!(message.input_prompt.is_none());
+        assert!(!message.backlog.is_empty());
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(extension.log_clear_host_id, &[])
+                .expect("message log clear"),
+            Value::Bool(true)
+        );
+        let message = runtime.message_window_state();
+        assert!(message.backlog.is_empty());
+        assert_eq!(message.text, "Hello world");
     }
 
     #[test]

@@ -3,6 +3,7 @@
 use core::fmt;
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use eframe::{egui, egui::Vec2};
 
@@ -56,6 +57,7 @@ struct ReportApp {
     message_reveal_chars: usize,
     message_signature: Option<String>,
     auto_advance_sent: bool,
+    auto_advance_elapsed_seconds: f32,
     font_preset: GuiFontPreset,
     applied_font_preset: Option<GuiFontPreset>,
 }
@@ -88,6 +90,7 @@ impl ReportApp {
             message_reveal_chars: 0,
             message_signature: None,
             auto_advance_sent: false,
+            auto_advance_elapsed_seconds: 0.0,
             font_preset,
             applied_font_preset: None,
         }
@@ -231,7 +234,14 @@ impl ReportApp {
         if !self.can_advance_message() {
             return false;
         }
-        let text_len = self.report.ui_state.scene.message_window.text.chars().count();
+        let text_len = self
+            .report
+            .ui_state
+            .scene
+            .message_window
+            .text
+            .chars()
+            .count();
         if self.message_reveal_chars < text_len {
             self.message_reveal_chars = text_len;
             self.auto_advance_sent = false;
@@ -261,6 +271,12 @@ impl ReportApp {
             self.report.execution.outcomes.extend(outcomes);
         }
         self.sync_runtime_state();
+    }
+
+    fn reset_message_progress(&mut self) {
+        self.message_reveal_chars = 0;
+        self.auto_advance_sent = false;
+        self.auto_advance_elapsed_seconds = 0.0;
     }
 
     fn sync_runtime_state(&mut self) {
@@ -298,42 +314,69 @@ impl ReportApp {
     }
 
     fn update_message_reveal(&mut self, ctx: &egui::Context) {
-        let message = &self.report.ui_state.scene.message_window;
-        let signature = Self::message_signature(message);
+        let signature = {
+            let message = &self.report.ui_state.scene.message_window;
+            Self::message_signature(message)
+        };
         if self.message_signature.as_deref() != Some(signature.as_str()) {
             self.message_signature = Some(signature);
-            self.message_reveal_chars = 0;
-            self.auto_advance_sent = false;
+            self.reset_message_progress();
         }
 
+        let message = &self.report.ui_state.scene.message_window;
         let text_len = message.text.chars().count();
         if !message.visible || text_len == 0 {
             self.message_reveal_chars = 0;
-            return;
-        }
-
-        if message.skip_mode || message.text_speed <= 0.0 {
-            self.message_reveal_chars = text_len;
+            self.auto_advance_elapsed_seconds = 0.0;
             return;
         }
 
         let dt = ctx.input(|input| input.stable_dt).max(0.0);
-        let advance = (message.text_speed * dt).ceil() as usize;
-        self.message_reveal_chars = self
-            .message_reveal_chars
-            .saturating_add(advance)
-            .min(text_len);
 
-        if message.auto_mode
-            && self.message_reveal_chars >= text_len
+        if message.skip_mode || message.text_speed <= 0.0 {
+            self.message_reveal_chars = text_len;
+        } else {
+            let advance = (message.text_speed * dt).ceil() as usize;
+            self.message_reveal_chars = self
+                .message_reveal_chars
+                .saturating_add(advance)
+                .min(text_len);
+        }
+
+        let reveal_complete = self.message_reveal_chars >= text_len;
+        let can_auto_advance = reveal_complete
             && !self.auto_advance_sent
             && message.choices.is_empty()
             && message.input_prompt.is_none()
             && !self.report.runtime.waiting_workers().is_empty()
-        {
-            self.auto_advance_sent = true;
-            self.send_user_reply(Value::Nil);
+            && (message.auto_mode || message.skip_mode);
+
+        if can_auto_advance {
+            self.auto_advance_elapsed_seconds += dt;
+            if self.auto_advance_elapsed_seconds
+                >= Self::message_advance_delay_seconds(message, text_len)
+            {
+                self.auto_advance_sent = true;
+                self.send_user_reply(Value::Nil);
+            }
+        } else if !reveal_complete {
+            self.auto_advance_elapsed_seconds = 0.0;
         }
+
+        if !reveal_complete || can_auto_advance {
+            ctx.request_repaint_after(Duration::from_millis(16));
+        }
+    }
+
+    fn message_advance_delay_seconds(message: &wmui::UiMessageWindowState, text_len: usize) -> f32 {
+        if message.skip_mode {
+            return 0.08;
+        }
+        if message.auto_mode {
+            let chars = text_len as f32;
+            return (0.55 + chars * 0.018).clamp(0.55, 2.40);
+        }
+        f32::INFINITY
     }
 
     fn revealed_message_text(&self, text: &str) -> String {
@@ -486,6 +529,7 @@ impl ReportApp {
                                     self.report.runtime.set_message_auto_mode(auto_mode);
                                     self.report.ui_state.scene.message_window.auto_mode = auto_mode;
                                     self.auto_advance_sent = false;
+                                    self.auto_advance_elapsed_seconds = 0.0;
                                 }
                                 let mut skip_mode =
                                     self.report.ui_state.scene.message_window.skip_mode;
@@ -495,6 +539,8 @@ impl ReportApp {
                                     if skip_mode {
                                         self.message_reveal_chars = message.text.chars().count();
                                     }
+                                    self.auto_advance_sent = false;
+                                    self.auto_advance_elapsed_seconds = 0.0;
                                 }
                             });
                             ui.separator();
@@ -576,7 +622,20 @@ impl ReportApp {
                                     }
                                 }
                                 if can_advance {
-                                    let hint = if reveal_complete {
+                                    let hint = if self
+                                        .report
+                                        .ui_state
+                                        .scene
+                                        .message_window
+                                        .skip_mode
+                                        && reveal_complete
+                                    {
+                                        "Skip progressing..."
+                                    } else if self.report.ui_state.scene.message_window.auto_mode
+                                        && reveal_complete
+                                    {
+                                        "Auto progressing..."
+                                    } else if reveal_complete {
                                         "Click / Enter / Next"
                                     } else {
                                         "Click / Enter to reveal"

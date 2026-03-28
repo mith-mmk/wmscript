@@ -4,6 +4,7 @@ This sample shows the engine-side part of the separation:
 
 - it owns read flags through `state`
 - it controls message window mode through `ext.message`
+- it resets the text log with `ext.message.log_clear()` before the scene starts
 - the frontend still owns the actual window layout and rendering
 - it pages plain message screens with `recv()`
 - it uses named choices and then asks for a second text input
@@ -12,6 +13,7 @@ Source:
 
 ```wms
 export func main() {
+    ext.message.log_clear();
     if state.has("read:engineworker:intro") {
         ext.message.skip(true);
     } else {
@@ -93,6 +95,7 @@ Runtime behavior:
 
 - The script marks the intro as read in `state`.
 - Re-running it turns on skip mode for the frontend message window.
+- Skip mode now auto-advances plain pages until a choice or input prompt appears.
 - The frontend still renders the actual choice and message panels.
 - The plain message pages advance with `Next` or `Enter`; if the page is still animating, the first action reveals it immediately.
 - `ext.message.choices_named(...)` gives the engine stable choice ids such as `prologue` and `chapter_1`.

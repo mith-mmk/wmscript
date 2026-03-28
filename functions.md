@@ -185,6 +185,7 @@ Requires: `CAP_GUI`
 | `ext.message.speed` | `speed(value)` | `bool` | Sets the text reveal speed used by the frontend message window. |
 | `ext.message.auto` | `auto(enabled)` | `bool` | Enables or disables auto progression mode in the message window. |
 | `ext.message.skip` | `skip(enabled)` | `bool` | Enables or disables skip mode in the message window. |
+| `ext.message.log_clear` | `log_clear()` | `bool` | Clears only the text log/backlog while leaving the current page state untouched. |
 | `ext.message.clear` | `clear()` | `bool` | Clears the message window text, prompt, and choices. |
 
 ### 3.7 `ext.image`

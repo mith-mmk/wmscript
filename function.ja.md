@@ -185,6 +185,7 @@ export func main() {
 | `ext.message.speed` | `speed(value)` | `bool` | メッセージ窓の文字表示速度を設定します。 |
 | `ext.message.auto` | `auto(enabled)` | `bool` | メッセージ窓の auto 進行モードを切り替えます。 |
 | `ext.message.skip` | `skip(enabled)` | `bool` | メッセージ窓の skip モードを切り替えます。 |
+| `ext.message.log_clear` | `log_clear()` | `bool` | 現在のページ状態は維持したまま、text log / backlog だけを消去します。 |
 | `ext.message.clear` | `clear()` | `bool` | メッセージ窓の本文、プロンプト、選択肢を消去します。 |
 
 ### 3.7 `ext.image`

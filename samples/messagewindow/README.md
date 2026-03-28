@@ -6,6 +6,7 @@ This sample is a focused engine-side message window example.
 - it advances those pages with `recv()`
 - it uses `ext.message.choices_named(...)` for stable engine-defined choice ids
 - it uses `ext.message.prompt(...)` for follow-up input
+- it uses `ext.message.log_clear()` to reset the text log at scene start
 - it clears prompt and choice state explicitly from the script
 
 Source:
@@ -13,6 +14,7 @@ Source:
 ```wms
 export func main() {
     ext.message.clear();
+    ext.message.log_clear();
     ext.message.speed(28);
     ext.message.auto(false);
     ext.message.show(
