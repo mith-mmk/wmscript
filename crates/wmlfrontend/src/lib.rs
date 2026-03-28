@@ -512,7 +512,7 @@ mod tests {
     fn frontend_runs_game_project_end_to_end() {
         let project = GameProject::new(
             "demo-game",
-            "samples/easynovel/main.wml",
+            "samples/easynovel/main.wms",
             r#"
 export func main() {
     return "Prologue";

@@ -8,6 +8,8 @@
 　- 仕様書はSPEC/の下にあり
 　- 問題点や曖昧な仕様はissue.mdで管理
 
+
+
 0. Crate分割
     - [+] .gitignoreの整理
     - [+] Workflowの作成
@@ -15,17 +17,22 @@
     - [+] buildチェーンの作成(releasesに保管)
     - [+] VMにwasmとeguiの実装で異なる部分を吸収可能なモジュールを実装
 
-```
+0.1 仕様変更
+ - [+] 拡張子.wmlを.wmsへ
+ - [+] WMLScriptをWMScriptへ
+ - [+] 名称をすべてそれに合わせる
 
 
 1. 実行系 (crate wmlvm, crate.ioに公開予定)
+```
 WMLVM
 ├─ core
 ├─ scheduler
 ├─ memory / GC
 ├─ verifier
+```
 
-2. ホスト統合系（Engine Bridge,  crate.ioに公開予定）
+1. ホスト統合系（Engine Bridge,  crate.ioに公開予定）
 WMLHost
 ├─ HostAPI
 ├─ ResourceManager
@@ -33,7 +40,7 @@ WMLHost
 ├─ Audio/Image/UI
 ├─ AsyncIO
 
-3. コンパイラ系（Script Toolchain, githubのみ, npmかも）
+1. コンパイラ系（Script Toolchain, githubのみ, npmかも）
 
 WMLCompiler
 ├─ parser
@@ -86,7 +93,7 @@ Toolchain
 1.1 ドキュメント構造分割
 
   仕様を以下の単位に分割
- - [+] 言語仕様（WMLScript）
+ - [+] 言語仕様（WMScript）
  - [+] VM仕様
  - [+] バイトコード仕様
  - [+] アーカイブ仕様

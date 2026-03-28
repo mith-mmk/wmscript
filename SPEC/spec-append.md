@@ -1,7 +1,7 @@
-# WMLScript 言語仕様書 v0.1 (2026-03-17)
+# WMScript 言語仕様書 v0.1 (2026-03-17)
 1. 概要
 
-- WMLScript(W-Multi Langugae) は、軽量かつ高速なゲーム向け組み込みスクリプト言語である。
+- WMScript(W-Multi Script) は、軽量かつ高速なゲーム向け組み込みスクリプト言語である。
 
 本言語は以下を目的とする：
 

@@ -12,7 +12,9 @@ examples used in this workspace.
 - `workercomm/`
   - Two-worker message passing sample.
 - `engineworker/`
-  - Engine/UI worker split sample that streams dialogue commands to the UI worker.
+  - Engine-driven message window sample with page advance, named choices, and follow-up input.
+- `messagewindow/`
+  - Focused message window sample that pages text with `recv()` and clears prompt/choice state from the script.
 - `assetload/`
   - Runtime archive and resource loading sample.
 - `imageaudio/`
@@ -150,10 +152,12 @@ cargo run -p wmlruntime --example input_link
 cargo run -p wmlruntime --example worker_comm
 cargo run -p wmlruntime --example asset_load
 cargo run -p wmlruntime --example easynovel
-cargo run -p wmlfrontend -- samples/easynovel/main.wml --platform egui --font noto
+cargo run -p wmlfrontend -- samples/easynovel/main.wms --platform egui --font noto
+cargo run -p wmlfrontend -- samples/messagewindow/main.wms --platform egui --font noto
 cargo run -p wmlfrontend -- --demo uiimage --platform egui --font noto
 cargo run -p wmlfrontend -- --demo image-audio --platform egui --font noto
 cargo run -p wmlfrontend -- --demo engineworker --platform egui --font noto
+cargo run -p wmlfrontend -- --demo messagewindow --platform egui --font noto
 ```
 
 The egui frontend defaults to Noto Sans for Japanese-friendly rendering. Use
@@ -168,6 +172,7 @@ available under `wasm`, while `state.*` and `ext.vm.*` remain portable.
 - `--demo uiimage` runs the embedded scene layout showcase without reading a script file.
 - `--demo image-audio` runs the embedded image/audio showcase without reading a script file.
 - `--demo engineworker` runs the embedded worker split showcase without reading a script file.
+- `--demo messagewindow` runs the embedded engine-driven message window showcase without reading a script file.
 - `--package NAME` overrides the demo package name.
 - `--platform native|wasm|egui` selects the runtime/backend profile.
 - `--image NAME=PATH` and `--asset NAME=PATH` attach extra resources in file-backed mode.
@@ -180,12 +185,12 @@ bundle assets into the output.
 Command line:
 
 ```bash
-wmltoolchain <script.wml> [--package NAME] [--out FILE] [--step-limit N] [--platform native|wasm|egui] [--release] [--asset NAME=PATH] [--image NAME=PATH]
+wmltoolchain <script.wms> [--package NAME] [--out FILE] [--step-limit N] [--platform native|wasm|egui] [--release] [--asset NAME=PATH] [--image NAME=PATH]
 ```
 
 Behavior:
 
-- `script.wml` is the input source file.
+- `script.wms` is the input source file.
 - `--package NAME` overrides the package name. If omitted, the package name is
   derived from the script file stem.
 - `--out FILE` writes the generated archive to a custom path. If omitted, the
@@ -201,11 +206,11 @@ Behavior:
 Examples:
 
 ```bash
-cargo run -p wmltoolchain -- samples/helloworld/main.wml
-cargo run -p wmltoolchain -- samples/helloworld/main.wml --out samples/helloworld/main.warc
-cargo run -p wmltoolchain -- samples/easynovel/main.wml --package easynovel --platform native --step-limit 256
-cargo run -p wmltoolchain -- samples/easynovel/main.wml --package easynovel --out build/easynovel.warc --asset ui/title=assets/title.bin
-cargo run -p wmltoolchain -- samples/easynovel/main.wml --package easynovel --out build/easynovel.warc --image ui/background=assets/background.png
+cargo run -p wmltoolchain -- samples/helloworld/main.wms
+cargo run -p wmltoolchain -- samples/helloworld/main.wms --out samples/helloworld/main.warc
+cargo run -p wmltoolchain -- samples/easynovel/main.wms --package easynovel --platform native --step-limit 256
+cargo run -p wmltoolchain -- samples/easynovel/main.wms --package easynovel --out build/easynovel.warc --asset ui/title=assets/title.bin
+cargo run -p wmltoolchain -- samples/easynovel/main.wms --package easynovel --out build/easynovel.warc --image ui/background=assets/background.png
 ```
 
 ## Host Function Example
@@ -226,6 +231,6 @@ runtime.register_host_function(wmlhost::HostFunction::new(1, 1, 1, 0), |args| {
 
 ## Constraints
 
-- The compiler currently handles a limited subset of WMLScript.
+- The compiler currently handles a limited subset of WMScript.
 - The examples in `samples/` are intentionally small and map to the runtime examples.
 - When adding a new sample, keep its README and the corresponding runtime example in sync.

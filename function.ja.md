@@ -1,6 +1,6 @@
-# WMLScript 言語仕様と関数一覧
+# WMScript 言語仕様と関数一覧
 
-この文書は、現在実装されている WMLScript の表層文法と、
+この文書は、現在実装されている WMScript の表層文法と、
 デフォルトランタイムで利用できる関数一覧をまとめたものです。
 
 正確な仕様は次も参照してください。
@@ -11,10 +11,10 @@
 
 ## 1. 言語の概要
 
-現在の WMLScript は、モジュール単位の小さなスクリプト形式です。
+現在の WMScript は、モジュール単位の小さなスクリプト形式です。
 
-- `import "path/to/module.wml";`
-- `import "path/to/module.wml" as alias;`
+- `import "path/to/module.wms";`
+- `import "path/to/module.wms" as alias;`
 - `export func name(params) { ... }`
 - `export let name = literal;`
 
@@ -32,7 +32,7 @@
 ### 1.1 モジュール例
 
 ```wml
-import "shared/ui.wml" as ui;
+import "shared/ui.wms" as ui;
 
 export let title = "My Game";
 
@@ -178,8 +178,9 @@ export func main() {
 | --- | --- | --- | --- |
 | `ext.message.show` | `show(text: string)` または `show(speaker: string, text: string)` | `bool` | メッセージ窓に本文と任意の話者名を表示します。 |
 | `ext.message.append` | `append(line: string)` | `bool` | 現在の本文とバックログに 1 行を追加します。 |
-| `ext.message.choices` | `choices(label1, label2, ...)` | `bool` | メッセージ窓の選択肢一覧を更新します。 |
-| `ext.message.prompt` | `prompt(text: string)` | `bool` | プレイヤー入力欄の上に表示するプロンプトを設定します。 |
+| `ext.message.choices` | `choices()` または `choices(label1, label2, ...)` | `bool` | メッセージ窓の選択肢一覧を更新します。引数なしなら選択肢を消去します。 |
+| `ext.message.choices_named` | `choices_named()` または `choices_named(id1, label1, id2, label2, ...)` | `bool` | エンジン側で決めた安定 choice id と表示ラベルをまとめて設定します。引数なしなら選択肢を消去します。 |
+| `ext.message.prompt` | `prompt()` または `prompt(text: string)` | `bool` | プレイヤー入力欄の上に表示するプロンプトを設定または消去します。 |
 | `ext.message.hide` | `hide()` | `bool` | メッセージ窓を隠します。 |
 | `ext.message.speed` | `speed(value)` | `bool` | メッセージ窓の文字表示速度を設定します。 |
 | `ext.message.auto` | `auto(enabled)` | `bool` | メッセージ窓の auto 進行モードを切り替えます。 |
@@ -259,9 +260,10 @@ export func main() {
   `read:chapter_1:0001` のようなキーを `state.set(...)` で保存し、
   既読判定では `state.has(...)` を見る、というルールにすると
   エンジン側で制御しやすくなります。
-- 選択肢の分岐は、frontend が `ui.last_choice` に選択 id を保存し、
-  スクリプト側が `recv();` のあとで `state.get("ui.last_choice")` を
-  使って分岐するのが簡単です。
+- エンジン主導のメッセージ窓では、`ext.message.choices_named(...)` を出し、
+  `recv()` で応答を待って、その返り値をそのまま分岐に使う形が扱いやすいです。
+- 互換用に、frontend は最新の応答を `ui.last_choice`、`ui.last_input`、
+  `ui.last_reply` にも保存します。
 
 ## 6. 参照サンプル
 

@@ -3,8 +3,8 @@ use wmltoolchain::{GameAsset, GameProject};
 pub fn build_ui_image_demo_project() -> GameProject {
     GameProject::new(
         "ui-image-demo",
-        "samples/uiimage/main.wml",
-        include_str!("../../../samples/uiimage/main.wml"),
+        "samples/uiimage/main.wms",
+        include_str!("../../../samples/uiimage/main.wms"),
     )
     .push_asset(GameAsset::image(
         "scene/background",
@@ -17,8 +17,8 @@ pub fn build_ui_image_demo_project() -> GameProject {
 pub fn build_image_audio_demo_project() -> GameProject {
     GameProject::new(
         "image-audio-demo",
-        "samples/imageaudio/main.wml",
-        include_str!("../../../samples/imageaudio/main.wml"),
+        "samples/imageaudio/main.wms",
+        include_str!("../../../samples/imageaudio/main.wms"),
     )
     .push_asset(GameAsset::image(
         "scene/background",
@@ -38,8 +38,16 @@ pub fn build_image_audio_demo_project() -> GameProject {
 pub fn build_engine_worker_demo_project() -> GameProject {
     GameProject::new(
         "engine-worker-split-demo",
-        "samples/engineworker/main.wml",
-        include_str!("../../../samples/engineworker/main.wml"),
+        "samples/engineworker/main.wms",
+        include_str!("../../../samples/engineworker/main.wms"),
+    )
+}
+
+pub fn build_message_window_demo_project() -> GameProject {
+    GameProject::new(
+        "message-window-demo",
+        "samples/messagewindow/main.wms",
+        include_str!("../../../samples/messagewindow/main.wms"),
     )
 }
 

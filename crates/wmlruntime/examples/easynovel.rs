@@ -6,11 +6,11 @@ use wmlruntime::{Runtime, RuntimeConfig};
 use wmlvm::{RunOutcome, Value};
 
 fn main() {
-    let source = include_str!("../../../samples/easynovel/main.wml");
+    let source = include_str!("../../../samples/easynovel/main.wms");
     let compiler = Compiler::new(CompilerConfig::new(PlatformProfile::native()));
     let mut catalog = ModuleCatalog::new();
     let program = compiler
-        .compile_program("samples/easynovel/main.wml", source, &mut catalog)
+        .compile_program("samples/easynovel/main.wms", source, &mut catalog)
         .expect("compile easynovel sample");
 
     let selected = env::args().nth(1).unwrap_or_else(|| "main".to_owned());

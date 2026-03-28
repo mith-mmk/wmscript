@@ -669,6 +669,7 @@ impl Runtime {
         let show_host_id = 135;
         let append_host_id = 136;
         let choices_host_id = 137;
+        let choices_named_host_id = 134;
         let prompt_host_id = 138;
         let hide_host_id = 139;
         let speed_host_id = 131;
@@ -723,10 +724,14 @@ impl Runtime {
 
         let message_window = self.message_window.clone();
         let _ = self.register_host_function(
-            HostFunction::new(choices_host_id, 1, 16, CAP_GUI),
+            HostFunction::new(choices_host_id, 0, 16, CAP_GUI),
             move |args| {
                 let mut window = message_window.borrow_mut();
                 window.visible = true;
+                if args.is_empty() {
+                    window.choices.clear();
+                    return Ok(Value::Bool(true));
+                }
                 window.choices = args
                     .iter()
                     .enumerate()
@@ -742,12 +747,44 @@ impl Runtime {
 
         let message_window = self.message_window.clone();
         let _ = self.register_host_function(
-            HostFunction::new(prompt_host_id, 1, 1, CAP_GUI),
+            HostFunction::new(choices_named_host_id, 0, 16, CAP_GUI),
             move |args| {
-                let prompt = expect_string_arg(args, 0, "prompt")?;
+                if !args.len().is_multiple_of(2) {
+                    return Err(HostError::InvalidArguments(format!(
+                        "message.choices_named expected id/label pairs, got {} args",
+                        args.len()
+                    )));
+                }
                 let mut window = message_window.borrow_mut();
                 window.visible = true;
-                window.input_prompt = Some(prompt);
+                if args.is_empty() {
+                    window.choices.clear();
+                    return Ok(Value::Bool(true));
+                }
+                let mut choices = Vec::with_capacity(args.len() / 2);
+                for pair in args.chunks(2) {
+                    choices.push(MessageChoiceState {
+                        id: expect_string_arg(pair, 0, "choice_id")?,
+                        label: expect_string_arg(pair, 1, "choice_label")?,
+                        enabled: true,
+                    });
+                }
+                window.choices = choices;
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let message_window = self.message_window.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(prompt_host_id, 0, 1, CAP_GUI),
+            move |args| {
+                let mut window = message_window.borrow_mut();
+                window.visible = true;
+                window.input_prompt = if args.is_empty() {
+                    None
+                } else {
+                    Some(expect_string_arg(args, 0, "prompt")?)
+                };
                 Ok(Value::Bool(true))
             },
         );
@@ -807,9 +844,17 @@ impl Runtime {
                     .with_return_type(ExtValueType::Bool),
                 ExtensionFunctionSpec::new("append", append_host_id, 1, 1, CAP_GUI)
                     .with_return_type(ExtValueType::Bool),
-                ExtensionFunctionSpec::new("choices", choices_host_id, 1, 16, CAP_GUI)
+                ExtensionFunctionSpec::new("choices", choices_host_id, 0, 16, CAP_GUI)
                     .with_return_type(ExtValueType::Bool),
-                ExtensionFunctionSpec::new("prompt", prompt_host_id, 1, 1, CAP_GUI)
+                ExtensionFunctionSpec::new(
+                    "choices_named",
+                    choices_named_host_id,
+                    0,
+                    16,
+                    CAP_GUI,
+                )
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("prompt", prompt_host_id, 0, 1, CAP_GUI)
                     .with_return_type(ExtValueType::Bool),
                 ExtensionFunctionSpec::new("hide", hide_host_id, 0, 0, CAP_GUI)
                     .with_return_type(ExtValueType::Bool),
@@ -828,15 +873,17 @@ impl Runtime {
             show_ext_id: ids[0],
             append_ext_id: ids[1],
             choices_ext_id: ids[2],
-            prompt_ext_id: ids[3],
-            hide_ext_id: ids[4],
-            speed_ext_id: ids[5],
-            auto_ext_id: ids[6],
-            skip_ext_id: ids[7],
-            clear_ext_id: ids[8],
+            choices_named_ext_id: ids[3],
+            prompt_ext_id: ids[4],
+            hide_ext_id: ids[5],
+            speed_ext_id: ids[6],
+            auto_ext_id: ids[7],
+            skip_ext_id: ids[8],
+            clear_ext_id: ids[9],
             show_host_id,
             append_host_id,
             choices_host_id,
+            choices_named_host_id,
             prompt_host_id,
             hide_host_id,
             speed_host_id,
@@ -1759,6 +1806,7 @@ pub struct MessageExtension {
     pub show_ext_id: u32,
     pub append_ext_id: u32,
     pub choices_ext_id: u32,
+    pub choices_named_ext_id: u32,
     pub prompt_ext_id: u32,
     pub hide_ext_id: u32,
     pub speed_ext_id: u32,
@@ -1768,6 +1816,7 @@ pub struct MessageExtension {
     pub show_host_id: HostId,
     pub append_host_id: HostId,
     pub choices_host_id: HostId,
+    pub choices_named_host_id: HostId,
     pub prompt_host_id: HostId,
     pub hide_host_id: HostId,
     pub speed_host_id: HostId,
@@ -2500,6 +2549,12 @@ mod tests {
         assert_eq!(
             runtime
                 .extension_registry()
+                .resolve_id("ext.message.choices_named"),
+            Ok(extension.choices_named_ext_id)
+        );
+        assert_eq!(
+            runtime
+                .extension_registry()
                 .resolve_id("ext.message.prompt"),
             Ok(extension.prompt_ext_id)
         );
@@ -2549,6 +2604,35 @@ mod tests {
         assert_eq!(message.text_speed, 24.0);
         assert!(message.auto_mode);
         assert!(!message.skip_mode);
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(
+                    extension.choices_named_host_id,
+                    &[
+                        Value::String("prologue".to_owned()),
+                        Value::String("Prologue".to_owned()),
+                        Value::String("chapter_1".to_owned()),
+                        Value::String("Chapter 1".to_owned()),
+                    ],
+                )
+                .expect("message choices named"),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(extension.prompt_host_id, &[])
+                .expect("message prompt clear"),
+            Value::Bool(true)
+        );
+        let message = runtime.message_window_state();
+        assert_eq!(message.choices.len(), 2);
+        assert_eq!(message.choices[0].id, "prologue");
+        assert_eq!(message.choices[0].label, "Prologue");
+        assert!(message.input_prompt.is_none());
     }
 
     #[test]

@@ -368,9 +368,11 @@ pub fn standard_extension_registry() -> Result<ExtensionRegistry> {
                 .with_return_type(ExtValueType::Bool),
             ExtensionFunctionSpec::new("append", 136, 1, 1, CAP_GUI)
                 .with_return_type(ExtValueType::Bool),
-            ExtensionFunctionSpec::new("choices", 137, 1, 16, CAP_GUI)
+            ExtensionFunctionSpec::new("choices", 137, 0, 16, CAP_GUI)
                 .with_return_type(ExtValueType::Bool),
-            ExtensionFunctionSpec::new("prompt", 138, 1, 1, CAP_GUI)
+            ExtensionFunctionSpec::new("choices_named", 134, 0, 16, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("prompt", 138, 0, 1, CAP_GUI)
                 .with_return_type(ExtValueType::Bool),
             ExtensionFunctionSpec::new("hide", 139, 0, 0, CAP_GUI)
                 .with_return_type(ExtValueType::Bool),

@@ -12,7 +12,9 @@
 - `workercomm/`
   - 2つのワーカー間でメッセージ送受信を行うサンプル。
 - `engineworker/`
-  - engine/UI のワーカー分離サンプル。UI ワーカーに会話コマンドを流します。
+  - エンジン主導のメッセージウィンドウサンプル。ページ送り、名前付き選択肢、追加入力まで含みます。
+- `messagewindow/`
+  - ページ送りと選択肢制御に絞ったメッセージウィンドウ専用サンプルです。
 - `assetload/`
   - アーカイブとリソース読み込みを確認するサンプル。
 - `imageaudio/`
@@ -151,10 +153,12 @@ cargo run -p wmlruntime --example input_link
 cargo run -p wmlruntime --example worker_comm
 cargo run -p wmlruntime --example asset_load
 cargo run -p wmlruntime --example easynovel
-cargo run -p wmlfrontend -- samples/easynovel/main.wml --platform egui --font noto
+cargo run -p wmlfrontend -- samples/easynovel/main.wms --platform egui --font noto
+cargo run -p wmlfrontend -- samples/messagewindow/main.wms --platform egui --font noto
 cargo run -p wmlfrontend -- --demo uiimage --platform egui --font noto
 cargo run -p wmlfrontend -- --demo image-audio --platform egui --font noto
 cargo run -p wmlfrontend -- --demo engineworker --platform egui --font noto
+cargo run -p wmlfrontend -- --demo messagewindow --platform egui --font noto
 ```
 
 egui フロントエンドの既定フォントは、日本語表示を優先して Noto Sans 系にしています。
@@ -169,6 +173,7 @@ egui フロントエンドの既定フォントは、日本語表示を優先し
 - `--demo uiimage` でスクリプトファイルを読まずに scene layout デモを起動します。
 - `--demo image-audio` でスクリプトファイルを読まずに画像/音声デモを起動します。
 - `--demo engineworker` でスクリプトファイルを読まずに worker 分離デモを起動します。
+- `--demo messagewindow` でスクリプトファイルを読まずにメッセージウィンドウ専用デモを起動します。
 - `--package NAME` でデモのパッケージ名を上書きできます。
 - `--platform native|wasm|egui` で実行プロファイルを選べます。
 - `--image NAME=PATH` と `--asset NAME=PATH` はファイル指定の通常モードで追加アセットを付けるためのオプションです。
@@ -181,12 +186,12 @@ egui フロントエンドの既定フォントは、日本語表示を優先し
 ### コマンドライン
 
 ```bash
-wmltoolchain <script.wml> [--package NAME] [--out FILE] [--step-limit N] [--platform native|wasm|egui] [--release] [--asset NAME=PATH] [--image NAME=PATH]
+wmltoolchain <script.wms> [--package NAME] [--out FILE] [--step-limit N] [--platform native|wasm|egui] [--release] [--asset NAME=PATH] [--image NAME=PATH]
 ```
 
 ### 動作
 
-- `script.wml` は入力元のスクリプトファイルです。
+- `script.wms` は入力元のスクリプトファイルです。
 - `--package NAME` はパッケージ名を上書きします。未指定時はスクリプトの
   ファイル名から推定されます。
 - `--out FILE` は生成アーカイブの出力先を指定します。未指定時は
@@ -201,11 +206,11 @@ wmltoolchain <script.wml> [--package NAME] [--out FILE] [--step-limit N] [--plat
 ### 実行例
 
 ```bash
-cargo run -p wmltoolchain -- samples/helloworld/main.wml
-cargo run -p wmltoolchain -- samples/helloworld/main.wml --out samples/helloworld/main.warc
-cargo run -p wmltoolchain -- samples/easynovel/main.wml --package easynovel --platform native --step-limit 256
-cargo run -p wmltoolchain -- samples/easynovel/main.wml --package easynovel --out build/easynovel.warc --asset ui/title=assets/title.bin
-cargo run -p wmltoolchain -- samples/easynovel/main.wml --package easynovel --out build/easynovel.warc --image ui/background=assets/background.png
+cargo run -p wmltoolchain -- samples/helloworld/main.wms
+cargo run -p wmltoolchain -- samples/helloworld/main.wms --out samples/helloworld/main.warc
+cargo run -p wmltoolchain -- samples/easynovel/main.wms --package easynovel --platform native --step-limit 256
+cargo run -p wmltoolchain -- samples/easynovel/main.wms --package easynovel --out build/easynovel.warc --asset ui/title=assets/title.bin
+cargo run -p wmltoolchain -- samples/easynovel/main.wms --package easynovel --out build/easynovel.warc --image ui/background=assets/background.png
 ```
 
 ## ホスト関数の例
@@ -226,6 +231,6 @@ runtime.register_host_function(wmlhost::HostFunction::new(1, 1, 1, 0), |args| {
 
 ## 制約
 
-- コンパイラは現在、WMLScript の一部だけに対応しています。
+- コンパイラは現在、WMScript の一部だけに対応しています。
 - `samples/` の各例は意図的に小さく、ランタイム例と対応しています。
 - 新しいサンプルを追加するときは、README と対応するランタイム例を同期してください。

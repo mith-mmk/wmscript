@@ -4,8 +4,8 @@ use std::path::PathBuf;
 
 use wmlfrontend::{
     FrontendConfig, GuiFontPreset, demo::build_engine_worker_demo_project,
-    demo::build_image_audio_demo_project, demo::build_ui_image_demo_project, launch_frontend_gui,
-    run_frontend,
+    demo::build_image_audio_demo_project, demo::build_message_window_demo_project,
+    demo::build_ui_image_demo_project, launch_frontend_gui, run_frontend,
 };
 use wmlplatform::{PlatformKind, PlatformProfile};
 use wmlresource::ResourceType;
@@ -25,6 +25,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             "uiimage" => build_ui_image_demo_project(),
             "image-audio" => build_image_audio_demo_project(),
             "engineworker" => build_engine_worker_demo_project(),
+            "messagewindow" => build_message_window_demo_project(),
             other => return Err(format!("unknown demo: {other}").into()),
         }
     } else {
@@ -209,6 +210,6 @@ fn parse_font(value: &str) -> Result<GuiFontPreset, Box<dyn std::error::Error>> 
 
 fn print_usage() {
     eprintln!(
-        "usage: wmlfrontend [--demo uiimage|image-audio|engineworker | <script.wml>] [--package NAME] [--step-limit N] [--platform native|wasm|egui] [--font noto|default|mono] [--asset NAME=PATH] [--image NAME=PATH]"
+        "usage: wmlfrontend [--demo uiimage|image-audio|engineworker|messagewindow | <script.wms>] [--package NAME] [--step-limit N] [--platform native|wasm|egui] [--font noto|default|mono] [--asset NAME=PATH] [--image NAME=PATH]"
     );
 }

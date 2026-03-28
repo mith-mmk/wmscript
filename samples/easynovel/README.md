@@ -40,4 +40,4 @@ Run examples:
 - `cargo run -p wmlruntime --example easynovel`
 - `cargo run -p wmlruntime --example easynovel -- chapter_1`
 - `cargo run -p wmlruntime --example easynovel -- chapter_2`
-- `cargo run -p wmlfrontend -- samples/easynovel/main.wml --platform egui --font noto`
+- `cargo run -p wmlfrontend -- samples/easynovel/main.wms --platform egui --font noto`

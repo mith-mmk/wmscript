@@ -3,8 +3,8 @@ use wmlplatform::PlatformProfile;
 use wmltoolchain::{GameAsset, GameProject};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let source = include_str!("../../../samples/imageaudio/main.wml");
-    let project = GameProject::new("image-audio-demo", "samples/imageaudio/main.wml", source)
+    let source = include_str!("../../../samples/imageaudio/main.wms");
+    let project = GameProject::new("image-audio-demo", "samples/imageaudio/main.wms", source)
         .push_asset(GameAsset::image(
             "scene/background",
             10,

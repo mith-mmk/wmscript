@@ -1,4 +1,4 @@
-# WMLScript Language and Functions
+# WMScript Language and Functions
 
 This document summarizes the currently implemented surface language and the callable
 runtime-facing functions exposed by the default runtime.
@@ -11,10 +11,10 @@ For the normative specifications, see:
 
 ## 1. Language Overview
 
-WMLScript currently supports a small module-based script format:
+WMScript currently supports a small module-based script format:
 
-- `import "path/to/module.wml";`
-- `import "path/to/module.wml" as alias;`
+- `import "path/to/module.wms";`
+- `import "path/to/module.wms" as alias;`
 - `export func name(params) { ... }`
 - `export let name = literal;`
 
@@ -32,7 +32,7 @@ The compiler front end currently lowers a limited subset of function bodies:
 ### 1.1 Module Example
 
 ```wml
-import "shared/ui.wml" as ui;
+import "shared/ui.wms" as ui;
 
 export let title = "My Game";
 
@@ -178,8 +178,9 @@ Requires: `CAP_GUI`
 | --- | --- | --- | --- |
 | `ext.message.show` | `show(text: string)` or `show(speaker: string, text: string)` | `bool` | Shows a message window line and optional speaker name. |
 | `ext.message.append` | `append(line: string)` | `bool` | Appends one line to the current message text and backlog. |
-| `ext.message.choices` | `choices(label1, label2, ...)` | `bool` | Populates the current choice list shown in the message window. |
-| `ext.message.prompt` | `prompt(text: string)` | `bool` | Sets the input prompt shown above the player input field. |
+| `ext.message.choices` | `choices()` or `choices(label1, label2, ...)` | `bool` | Populates the current choice list shown in the message window. Calling it with no args clears the current choices. |
+| `ext.message.choices_named` | `choices_named()` or `choices_named(id1, label1, id2, label2, ...)` | `bool` | Populates the choice list using engine-defined stable choice ids. Calling it with no args clears the current choices. |
+| `ext.message.prompt` | `prompt()` or `prompt(text: string)` | `bool` | Sets or clears the input prompt shown above the player input field. |
 | `ext.message.hide` | `hide()` | `bool` | Hides the message window. |
 | `ext.message.speed` | `speed(value)` | `bool` | Sets the text reveal speed used by the frontend message window. |
 | `ext.message.auto` | `auto(enabled)` | `bool` | Enables or disables auto progression mode in the message window. |
@@ -259,9 +260,11 @@ current execution model and are useful to know when reading the runtime code.
 - A simple read-flag convention works well with `state`: set keys like
   `read:chapter_1:0001` with `state.set(...)` and check them with
   `state.has(...)` when you decide whether to skip already-read content.
-- For choice-driven branching, the frontend stores the selected choice id in
-  `ui.last_choice`; a common pattern is to call `recv();` and then branch on
-  `state.get("ui.last_choice")`.
+- For engine-driven message windows, a practical pattern is to call
+  `ext.message.choices_named(...)`, wait with `recv()`, and branch on the value
+  returned by `recv()` directly.
+- The frontend still mirrors the latest reply into `ui.last_choice`,
+  `ui.last_input`, and `ui.last_reply` for compatibility with older samples.
 
 ## 6. Examples
 

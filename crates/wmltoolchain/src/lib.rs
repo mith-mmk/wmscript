@@ -405,7 +405,7 @@ mod tests {
     #[test]
     fn build_project_creates_archive_and_program() {
         let toolchain = Toolchain::new(ToolchainConfig::new(PlatformProfile::native()));
-        let project = GameProject::new("sample", "main.wml", r#"export func main() { return 7; }"#)
+        let project = GameProject::new("sample", "main.wms", r#"export func main() { return 7; }"#)
             .push_asset(GameAsset::new(
                 "ui/title",
                 10,
@@ -425,7 +425,7 @@ mod tests {
         let toolchain = Toolchain::new(ToolchainConfig::new(PlatformProfile::native()));
         let project = GameProject::new(
             "sample",
-            "main.wml",
+            "main.wms",
             r#"export func main() { return "ok"; }"#,
         )
         .push_asset(GameAsset::new(

@@ -222,6 +222,28 @@ impl ReportApp {
         self.send_user_reply(Value::String(text));
     }
 
+    fn can_advance_message(&self) -> bool {
+        let message = &self.report.ui_state.scene.message_window;
+        message.visible && message.choices.is_empty() && message.input_prompt.is_none()
+    }
+
+    fn advance_message(&mut self) -> bool {
+        if !self.can_advance_message() {
+            return false;
+        }
+        let text_len = self.report.ui_state.scene.message_window.text.chars().count();
+        if self.message_reveal_chars < text_len {
+            self.message_reveal_chars = text_len;
+            self.auto_advance_sent = false;
+            return true;
+        }
+        if self.report.runtime.waiting_workers().is_empty() {
+            return false;
+        }
+        self.send_user_reply(Value::Nil);
+        true
+    }
+
     fn send_user_reply(&mut self, payload: Value) {
         let target_worker_id = {
             let waiting = self.report.runtime.waiting_workers();
@@ -362,6 +384,8 @@ impl ReportApp {
             .map(|line| line.to_owned())
             .collect::<Vec<_>>();
         let backlog = message.backlog.clone();
+        let can_advance = choices.is_empty() && input_prompt.is_none();
+        let reveal_complete = self.message_reveal_chars >= message.text.chars().count();
         let (canvas_rect, scale) = Self::scene_canvas_rect(stage_rect, &layout);
 
         let choice_rect = Self::scale_scene_rect(layout.choice_panel, canvas_rect, scale);
@@ -421,7 +445,7 @@ impl ReportApp {
                 .fixed_pos(message_rect.min)
                 .show(ctx, |ui| {
                     ui.set_min_size(message_rect.size());
-                    egui::Frame::NONE
+                    let frame_response = egui::Frame::NONE
                         .fill(egui::Color32::from_black_alpha(190))
                         .stroke(egui::Stroke::new(
                             (2.0 * scale).max(1.0),
@@ -539,6 +563,30 @@ impl ReportApp {
                                     .size(13.0 * scale.max(0.75))
                                     .color(egui::Color32::from_rgb(180, 220, 180)),
                                 );
+                                if choices.is_empty() && input_prompt.is_none() {
+                                    let button_label = if self.message_reveal_chars
+                                        < message.text.chars().count()
+                                    {
+                                        "Reveal"
+                                    } else {
+                                        "Next"
+                                    };
+                                    if ui.button(button_label).clicked() {
+                                        self.advance_message();
+                                    }
+                                }
+                                if can_advance {
+                                    let hint = if reveal_complete {
+                                        "Click / Enter / Next"
+                                    } else {
+                                        "Click / Enter to reveal"
+                                    };
+                                    ui.label(
+                                        egui::RichText::new(hint)
+                                            .size(13.0 * scale.max(0.75))
+                                            .color(egui::Color32::from_rgb(210, 225, 180)),
+                                    );
+                                }
                             });
                             if self.message_history_open && !backlog.is_empty() {
                                 ui.add_space(4.0 * scale);
@@ -560,6 +608,29 @@ impl ReportApp {
                                     });
                             }
                         });
+                    if can_advance {
+                        let click_response = ui.interact(
+                            frame_response.response.rect,
+                            ui.id().with("message_window_click_surface"),
+                            egui::Sense::click(),
+                        );
+                        if click_response.clicked() {
+                            self.advance_message();
+                        }
+                        let pulse_on = ctx.input(|input| ((input.time * 2.0) as i32) % 2 == 0);
+                        if pulse_on {
+                            let indicator = if reveal_complete { "▼" } else { "…" };
+                            let indicator_pos = frame_response.response.rect.right_bottom()
+                                - egui::vec2(18.0 * scale.max(0.75), 14.0 * scale.max(0.75));
+                            ui.painter().text(
+                                indicator_pos,
+                                egui::Align2::RIGHT_BOTTOM,
+                                indicator,
+                                egui::FontId::proportional(18.0 * scale.max(0.75)),
+                                egui::Color32::from_rgb(220, 235, 190),
+                            );
+                        }
+                    }
                 });
         }
     }
@@ -586,7 +657,9 @@ impl eframe::App for ReportApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
         if ctx.input(|input| input.key_pressed(egui::Key::Space)) {
-            self.message_history_open = !self.message_history_open;
+            if !self.advance_message() {
+                self.message_history_open = !self.message_history_open;
+            }
         }
         if ctx.input(|input| input.key_pressed(egui::Key::Enter))
             && let Some(choice) = self
@@ -600,6 +673,8 @@ impl eframe::App for ReportApp {
                 .cloned()
         {
             self.apply_choice(&choice);
+        } else if ctx.input(|input| input.key_pressed(egui::Key::Enter)) {
+            let _ = self.advance_message();
         }
         self.update_message_reveal(ctx);
 
