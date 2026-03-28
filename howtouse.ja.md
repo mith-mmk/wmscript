@@ -22,7 +22,7 @@
 - `uiimage/`
   - `samples/uiimage.png` を再現する scene layout デモ。
 - `easynovel/`
-  - 章構成とナレーションを持つ簡易ノベルサンプル。
+  - 章選択、ページ送り、既読スキップを持つエンジン主導の簡易ノベルサンプル。
 
 ## Hello World サンプル
 
@@ -103,10 +103,10 @@ export func main() {
 
 ## Easy Novel サンプル
 
-小さな物語系スクリプトです。ビジュアルノベル風の構造を持ちながら、
-現在のコンパイラが扱える `return` 中心のモデルに収めています。
-ランタイム例はコマンドライン引数で実行章を切り替えます。frontend の
-message window には返り値の章本文がそのまま表示されます。
+小さな物語系スクリプトです。ビジュアルノベル風の構造を保ちつつ、
+メッセージウィンドウの進行をエンジンスクリプト側から直接制御します。
+章選択、ページ送り、既読スキップはスクリプト側が持ち、frontend は
+表示と入力返却だけを担当します。
 
 ### ソース
 
@@ -114,34 +114,46 @@ message window には返り値の章本文がそのまま表示されます。
 export let protagonist = "Aki";
 export let setting = "last train platform";
 
-export func prologue() {
-    return "Narrator: The last train platform is almost empty.\nNarrator: Aki stops under the lantern light and listens to the rails.\nAki: The city feels farther away than usual.";
-}
-
-export func chapter_1() {
-    return "Narrator: A lantern lights the stairs down to the station.\nAki: The next train is still ten minutes away.\nNarrator: A quiet voice answers from the ticket gate.";
-}
-
-export func chapter_2() {
-    return "Narrator: Aki chooses the quiet route home.\nAki: I'll take the river path tonight.\nNarrator: The station lights fade behind the empty road.";
-}
-
 export func main() {
-    return "Narrator: Select a chapter from the runtime example.\nNarrator: prologue, chapter_1, or chapter_2.\nNarrator: The returned text will appear in the message window.";
+    ext.message.clear();
+    ext.message.log_clear();
+    ext.message.speed(26);
+    ext.message.auto(false);
+    ext.message.choices_named(
+        "prologue", "Prologue",
+        "chapter_1", "Chapter 1",
+        "chapter_2", "Chapter 2"
+    );
+    ext.message.prompt("Select a chapter");
+    ext.message.show(
+        "Narrator",
+        "The station is quiet tonight.\nChoose a chapter to open the next page."
+    );
+    recv();
+    let chapter = state.get("ui.last_choice");
+    ext.message.choices_named();
+    ext.message.prompt();
+    if chapter == "prologue" {
+        ext.message.show("Narrator", "The last train platform is almost empty.");
+        recv();
+        ext.message.show("Aki", "The city feels farther away than usual.");
+        recv();
+        return;
+    }
+    ext.message.show("Narrator", "No chapter was selected.");
+    recv();
 }
 ```
 
 ### 補足
 
-- 各関数本体が単純な `return` 式なので、現在のコンパイラで直接出力できます。
-- 将来的に分岐を追加しやすい形で書いてあります。
-- frontend は最終的な文字列返り値を message window に表示します。
+- `ext.message.*` と `recv()` で章選択とページ送りを行います。
+- 既読フラグは `state` に保存し、再読時は `ext.message.skip(true)` に切り替えられます。
+- frontend は現在ページを表示し、選択結果を `ui.last_choice` にも反映します。
 
 ### 実行例
 
 - `cargo run -p wmruntime --example easynovel`
-- `cargo run -p wmruntime --example easynovel -- chapter_1`
-- `cargo run -p wmruntime --example easynovel -- chapter_2`
 
 ## コンパイルと実行
 

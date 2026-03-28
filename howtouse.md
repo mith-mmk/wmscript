@@ -22,7 +22,7 @@ examples used in this workspace.
 - `uiimage/`
   - Scene layout demo that mirrors `samples/uiimage.png`.
 - `easynovel/`
-  - Small story-driven sample with chapters and narration.
+  - Small engine-driven novel sample with chapter choice, paging, and read-driven skip.
 
 ## Hello World Sample
 
@@ -102,9 +102,9 @@ Runtime behavior:
 ## Easy Novel Sample
 
 This sample is a tiny story-driven script. It keeps the structure of a visual-novel
-style project, but stays within the compiler's current expression and function model.
-The runtime example chooses which chapter to run via a command-line argument, and the
-frontend message window renders the returned chapter text directly.
+style project, but now uses the message-window API directly from the engine script.
+The chapter menu, page advance, and read-driven skip logic all live in script code,
+while the frontend only renders the window.
 
 Source:
 
@@ -112,35 +112,46 @@ Source:
 export let protagonist = "Aki";
 export let setting = "last train platform";
 
-export func prologue() {
-    return "Narrator: The last train platform is almost empty.\nNarrator: Aki stops under the lantern light and listens to the rails.\nAki: The city feels farther away than usual.";
-}
-
-export func chapter_1() {
-    return "Narrator: A lantern lights the stairs down to the station.\nAki: The next train is still ten minutes away.\nNarrator: A quiet voice answers from the ticket gate.";
-}
-
-export func chapter_2() {
-    return "Narrator: Aki chooses the quiet route home.\nAki: I'll take the river path tonight.\nNarrator: The station lights fade behind the empty road.";
-}
-
 export func main() {
-    return "Narrator: Select a chapter from the runtime example.\nNarrator: prologue, chapter_1, or chapter_2.\nNarrator: The returned text will appear in the message window.";
+    ext.message.clear();
+    ext.message.log_clear();
+    ext.message.speed(26);
+    ext.message.auto(false);
+    ext.message.choices_named(
+        "prologue", "Prologue",
+        "chapter_1", "Chapter 1",
+        "chapter_2", "Chapter 2"
+    );
+    ext.message.prompt("Select a chapter");
+    ext.message.show(
+        "Narrator",
+        "The station is quiet tonight.\nChoose a chapter to open the next page."
+    );
+    recv();
+    let chapter = state.get("ui.last_choice");
+    ext.message.choices_named();
+    ext.message.prompt();
+    if chapter == "prologue" {
+        ext.message.show("Narrator", "The last train platform is almost empty.");
+        recv();
+        ext.message.show("Aki", "The city feels farther away than usual.");
+        recv();
+        return;
+    }
+    ext.message.show("Narrator", "No chapter was selected.");
+    recv();
 }
 ```
 
 Notes:
 
-- The current compiler can emit these functions directly because each body is a
-  simple `return` expression.
-- The sample is intentionally written to be easy to extend with branching later.
-- The frontend reads the final returned string and shows it in the message window.
+- The sample is driven by `ext.message.*` and `recv()`, not by a returned text blob.
+- Read flags are stored in `state` and can turn on `ext.message.skip(true)` for replays.
+- The frontend renders the current page and mirrors choice replies into `ui.last_choice`.
 
 Run examples:
 
 - `cargo run -p wmruntime --example easynovel`
-- `cargo run -p wmruntime --example easynovel -- chapter_1`
-- `cargo run -p wmruntime --example easynovel -- chapter_2`
 
 ## Compile And Run
 

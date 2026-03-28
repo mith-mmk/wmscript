@@ -17,4 +17,4 @@
 - `uiimage/`
   - Scene layout demo that mirrors `samples/uiimage.png`.
 - `easynovel/`
-  - Small story-driven sample with chapters and narration that renders into the message window.
+  - Small engine-driven novel sample with chapter choice, paging, and read-driven skip.

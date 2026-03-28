@@ -1,10 +1,13 @@
 # Easy Novel Sample
 
-This sample is a tiny story-driven script. It keeps the structure of a visual-novel
-style project, and now uses `state.has(...)` to decide whether a chapter should enable
-skip mode for already-read content. The runtime example chooses which chapter to run
-via a command-line argument, and the frontend message window renders the returned
-chapter text as a narration block.
+This sample is a small engine-driven novel flow built on the current
+message-window API.
+
+- `main()` opens a chapter menu with `ext.message.choices_named(...)`
+- the selected chapter is read from `state.get("ui.last_choice")` after `recv()`
+- each chapter pages through multiple screens with `ext.message.show(...)` and `recv()`
+- read flags live in `state.*`
+- already-read chapters turn on `ext.message.skip(true)` until the chapter ends
 
 Source:
 
@@ -12,32 +15,59 @@ Source:
 export let protagonist = "Aki";
 export let setting = "last train platform";
 
-export func prologue() {
-    return "Narrator: The last train platform is almost empty.\nNarrator: Aki stops under the lantern light and listens to the rails.\nAki: The city feels farther away than usual.";
-}
-
-export func chapter_1() {
-    return "Narrator: A lantern lights the stairs down to the station.\nAki: The next train is still ten minutes away.\nNarrator: A quiet voice answers from the ticket gate.";
-}
-
-export func chapter_2() {
-    return "Narrator: Aki chooses the quiet route home.\nAki: I'll take the river path tonight.\nNarrator: The station lights fade behind the empty road.";
-}
-
 export func main() {
-    return "Narrator: Select a chapter from the runtime example.\nNarrator: prologue, chapter_1, or chapter_2.\nNarrator: The returned text will appear in the message window.";
+    ext.message.clear();
+    ext.message.log_clear();
+    ext.message.speed(26);
+    ext.message.auto(false);
+    ext.message.choices_named(
+        "prologue", "Prologue",
+        "chapter_1", "Chapter 1",
+        "chapter_2", "Chapter 2"
+    );
+    ext.message.prompt("Select a chapter");
+    ext.message.show(
+        "Narrator",
+        "The station is quiet tonight.\nChoose a chapter to open the next page."
+    );
+    recv();
+    let chapter = state.get("ui.last_choice");
+
+    ext.message.choices_named();
+    ext.message.prompt();
+
+    if chapter == "prologue" {
+        if state.has("read:easynovel:prologue") {
+            ext.message.skip(true);
+        } else {
+            ext.message.skip(false);
+        }
+        state.set("read:easynovel:prologue", true);
+        ext.message.show(
+            "Narrator",
+            "The last train platform is almost empty.\nAki stops under the lantern light and listens to the rails."
+        );
+        recv();
+        ext.message.show("Aki", "The city feels farther away than usual.");
+        recv();
+        ext.message.skip(false);
+        return;
+    }
+
+    ext.message.show("Narrator", "No chapter was selected.");
+    recv();
 }
 ```
 
-Notes:
+Runtime behavior:
 
-- The sample marks each chapter as read with `state.set("read:...", true)`.
-- Re-running a chapter toggles message skip mode via `ext.message.skip(true)`.
-- The frontend reads the final returned string and places it in the message window.
+- The chapter menu is script-driven and rendered by the frontend.
+- The selected chapter id is mirrored into `ui.last_choice` and read by the script after `recv()`.
+- Re-running a chapter toggles skip mode from the engine script.
+- Skip mode auto-advances plain pages until the chapter reaches a choice or input.
 
 Run examples:
 
-- `cargo run -p wmruntime --example easynovel`
-- `cargo run -p wmruntime --example easynovel -- chapter_1`
-- `cargo run -p wmruntime --example easynovel -- chapter_2`
 - `cargo run -p wmfrontend -- samples/easynovel/main.wms --platform egui --font noto`
+- `cargo run -p wmfrontend -- samples/easynovel/main.wms --platform native`
+- `cargo run -p wmruntime --example easynovel`

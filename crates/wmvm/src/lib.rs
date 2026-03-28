@@ -683,15 +683,19 @@ impl Vm {
         }
 
         let (op, len) = decode_at(code, pc)?;
+        let next_pc = pc.checked_add(len).ok_or(VmError::InvalidJumpTarget {
+            target: u32::MAX,
+            code_len: code.len(),
+        })?;
         let frame = self.current_frame.as_mut().ok_or(VmError::NoActiveFrame)?;
-        frame.pc = frame
-            .pc
-            .checked_add(len)
-            .ok_or(VmError::InvalidJumpTarget {
-                target: u32::MAX,
-                code_len: code.len(),
-            })?;
-        self.execute_op(op, code.len())
+        frame.pc = next_pc;
+        let effect = self.execute_op(op, code.len())?;
+        if matches!(effect, StepEffect::WaitingMessage)
+            && let Some(frame) = self.current_frame.as_mut()
+        {
+            frame.pc = pc;
+        }
+        Ok(effect)
     }
 
     fn execute_op(&mut self, op: Op, code_len: usize) -> Result<StepEffect, VmError> {
@@ -1529,6 +1533,30 @@ mod tests {
         assert!(matches!(outcome, RunOutcome::Halted { .. }));
         assert_eq!(vm.outbox().len(), 1);
         assert_eq!(vm.last_return(), Some(&Value::Integer(42)));
+    }
+
+    #[test]
+    fn vm_retries_recv_after_waiting_for_message() {
+        let mut program = Program::new();
+        program.insert_function(Function::new(1, vec![0x91, 0x72], 0, 0));
+        program.set_entry(1);
+
+        let mut vm = Vm::with_program(
+            VmConfig::new(
+                PlatformProfile::native(),
+                HostRegistry::new(PlatformProfile::native()),
+                128,
+            ),
+            program,
+        );
+
+        let outcome = vm.run_frame(32);
+        assert!(matches!(outcome, RunOutcome::WaitingMessage { .. }));
+
+        vm.push_message(Message::new(9, 0, 0, Value::String("resume".to_owned())));
+        let outcome = vm.run_frame(32);
+        assert!(matches!(outcome, RunOutcome::Halted { .. }));
+        assert_eq!(vm.last_return(), Some(&Value::String("resume".to_owned())));
     }
 
     #[test]
