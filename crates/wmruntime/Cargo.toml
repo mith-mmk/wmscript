@@ -1,0 +1,16 @@
+[package]
+name = "wmruntime"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+wmarchive = { path = "../wmarchive" }
+wmbytecode = { path = "../wmbytecode" }
+wmhost = { path = "../wmhost" }
+wmext = { path = "../wmext" }
+wmplatform = { path = "../wmplatform" }
+wmresource = { path = "../wmresource" }
+wmverifier = { path = "../wmverifier" }
+wmvm = { path = "../wmvm" }
+wmcompiler = { path = "../wmcompiler" }
+wmui = { path = "../wmui" }

@@ -31,7 +31,7 @@ The compiler front end currently lowers a limited subset of function bodies:
 
 ### 1.1 Module Example
 
-```wml
+```wms
 import "shared/ui.wms" as ui;
 
 export let title = "My Game";
@@ -254,8 +254,8 @@ current execution model and are useful to know when reading the runtime code.
 
 ## 5. Practical Notes
 
-- `wmltoolchain` compiles the current source subset into an archive.
-- `wmlfrontend` can run the same project in `native`, `wasm`, or `egui` mode.
+- `wmtoolchain` compiles the current source subset into an archive.
+- `wmfrontend` can run the same project in `native`, `wasm`, or `egui` mode.
 - The `egui` frontend defaults to a Japanese-friendly Noto Sans preset.
 - A simple read-flag convention works well with `state`: set keys like
   `read:chapter_1:0001` with `state.set(...)` and check them with

@@ -4,7 +4,7 @@ This sample renders the reference `samples/uiimage.png` scene layout through the
 
 ## Script
 
-```wml
+```wms
 export func main() {
     ext.scene.reset();
     ext.scene.layout(240, 92, 520, 180, 18, 380, 1244, 130);

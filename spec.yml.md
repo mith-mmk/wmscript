@@ -3,6 +3,8 @@
 - 2DゲームスクリプトUIサンプル samples/uiimage.png 
   - backend scriptで一から製作可能/ main scriptと切り離せる
   - middleware worker はリアルタイム処理に使える
+- name: WMscript
+- script extentions: wms
 
 # UNIT MODEL
 ```yml

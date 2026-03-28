@@ -5,7 +5,7 @@ through the runtime resource manager.
 
 Source:
 
-```wml
+```wms
 export func main() {
     return load_asset(100);
 }

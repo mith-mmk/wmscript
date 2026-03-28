@@ -5,7 +5,7 @@ constant folding, and the VM runtime with a single exported entry point.
 
 Source:
 
-```wml
+```wms
 export func main() {
     return 1 + 2 * 3;
 }

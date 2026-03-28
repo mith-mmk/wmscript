@@ -1,8 +1,0 @@
-[package]
-name = "wmlresource"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-wmlarchive = { path = "../wmlarchive" }
-wmlplatform = { path = "../wmlplatform" }

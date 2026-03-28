@@ -31,7 +31,7 @@ constant folding, and the VM runtime with a single exported entry point.
 
 Source:
 
-```wml
+```wms
 export func main() {
     return 1 + 2 * 3;
 }
@@ -48,7 +48,7 @@ This sample shows a script that reads a value from a host callback and returns i
 
 Source:
 
-```wml
+```wms
 export func main() {
     return input();
 }
@@ -65,7 +65,7 @@ This sample demonstrates one worker sending a string to another worker.
 
 Source:
 
-```wml
+```wms
 worker sender {
     send 2, "hello worker";
 }
@@ -87,7 +87,7 @@ through the runtime resource manager.
 
 Source:
 
-```wml
+```wms
 export func main() {
     return load_asset(100);
 }
@@ -108,7 +108,7 @@ frontend message window renders the returned chapter text directly.
 
 Source:
 
-```wml
+```wms
 export let protagonist = "Aki";
 export let setting = "last train platform";
 
@@ -138,26 +138,26 @@ Notes:
 
 Run examples:
 
-- `cargo run -p wmlruntime --example easynovel`
-- `cargo run -p wmlruntime --example easynovel -- chapter_1`
-- `cargo run -p wmlruntime --example easynovel -- chapter_2`
+- `cargo run -p wmruntime --example easynovel`
+- `cargo run -p wmruntime --example easynovel -- chapter_1`
+- `cargo run -p wmruntime --example easynovel -- chapter_2`
 
 ## Compile And Run
 
 The runtime examples are the canonical way to exercise the current workspace.
 
 ```bash
-cargo run -p wmlruntime --example hello_runtime
-cargo run -p wmlruntime --example input_link
-cargo run -p wmlruntime --example worker_comm
-cargo run -p wmlruntime --example asset_load
-cargo run -p wmlruntime --example easynovel
-cargo run -p wmlfrontend -- samples/easynovel/main.wms --platform egui --font noto
-cargo run -p wmlfrontend -- samples/messagewindow/main.wms --platform egui --font noto
-cargo run -p wmlfrontend -- --demo uiimage --platform egui --font noto
-cargo run -p wmlfrontend -- --demo image-audio --platform egui --font noto
-cargo run -p wmlfrontend -- --demo engineworker --platform egui --font noto
-cargo run -p wmlfrontend -- --demo messagewindow --platform egui --font noto
+cargo run -p wmruntime --example hello_runtime
+cargo run -p wmruntime --example input_link
+cargo run -p wmruntime --example worker_comm
+cargo run -p wmruntime --example asset_load
+cargo run -p wmruntime --example easynovel
+cargo run -p wmfrontend -- samples/easynovel/main.wms --platform egui --font noto
+cargo run -p wmfrontend -- samples/messagewindow/main.wms --platform egui --font noto
+cargo run -p wmfrontend -- --demo uiimage --platform egui --font noto
+cargo run -p wmfrontend -- --demo image-audio --platform egui --font noto
+cargo run -p wmfrontend -- --demo engineworker --platform egui --font noto
+cargo run -p wmfrontend -- --demo messagewindow --platform egui --font noto
 ```
 
 The egui frontend defaults to Noto Sans for Japanese-friendly rendering. Use
@@ -167,7 +167,7 @@ The compiler also rejects `ext.*` calls that require capabilities missing from
 the selected platform profile. For example, `ext.fs.*` and `ext.net.*` are not
 available under `wasm`, while `state.*` and `ext.vm.*` remain portable.
 
-`wmlfrontend` also supports a built-in demo mode:
+`wmfrontend` also supports a built-in demo mode:
 
 - `--demo uiimage` runs the embedded scene layout showcase without reading a script file.
 - `--demo image-audio` runs the embedded image/audio showcase without reading a script file.
@@ -179,13 +179,13 @@ available under `wasm`, while `state.*` and `ext.vm.*` remain portable.
 
 ## Toolchain
 
-`wmltoolchain` compiles a WML script into a packaged archive and can optionally
+`wmtoolchain` compiles a WML script into a packaged archive and can optionally
 bundle assets into the output.
 
 Command line:
 
 ```bash
-wmltoolchain <script.wms> [--package NAME] [--out FILE] [--step-limit N] [--platform native|wasm|egui] [--release] [--asset NAME=PATH] [--image NAME=PATH]
+wmtoolchain <script.wms> [--package NAME] [--out FILE] [--step-limit N] [--platform native|wasm|egui] [--release] [--asset NAME=PATH] [--image NAME=PATH]
 ```
 
 Behavior:
@@ -206,11 +206,11 @@ Behavior:
 Examples:
 
 ```bash
-cargo run -p wmltoolchain -- samples/helloworld/main.wms
-cargo run -p wmltoolchain -- samples/helloworld/main.wms --out samples/helloworld/main.warc
-cargo run -p wmltoolchain -- samples/easynovel/main.wms --package easynovel --platform native --step-limit 256
-cargo run -p wmltoolchain -- samples/easynovel/main.wms --package easynovel --out build/easynovel.warc --asset ui/title=assets/title.bin
-cargo run -p wmltoolchain -- samples/easynovel/main.wms --package easynovel --out build/easynovel.warc --image ui/background=assets/background.png
+cargo run -p wmtoolchain -- samples/helloworld/main.wms
+cargo run -p wmtoolchain -- samples/helloworld/main.wms --out samples/helloworld/main.warc
+cargo run -p wmtoolchain -- samples/easynovel/main.wms --package easynovel --platform native --step-limit 256
+cargo run -p wmtoolchain -- samples/easynovel/main.wms --package easynovel --out build/easynovel.warc --asset ui/title=assets/title.bin
+cargo run -p wmtoolchain -- samples/easynovel/main.wms --package easynovel --out build/easynovel.warc --image ui/background=assets/background.png
 ```
 
 ## Host Function Example
@@ -218,8 +218,8 @@ cargo run -p wmltoolchain -- samples/easynovel/main.wms --package easynovel --ou
 `CALL_HOST` uses a host function registered on the runtime side.
 
 ```rust
-runtime.register_host_function(wmlhost::HostFunction::new(1, 1, 1, 0), |args| {
-    Ok(args.first().cloned().unwrap_or(wmlvm::Value::Nil))
+runtime.register_host_function(wmhost::HostFunction::new(1, 1, 1, 0), |args| {
+    Ok(args.first().cloned().unwrap_or(wmvm::Value::Nil))
 });
 ```
 
@@ -227,7 +227,7 @@ runtime.register_host_function(wmlhost::HostFunction::new(1, 1, 1, 0), |args| {
 
 - `Runtime::load_archive` loads a bundle into the runtime.
 - `ResourceManager` exposes resource state and handles.
-- Signed archives can be verified with `wmlarchive::Archive::verify_signature`.
+- Signed archives can be verified with `wmarchive::Archive::verify_signature`.
 
 ## Constraints
 

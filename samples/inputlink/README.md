@@ -4,7 +4,7 @@ This sample shows a script that reads a value from a host callback and returns i
 
 Source:
 
-```wml
+```wms
 export func main() {
     return input();
 }

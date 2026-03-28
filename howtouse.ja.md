@@ -34,7 +34,7 @@
 
 ### ソース
 
-```wml
+```wms
 export func main() {
     return 1 + 2 * 3;
 }
@@ -51,7 +51,7 @@ export func main() {
 
 ### ソース
 
-```wml
+```wms
 export func main() {
     return input();
 }
@@ -68,7 +68,7 @@ export func main() {
 
 ### ソース
 
-```wml
+```wms
 worker sender {
     send 2, "hello worker";
 }
@@ -89,7 +89,7 @@ worker receiver {
 
 ### ソース
 
-```wml
+```wms
 export func main() {
     return load_asset(100);
 }
@@ -110,7 +110,7 @@ message window には返り値の章本文がそのまま表示されます。
 
 ### ソース
 
-```wml
+```wms
 export let protagonist = "Aki";
 export let setting = "last train platform";
 
@@ -139,26 +139,26 @@ export func main() {
 
 ### 実行例
 
-- `cargo run -p wmlruntime --example easynovel`
-- `cargo run -p wmlruntime --example easynovel -- chapter_1`
-- `cargo run -p wmlruntime --example easynovel -- chapter_2`
+- `cargo run -p wmruntime --example easynovel`
+- `cargo run -p wmruntime --example easynovel -- chapter_1`
+- `cargo run -p wmruntime --example easynovel -- chapter_2`
 
 ## コンパイルと実行
 
 ランタイム例は、現在のワークスペースを試す標準手段です。
 
 ```bash
-cargo run -p wmlruntime --example hello_runtime
-cargo run -p wmlruntime --example input_link
-cargo run -p wmlruntime --example worker_comm
-cargo run -p wmlruntime --example asset_load
-cargo run -p wmlruntime --example easynovel
-cargo run -p wmlfrontend -- samples/easynovel/main.wms --platform egui --font noto
-cargo run -p wmlfrontend -- samples/messagewindow/main.wms --platform egui --font noto
-cargo run -p wmlfrontend -- --demo uiimage --platform egui --font noto
-cargo run -p wmlfrontend -- --demo image-audio --platform egui --font noto
-cargo run -p wmlfrontend -- --demo engineworker --platform egui --font noto
-cargo run -p wmlfrontend -- --demo messagewindow --platform egui --font noto
+cargo run -p wmruntime --example hello_runtime
+cargo run -p wmruntime --example input_link
+cargo run -p wmruntime --example worker_comm
+cargo run -p wmruntime --example asset_load
+cargo run -p wmruntime --example easynovel
+cargo run -p wmfrontend -- samples/easynovel/main.wms --platform egui --font noto
+cargo run -p wmfrontend -- samples/messagewindow/main.wms --platform egui --font noto
+cargo run -p wmfrontend -- --demo uiimage --platform egui --font noto
+cargo run -p wmfrontend -- --demo image-audio --platform egui --font noto
+cargo run -p wmfrontend -- --demo engineworker --platform egui --font noto
+cargo run -p wmfrontend -- --demo messagewindow --platform egui --font noto
 ```
 
 egui フロントエンドの既定フォントは、日本語表示を優先して Noto Sans 系にしています。
@@ -168,7 +168,7 @@ egui フロントエンドの既定フォントは、日本語表示を優先し
 `ext.*` 呼び出しを拒否します。たとえば `wasm` では `ext.fs.*` と
 `ext.net.*` は使えませんが、`state.*` と `ext.vm.*` はそのまま使えます。
 
-`wmlfrontend` には組み込みデモ起動もあります。
+`wmfrontend` には組み込みデモ起動もあります。
 
 - `--demo uiimage` でスクリプトファイルを読まずに scene layout デモを起動します。
 - `--demo image-audio` でスクリプトファイルを読まずに画像/音声デモを起動します。
@@ -180,13 +180,13 @@ egui フロントエンドの既定フォントは、日本語表示を優先し
 
 ## Toolchain
 
-`wmltoolchain` は WML スクリプトをパッケージ済みアーカイブに変換し、
+`wmtoolchain` は WML スクリプトをパッケージ済みアーカイブに変換し、
 必要に応じてアセットも同梱できます。
 
 ### コマンドライン
 
 ```bash
-wmltoolchain <script.wms> [--package NAME] [--out FILE] [--step-limit N] [--platform native|wasm|egui] [--release] [--asset NAME=PATH] [--image NAME=PATH]
+wmtoolchain <script.wms> [--package NAME] [--out FILE] [--step-limit N] [--platform native|wasm|egui] [--release] [--asset NAME=PATH] [--image NAME=PATH]
 ```
 
 ### 動作
@@ -206,11 +206,11 @@ wmltoolchain <script.wms> [--package NAME] [--out FILE] [--step-limit N] [--plat
 ### 実行例
 
 ```bash
-cargo run -p wmltoolchain -- samples/helloworld/main.wms
-cargo run -p wmltoolchain -- samples/helloworld/main.wms --out samples/helloworld/main.warc
-cargo run -p wmltoolchain -- samples/easynovel/main.wms --package easynovel --platform native --step-limit 256
-cargo run -p wmltoolchain -- samples/easynovel/main.wms --package easynovel --out build/easynovel.warc --asset ui/title=assets/title.bin
-cargo run -p wmltoolchain -- samples/easynovel/main.wms --package easynovel --out build/easynovel.warc --image ui/background=assets/background.png
+cargo run -p wmtoolchain -- samples/helloworld/main.wms
+cargo run -p wmtoolchain -- samples/helloworld/main.wms --out samples/helloworld/main.warc
+cargo run -p wmtoolchain -- samples/easynovel/main.wms --package easynovel --platform native --step-limit 256
+cargo run -p wmtoolchain -- samples/easynovel/main.wms --package easynovel --out build/easynovel.warc --asset ui/title=assets/title.bin
+cargo run -p wmtoolchain -- samples/easynovel/main.wms --package easynovel --out build/easynovel.warc --image ui/background=assets/background.png
 ```
 
 ## ホスト関数の例
@@ -218,8 +218,8 @@ cargo run -p wmltoolchain -- samples/easynovel/main.wms --package easynovel --ou
 `CALL_HOST` はランタイム側で登録したホスト関数を呼び出します。
 
 ```rust
-runtime.register_host_function(wmlhost::HostFunction::new(1, 1, 1, 0), |args| {
-    Ok(args.first().cloned().unwrap_or(wmlvm::Value::Nil))
+runtime.register_host_function(wmhost::HostFunction::new(1, 1, 1, 0), |args| {
+    Ok(args.first().cloned().unwrap_or(wmvm::Value::Nil))
 });
 ```
 
@@ -227,7 +227,7 @@ runtime.register_host_function(wmlhost::HostFunction::new(1, 1, 1, 0), |args| {
 
 - `Runtime::load_archive` はバンドルをランタイムに読み込みます。
 - `ResourceManager` はリソース状態とハンドルを公開します。
-- 署名付きアーカイブは `wmlarchive::Archive::verify_signature` で検証できます。
+- 署名付きアーカイブは `wmarchive::Archive::verify_signature` で検証できます。
 
 ## 制約
 

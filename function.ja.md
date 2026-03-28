@@ -31,7 +31,7 @@
 
 ### 1.1 モジュール例
 
-```wml
+```wms
 import "shared/ui.wms" as ui;
 
 export let title = "My Game";
@@ -253,8 +253,8 @@ export func main() {
 
 ## 5. 実用上の補足
 
-- `wmltoolchain` は現在のサブセットを archive にまとめます。
-- `wmlfrontend` は `native` / `wasm` / `egui` で同じプロジェクトを実行できます。
+- `wmtoolchain` は現在のサブセットを archive にまとめます。
+- `wmfrontend` は `native` / `wasm` / `egui` で同じプロジェクトを実行できます。
 - `egui` フロントエンドの既定フォントは、日本語向けに Noto Sans 系です。
 - 既読フラグは `state` で管理するのが素直です。たとえば
   `read:chapter_1:0001` のようなキーを `state.set(...)` で保存し、

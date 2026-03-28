@@ -10,7 +10,7 @@ This sample is a focused engine-side message window example.
 
 Source:
 
-```wml
+```wms
 export func main() {
     ext.message.clear();
     ext.message.speed(28);
@@ -78,5 +78,5 @@ Runtime behavior:
 
 Run examples:
 
-- `cargo run -p wmlfrontend -- samples/messagewindow/main.wms --platform egui --font noto`
-- `cargo run -p wmlfrontend -- --demo messagewindow --platform egui --font noto`
+- `cargo run -p wmfrontend -- samples/messagewindow/main.wms --platform egui --font noto`
+- `cargo run -p wmfrontend -- --demo messagewindow --platform egui --font noto`

@@ -23,9 +23,9 @@
  - [+] 名称をすべてそれに合わせる
 
 
-1. 実行系 (crate wmlvm, crate.ioに公開予定)
+1. 実行系 (crate wmvm, crate.ioに公開予定)
 ```
-WMLVM
+wmvm
 ├─ core
 ├─ scheduler
 ├─ memory / GC
@@ -33,7 +33,7 @@ WMLVM
 ```
 
 1. ホスト統合系（Engine Bridge,  crate.ioに公開予定）
-WMLHost
+wmhost
 ├─ HostAPI
 ├─ ResourceManager
 ├─ StateManager
@@ -42,7 +42,7 @@ WMLHost
 
 1. コンパイラ系（Script Toolchain, githubのみ, npmかも）
 
-WMLCompiler
+wmcompiler
 ├─ parser
 ├─ resolver (import解決)
 ├─ IR
@@ -51,14 +51,14 @@ WMLCompiler
 ├─ symbol_table
 
 4. バイトコード変換系（低レイヤ,  crate.ioに公開予定）
-WMLBytecode
+wmbytecode
 ├─ encoder   ← (IR → bytecode)
 ├─ decoder   ← (bytecode → Op)
 ├─ verifier
 ├─ disassembler（任意）
 
 5. アーカイブ系（Distribution,  crate.ioに公開予定）
-WMLArchive
+wmarchive
 ├─ archiver
 ├─ unarchiver
 ├─ signer
@@ -66,7 +66,7 @@ WMLArchive
 ├─ manifest_builder
 
 6. リソース系（Asset Pipeline）
-WMLResource
+wmresource
 ├─ resource_id_resolver
 ├─ asset_builder
 ├─ compression
@@ -75,14 +75,14 @@ WMLResource
 
 # 完成形
 Runtime
- ├─ WMLVM
- └─ WMLHost
+ ├─ wmvm
+ └─ wmhost
 
 Toolchain
- ├─ WMLCompiler
- ├─ WMLBytecode
- ├─ WMLArchive
- └─ WMLResource
+ ├─ wmcompiler
+ ├─ wmbytecode
+ ├─ wmarchive
+ └─ wmresource
 
 
 ```

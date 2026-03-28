@@ -10,7 +10,7 @@ This sample shows the engine-side part of the separation:
 
 Source:
 
-```wml
+```wms
 export func main() {
     if state.has("read:engineworker:intro") {
         ext.message.skip(true);
@@ -97,4 +97,4 @@ Runtime behavior:
 - The plain message pages advance with `Next` or `Enter`; if the page is still animating, the first action reveals it immediately.
 - `ext.message.choices_named(...)` gives the engine stable choice ids such as `prologue` and `chapter_1`.
 - Selecting a choice or submitting input wakes the waiting worker and returns that payload from `recv()`.
-- The two-worker split example lives in `crates/wmlruntime/examples/engine_worker_split.rs`.
+- The two-worker split example lives in `crates/wmruntime/examples/engine_worker_split.rs`.

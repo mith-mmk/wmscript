@@ -1,0 +1,10 @@
+[package]
+name = "wmverifier"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+wmbytecode = { path = "../wmbytecode" }
+wmhost = { path = "../wmhost" }
+wmplatform = { path = "../wmplatform" }
+wmvm = { path = "../wmvm" }

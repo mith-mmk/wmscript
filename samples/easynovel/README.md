@@ -8,7 +8,7 @@ chapter text as a narration block.
 
 Source:
 
-```wml
+```wms
 export let protagonist = "Aki";
 export let setting = "last train platform";
 
@@ -37,7 +37,7 @@ Notes:
 
 Run examples:
 
-- `cargo run -p wmlruntime --example easynovel`
-- `cargo run -p wmlruntime --example easynovel -- chapter_1`
-- `cargo run -p wmlruntime --example easynovel -- chapter_2`
-- `cargo run -p wmlfrontend -- samples/easynovel/main.wms --platform egui --font noto`
+- `cargo run -p wmruntime --example easynovel`
+- `cargo run -p wmruntime --example easynovel -- chapter_1`
+- `cargo run -p wmruntime --example easynovel -- chapter_2`
+- `cargo run -p wmfrontend -- samples/easynovel/main.wms --platform egui --font noto`

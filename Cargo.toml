@@ -1,19 +1,19 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/wmlarchive",
-    "crates/wmlbytecode",
-    "crates/wmlcompiler",
-    "crates/wmlext",
-    "crates/wmlhost",
-    "crates/wmlplatform",
-    "crates/wmlfrontend",
-    "crates/wmltoolchain",
-    "crates/wmlui",
-    "crates/wmlresource",
-    "crates/wmlruntime",
-    "crates/wmlverifier",
-    "crates/wmlvm",
+    "crates/wmarchive",
+    "crates/wmbytecode",
+    "crates/wmcompiler",
+    "crates/wmext",
+    "crates/wmhost",
+    "crates/wmplatform",
+    "crates/wmfrontend",
+    "crates/wmtoolchain",
+    "crates/wmui",
+    "crates/wmresource",
+    "crates/wmruntime",
+    "crates/wmverifier",
+    "crates/wmvm",
 ]
 
 [workspace.package]

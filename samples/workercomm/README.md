@@ -4,7 +4,7 @@ This sample demonstrates one worker sending a string to another worker.
 
 Source:
 
-```wml
+```wm
 worker sender {
     send 2, "hello worker";
 }

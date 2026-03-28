@@ -1,0 +1,11 @@
+[package]
+name = "wmcompiler"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+wmbytecode = { path = "../wmbytecode" }
+wmext = { path = "../wmext" }
+wmhost = { path = "../wmhost" }
+wmplatform = { path = "../wmplatform" }
+wmvm = { path = "../wmvm" }
