@@ -19,6 +19,8 @@ export func main() {
 }
 ```
 
+`ext.scene.reset()` now clears the previous message window and recorded image draws before the new layout is applied.
+
 ## Expected Result
 
 - A background image fills the stage.

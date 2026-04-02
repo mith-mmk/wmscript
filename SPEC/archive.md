@@ -541,9 +541,22 @@ section 単位アクセス
 
 mmap 可能
 
+streaming reader 可能
+
+fixed header / security header / section table を先に読めば、
+後続 section は `Read + Seek` で逐次ロードできる前提にする
+
 ID 参照のみ
 
 manifest 中心管理
+
+18.1 ストリーミング実装前提
+
+- archive loader は fixed header と section table を先に読み、section offset を確定させる
+- module section と manifest section はオンデマンドで個別に読める
+- asset section は section 単位で順次ロードできる
+- 署名検証や digest 検証は section payload を丸ごと読む必要はあるが、archive 全体の常駐は必須にしない
+- `Read + Seek` が使える実装では、巨大 archive でも header + active section だけを保持する
 
 セキュリティ
 

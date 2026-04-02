@@ -250,6 +250,53 @@ impl UiChoice {
     }
 }
 
+/// RGBA color used by the runtime UI.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UiColorRgba {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+    pub a: u8,
+}
+
+impl UiColorRgba {
+    pub const fn new(r: u8, g: u8, b: u8, a: u8) -> Self {
+        Self { r, g, b, a }
+    }
+}
+
+impl Default for UiColorRgba {
+    fn default() -> Self {
+        Self::new(255, 255, 255, 255)
+    }
+}
+
+/// Style used by the message window and related runtime UI panels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct UiMessageWindowStyle {
+    pub panel_fill: UiColorRgba,
+    pub panel_stroke: UiColorRgba,
+    pub text_color: UiColorRgba,
+    pub speaker_color: UiColorRgba,
+    pub accent_color: UiColorRgba,
+    pub body_font_size: f32,
+    pub speaker_font_size: f32,
+}
+
+impl Default for UiMessageWindowStyle {
+    fn default() -> Self {
+        Self {
+            panel_fill: UiColorRgba::new(0, 0, 0, 190),
+            panel_stroke: UiColorRgba::new(46, 140, 58, 255),
+            text_color: UiColorRgba::new(255, 255, 255, 255),
+            speaker_color: UiColorRgba::new(255, 255, 255, 255),
+            accent_color: UiColorRgba::new(180, 220, 180, 255),
+            body_font_size: 18.0,
+            speaker_font_size: 20.0,
+        }
+    }
+}
+
 /// State of the message window.
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiMessageWindowState {
@@ -262,6 +309,7 @@ pub struct UiMessageWindowState {
     pub text_speed: f32,
     pub auto_mode: bool,
     pub skip_mode: bool,
+    pub style: UiMessageWindowStyle,
 }
 
 impl Default for UiMessageWindowState {
@@ -276,6 +324,7 @@ impl Default for UiMessageWindowState {
             text_speed: 48.0,
             auto_mode: false,
             skip_mode: false,
+            style: UiMessageWindowStyle::default(),
         }
     }
 }

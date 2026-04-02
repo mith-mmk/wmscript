@@ -9,8 +9,8 @@ use eframe::{egui, egui::Vec2};
 
 use crate::{FrontendError, FrontendReport, GuiFontPreset};
 use wmui::{
-    UiChoice, UiImageDrawCall, UiImageSlot, UiImageSource, UiKey, UiMouseButton, UiPoint, UiRect,
-    UiSceneLayoutState, UiTheme,
+    UiChoice, UiColorRgba, UiImageDrawCall, UiImageSlot, UiImageSource, UiKey, UiMouseButton,
+    UiPoint, UiRect, UiSceneLayoutState, UiTheme,
 };
 use wmvm::{Message, Value};
 
@@ -54,6 +54,10 @@ struct ReportApp {
     player_input: String,
     selected_choice: Option<String>,
     message_history_open: bool,
+    debug_panel_open: bool,
+    runtime_menu_open: bool,
+    selected_checkpoint_slot: u32,
+    runtime_status_line: Option<String>,
     message_reveal_chars: usize,
     message_signature: Option<String>,
     auto_advance_sent: bool,
@@ -87,6 +91,10 @@ impl ReportApp {
             player_input: String::new(),
             selected_choice: None,
             message_history_open: false,
+            debug_panel_open: false,
+            runtime_menu_open: false,
+            selected_checkpoint_slot: 1,
+            runtime_status_line: None,
             message_reveal_chars: 0,
             message_signature: None,
             auto_advance_sent: false,
@@ -279,6 +287,29 @@ impl ReportApp {
         self.auto_advance_elapsed_seconds = 0.0;
     }
 
+    fn save_runtime_slot(&mut self) {
+        let slot = self.selected_checkpoint_slot;
+        self.report.runtime.save_checkpoint(slot);
+        self.runtime_status_line = Some(format!("saved slot {slot}"));
+    }
+
+    fn load_runtime_slot(&mut self) {
+        let slot = self.selected_checkpoint_slot;
+        match self.report.runtime.load_checkpoint(slot) {
+            Ok(true) => {
+                self.sync_runtime_state();
+                self.reset_message_progress();
+                self.runtime_status_line = Some(format!("loaded slot {slot}"));
+            }
+            Ok(false) => {
+                self.runtime_status_line = Some(format!("slot {slot} is empty"));
+            }
+            Err(error) => {
+                self.runtime_status_line = Some(format!("load failed: {error}"));
+            }
+        }
+    }
+
     fn sync_runtime_state(&mut self) {
         let runtime_message = self.report.runtime.message_window_state();
         self.report.ui_state.scene.message_window =
@@ -298,6 +329,9 @@ impl ReportApp {
             .into_iter()
             .map(|(handle, state)| (handle, crate::to_ui_audio_state(state)))
             .collect::<BTreeMap<_, _>>();
+        if self.report.ui_state.scene.message_window.choices.is_empty() {
+            self.selected_choice = None;
+        }
     }
 
     fn message_signature(message: &wmui::UiMessageWindowState) -> String {
@@ -386,6 +420,10 @@ impl ReportApp {
         text.chars().take(self.message_reveal_chars).collect()
     }
 
+    fn egui_color(color: UiColorRgba) -> egui::Color32 {
+        egui::Color32::from_rgba_premultiplied(color.r, color.g, color.b, color.a)
+    }
+
     fn scene_canvas_rect(stage_rect: egui::Rect, layout: &UiSceneLayoutState) -> (egui::Rect, f32) {
         let ref_size = layout.reference_size;
         let scale_x = if ref_size.width > 0.0 {
@@ -429,7 +467,15 @@ impl ReportApp {
         let backlog = message.backlog.clone();
         let can_advance = choices.is_empty() && input_prompt.is_none();
         let reveal_complete = self.message_reveal_chars >= message.text.chars().count();
+        let style = message.style.clone();
+        let panel_fill = Self::egui_color(style.panel_fill);
+        let panel_stroke = Self::egui_color(style.panel_stroke);
+        let text_color = Self::egui_color(style.text_color);
+        let speaker_color = Self::egui_color(style.speaker_color);
+        let accent_color = Self::egui_color(style.accent_color);
         let (canvas_rect, scale) = Self::scene_canvas_rect(stage_rect, &layout);
+        let body_text_size = style.body_font_size * scale.max(0.75);
+        let speaker_text_size = style.speaker_font_size * scale.max(0.75);
 
         let choice_rect = Self::scale_scene_rect(layout.choice_panel, canvas_rect, scale);
         if visible && !choices.is_empty() {
@@ -439,17 +485,14 @@ impl ReportApp {
                 .show(ctx, |ui| {
                     ui.set_min_size(choice_rect.size());
                     egui::Frame::NONE
-                        .fill(egui::Color32::from_black_alpha(180))
-                        .stroke(egui::Stroke::new(
-                            (2.0 * scale).max(1.0),
-                            egui::Color32::from_rgb(46, 140, 58),
-                        ))
+                        .fill(panel_fill)
+                        .stroke(egui::Stroke::new((2.0 * scale).max(1.0), panel_stroke))
                         .show(ui, |ui| {
                             ui.add_space(10.0 * scale);
                             ui.label(
                                 egui::RichText::new("Choices")
-                                    .size(20.0 * scale.max(0.75))
-                                    .color(egui::Color32::WHITE),
+                                    .size(speaker_text_size)
+                                    .color(accent_color),
                             );
                             ui.add_space(8.0 * scale);
                             for choice in &choices {
@@ -459,16 +502,16 @@ impl ReportApp {
                                     .is_some_and(|selected| selected == choice.id);
                                 let button = egui::Button::new(
                                     egui::RichText::new(choice.label.clone())
-                                        .size(18.0 * scale.max(0.75))
-                                        .color(egui::Color32::WHITE),
+                                        .size(body_text_size)
+                                        .color(text_color),
                                 )
-                                .fill(egui::Color32::from_black_alpha(80))
+                                .fill(panel_fill.gamma_multiply(0.45))
                                 .stroke(egui::Stroke::new(
                                     1.0,
                                     if selected {
-                                        egui::Color32::from_rgb(110, 190, 120)
+                                        accent_color
                                     } else {
-                                        egui::Color32::from_rgb(40, 80, 40)
+                                        panel_stroke.gamma_multiply(0.6)
                                     },
                                 ))
                                 .selected(selected);
@@ -489,18 +532,15 @@ impl ReportApp {
                 .show(ctx, |ui| {
                     ui.set_min_size(message_rect.size());
                     let frame_response = egui::Frame::NONE
-                        .fill(egui::Color32::from_black_alpha(190))
-                        .stroke(egui::Stroke::new(
-                            (2.0 * scale).max(1.0),
-                            egui::Color32::from_rgb(46, 140, 58),
-                        ))
+                        .fill(panel_fill)
+                        .stroke(egui::Stroke::new((2.0 * scale).max(1.0), panel_stroke))
                         .show(ui, |ui| {
                             ui.add_space(10.0 * scale);
                             ui.horizontal(|ui| {
                                 ui.label(
                                     egui::RichText::new(&speaker)
-                                        .size(20.0 * scale.max(0.75))
-                                        .color(egui::Color32::WHITE)
+                                        .size(speaker_text_size)
+                                        .color(speaker_color)
                                         .strong(),
                                 );
                             });
@@ -509,7 +549,7 @@ impl ReportApp {
                                 ui.label(
                                     egui::RichText::new("Speed")
                                         .size(14.0 * scale.max(0.75))
-                                        .color(egui::Color32::WHITE),
+                                        .color(text_color),
                                 );
                                 let mut speed =
                                     self.report.ui_state.scene.message_window.text_speed;
@@ -551,15 +591,15 @@ impl ReportApp {
                                     if text_lines.is_empty() {
                                         ui.label(
                                             egui::RichText::new("...")
-                                                .size(18.0 * scale.max(0.75))
-                                                .color(egui::Color32::WHITE),
+                                                .size(body_text_size)
+                                                .color(text_color),
                                         );
                                     } else {
                                         for line in &text_lines {
                                             ui.label(
                                                 egui::RichText::new(line)
-                                                    .size(18.0 * scale.max(0.75))
-                                                    .color(egui::Color32::WHITE),
+                                                    .size(body_text_size)
+                                                    .color(text_color),
                                             );
                                         }
                                     }
@@ -570,8 +610,8 @@ impl ReportApp {
                                 ui.separator();
                                 ui.label(
                                     egui::RichText::new(prompt)
-                                        .size(16.0 * scale.max(0.75))
-                                        .color(egui::Color32::WHITE),
+                                        .size((body_text_size - 2.0).max(12.0))
+                                        .color(accent_color),
                                 );
                                 ui.horizontal(|ui| {
                                     let response = ui.add_sized(
@@ -607,7 +647,7 @@ impl ReportApp {
                                         },
                                     )
                                     .size(13.0 * scale.max(0.75))
-                                    .color(egui::Color32::from_rgb(180, 220, 180)),
+                                    .color(accent_color),
                                 );
                                 if choices.is_empty() && input_prompt.is_none() {
                                     let button_label = if self.message_reveal_chars
@@ -643,7 +683,7 @@ impl ReportApp {
                                     ui.label(
                                         egui::RichText::new(hint)
                                             .size(13.0 * scale.max(0.75))
-                                            .color(egui::Color32::from_rgb(210, 225, 180)),
+                                            .color(accent_color.gamma_multiply(0.9)),
                                     );
                                 }
                             });
@@ -661,7 +701,7 @@ impl ReportApp {
                                                     line
                                                 ))
                                                 .size(14.0 * scale.max(0.75))
-                                                .color(egui::Color32::WHITE),
+                                                .color(text_color),
                                             );
                                         }
                                     });
@@ -686,7 +726,7 @@ impl ReportApp {
                                 egui::Align2::RIGHT_BOTTOM,
                                 indicator,
                                 egui::FontId::proportional(18.0 * scale.max(0.75)),
-                                egui::Color32::from_rgb(220, 235, 190),
+                                accent_color,
                             );
                         }
                     }
@@ -739,112 +779,174 @@ impl eframe::App for ReportApp {
 
         egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
             ui.horizontal_wrapped(|ui| {
-                ui.heading("WML Frontend");
-                ui.separator();
-                ui.label(format!(
-                    "package: {}",
-                    self.report.build.manifest.package_name
-                ));
-                ui.label(format!(
-                    "archive: {} bytes",
-                    self.report.build.archive.len()
-                ));
-                ui.label(format!("worker: {}", self.report.execution.worker_id));
-                ui.separator();
-                egui::ComboBox::from_label("Font")
-                    .selected_text(self.font_preset.label())
-                    .show_ui(ui, |ui| {
-                        for preset in [
-                            GuiFontPreset::NotoSans,
-                            GuiFontPreset::EguiDefault,
-                            GuiFontPreset::Monospace,
-                        ] {
-                            ui.selectable_value(&mut self.font_preset, preset, preset.label());
-                        }
-                    });
+                ui.heading("WMS Runtime");
+                if ui
+                    .button(if self.runtime_menu_open {
+                        "Hide Menu"
+                    } else {
+                        "Menu"
+                    })
+                    .clicked()
+                {
+                    self.runtime_menu_open = !self.runtime_menu_open;
+                }
+                if ui
+                    .selectable_label(self.message_history_open, "Log")
+                    .clicked()
+                {
+                    self.message_history_open = !self.message_history_open;
+                }
+                let auto_mode = self.report.ui_state.scene.message_window.auto_mode;
+                if ui.selectable_label(auto_mode, "Auto").clicked() {
+                    self.report.runtime.set_message_auto_mode(!auto_mode);
+                    self.report.ui_state.scene.message_window.auto_mode = !auto_mode;
+                    self.auto_advance_sent = false;
+                    self.auto_advance_elapsed_seconds = 0.0;
+                }
+                let skip_mode = self.report.ui_state.scene.message_window.skip_mode;
+                if ui.selectable_label(skip_mode, "Skip").clicked() {
+                    self.report.runtime.set_message_skip_mode(!skip_mode);
+                    self.report.ui_state.scene.message_window.skip_mode = !skip_mode;
+                    if !skip_mode {
+                        self.message_reveal_chars = self
+                            .report
+                            .ui_state
+                            .scene
+                            .message_window
+                            .text
+                            .chars()
+                            .count();
+                    }
+                    self.auto_advance_sent = false;
+                    self.auto_advance_elapsed_seconds = 0.0;
+                }
+                if ui
+                    .selectable_label(self.debug_panel_open, "Debug")
+                    .clicked()
+                {
+                    self.debug_panel_open = !self.debug_panel_open;
+                }
+                if let Some(status) = &self.runtime_status_line {
+                    ui.separator();
+                    ui.label(status);
+                }
             });
+            if self.runtime_menu_open {
+                ui.separator();
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(format!(
+                        "package: {}",
+                        self.report.build.manifest.package_name
+                    ));
+                    ui.label(format!("worker: {}", self.report.execution.worker_id));
+                    ui.label(format!("archive: {} bytes", self.report.build.archive_size));
+                    ui.separator();
+                    ui.label("Slot");
+                    ui.add(egui::DragValue::new(&mut self.selected_checkpoint_slot).range(1..=99));
+                    if ui.button("Save").clicked() {
+                        self.save_runtime_slot();
+                    }
+                    if ui.button("Load").clicked() {
+                        self.load_runtime_slot();
+                    }
+                    ui.separator();
+                    egui::ComboBox::from_label("Font")
+                        .selected_text(self.font_preset.label())
+                        .show_ui(ui, |ui| {
+                            for preset in [
+                                GuiFontPreset::NotoSans,
+                                GuiFontPreset::EguiDefault,
+                                GuiFontPreset::Monospace,
+                            ] {
+                                ui.selectable_value(&mut self.font_preset, preset, preset.label());
+                            }
+                        });
+                });
+            }
         });
 
-        egui::SidePanel::right("debug")
-            .resizable(true)
-            .default_width(320.0)
-            .show(ctx, |ui| {
-                ui.heading("Debug");
-                ui.separator();
-                ui.label("Images");
-                if self.textures.is_empty() {
-                    ui.label("No images loaded.");
-                } else {
-                    for (slot, texture) in &self.textures {
-                        ui.group(|ui| {
-                            ui.label(slot_name(slot));
-                            let size = texture.size_vec2();
-                            let max_width = ui.available_width().max(1.0);
-                            let scale = (max_width / size.x).min(1.0);
-                            let display_size = if scale < 1.0 { size * scale } else { size };
-                            ui.image((texture.id(), display_size));
-                        });
-                        ui.add_space(8.0);
-                    }
-                }
-                ui.separator();
-                ui.label("Input");
-                ui.label(format!(
-                    "pointer: {}",
-                    self.input_snapshot
-                        .pointer_position
-                        .map(|pos| format!("{:.1}, {:.1}", pos.x, pos.y))
-                        .unwrap_or_else(|| "none".to_owned())
-                ));
-                ui.label(format!("modifiers: {:?}", self.input_snapshot.modifiers));
-                ui.label(format!(
-                    "scroll: {:.1}, {:.1}",
-                    self.input_snapshot.raw_scroll_delta.x, self.input_snapshot.raw_scroll_delta.y
-                ));
-                ui.label(format!(
-                    "keys down: {}",
-                    self.input_snapshot
-                        .pressed_keys
-                        .iter()
-                        .map(|key| format!("{key:?}"))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ));
-                if !self.input_snapshot.text_input.is_empty() {
-                    ui.label(format!("text: {}", self.input_snapshot.text_input));
-                }
-                if !self.input_snapshot.recent_events.is_empty() {
+        if self.debug_panel_open {
+            egui::SidePanel::right("debug")
+                .resizable(true)
+                .default_width(320.0)
+                .show(ctx, |ui| {
+                    ui.heading("Debug");
                     ui.separator();
-                    ui.label("recent events:");
-                    for line in self.input_snapshot.recent_events.iter().rev().take(6) {
-                        ui.monospace(line);
+                    ui.label("Images");
+                    if self.textures.is_empty() {
+                        ui.label("No images loaded.");
+                    } else {
+                        for (slot, texture) in &self.textures {
+                            ui.group(|ui| {
+                                ui.label(slot_name(slot));
+                                let size = texture.size_vec2();
+                                let max_width = ui.available_width().max(1.0);
+                                let scale = (max_width / size.x).min(1.0);
+                                let display_size = if scale < 1.0 { size * scale } else { size };
+                                ui.image((texture.id(), display_size));
+                            });
+                            ui.add_space(8.0);
+                        }
                     }
-                }
-                ui.separator();
-                ui.label("Draw Calls");
-                let draw_calls = &self.report.ui_state.scene.draw_calls;
-                if draw_calls.is_empty() {
-                    ui.label("No draw calls recorded.");
-                } else {
-                    let (rect, _) = ui.allocate_exact_size(
-                        egui::vec2(ui.available_width().max(1.0), 220.0),
-                        egui::Sense::hover(),
-                    );
-                    let painter = ui.painter_at(rect);
-                    painter.rect_filled(rect, 6.0, ui.visuals().extreme_bg_color);
-                    for draw in draw_calls {
-                        self.paint_draw_call(&painter, rect.min, 0.25, draw);
+                    ui.separator();
+                    ui.label("Input");
+                    ui.label(format!(
+                        "pointer: {}",
+                        self.input_snapshot
+                            .pointer_position
+                            .map(|pos| format!("{:.1}, {:.1}", pos.x, pos.y))
+                            .unwrap_or_else(|| "none".to_owned())
+                    ));
+                    ui.label(format!("modifiers: {:?}", self.input_snapshot.modifiers));
+                    ui.label(format!(
+                        "scroll: {:.1}, {:.1}",
+                        self.input_snapshot.raw_scroll_delta.x,
+                        self.input_snapshot.raw_scroll_delta.y
+                    ));
+                    ui.label(format!(
+                        "keys down: {}",
+                        self.input_snapshot
+                            .pressed_keys
+                            .iter()
+                            .map(|key| format!("{key:?}"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ));
+                    if !self.input_snapshot.text_input.is_empty() {
+                        ui.label(format!("text: {}", self.input_snapshot.text_input));
                     }
-                }
+                    if !self.input_snapshot.recent_events.is_empty() {
+                        ui.separator();
+                        ui.label("recent events:");
+                        for line in self.input_snapshot.recent_events.iter().rev().take(6) {
+                            ui.monospace(line);
+                        }
+                    }
+                    ui.separator();
+                    ui.label("Draw Calls");
+                    let draw_calls = &self.report.ui_state.scene.draw_calls;
+                    if draw_calls.is_empty() {
+                        ui.label("No draw calls recorded.");
+                    } else {
+                        let (rect, _) = ui.allocate_exact_size(
+                            egui::vec2(ui.available_width().max(1.0), 220.0),
+                            egui::Sense::hover(),
+                        );
+                        let painter = ui.painter_at(rect);
+                        painter.rect_filled(rect, 6.0, ui.visuals().extreme_bg_color);
+                        for draw in draw_calls {
+                            self.paint_draw_call(&painter, rect.min, 0.25, draw);
+                        }
+                    }
 
-                ui.separator();
-                ui.label("Audio Playback");
-                let audio_playback = &self.report.ui_state.scene.audio_playback;
-                if audio_playback.is_empty() {
-                    ui.label("No audio playback recorded.");
-                } else {
-                    for (handle, state) in audio_playback {
-                        ui.monospace(format!(
+                    ui.separator();
+                    ui.label("Audio Playback");
+                    let audio_playback = &self.report.ui_state.scene.audio_playback;
+                    if audio_playback.is_empty() {
+                        ui.label("No audio playback recorded.");
+                    } else {
+                        for (handle, state) in audio_playback {
+                            ui.monospace(format!(
                             "handle={} resource={} playing={} looped={} position={}ms volume={:.2}",
                             handle,
                             state.resource_id,
@@ -853,42 +955,43 @@ impl eframe::App for ReportApp {
                             state.position_ms,
                             state.volume
                         ));
+                        }
                     }
-                }
 
-                ui.separator();
-                ui.label("Summary");
-                ui.label(format!(
-                    "events processed: {}",
-                    self.report.execution.outcomes.len()
-                ));
-                if let Some((_, outcome)) = self.report.execution.outcomes.last() {
-                    ui.monospace(format!("{outcome:?}"));
-                }
-                ui.separator();
-                ui.label("Build Log");
-                if self.report.log_lines.is_empty() {
-                    ui.label("No build log lines.");
-                } else {
-                    egui::ScrollArea::vertical()
-                        .id_salt("build_log")
-                        .max_height(140.0)
-                        .show(ui, |ui| {
-                            for line in &self.report.log_lines {
-                                ui.monospace(line);
-                            }
-                        });
-                }
+                    ui.separator();
+                    ui.label("Summary");
+                    ui.label(format!(
+                        "events processed: {}",
+                        self.report.execution.outcomes.len()
+                    ));
+                    if let Some((_, outcome)) = self.report.execution.outcomes.last() {
+                        ui.monospace(format!("{outcome:?}"));
+                    }
+                    ui.separator();
+                    ui.label("Build Log");
+                    if self.report.log_lines.is_empty() {
+                        ui.label("No build log lines.");
+                    } else {
+                        egui::ScrollArea::vertical()
+                            .id_salt("build_log")
+                            .max_height(140.0)
+                            .show(ui, |ui| {
+                                for line in &self.report.log_lines {
+                                    ui.monospace(line);
+                                }
+                            });
+                    }
 
-                ui.add_space(8.0);
-                if ui.button("Close").clicked() {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                }
-                ui.add_space(8.0);
-                if self.report.ui_state.window.close_requested {
-                    ui.label("Frontend run completed.");
-                }
-            });
+                    ui.add_space(8.0);
+                    if ui.button("Close").clicked() {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                    ui.add_space(8.0);
+                    if self.report.ui_state.window.close_requested {
+                        ui.label("Frontend run completed.");
+                    }
+                });
+        }
 
         let mut stage_rect = None;
         egui::CentralPanel::default().show(ctx, |ui| {

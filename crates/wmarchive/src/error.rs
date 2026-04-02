@@ -8,6 +8,7 @@ pub type Result<T> = core::result::Result<T, ArchiveError>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ArchiveError {
+    Io(String),
     InvalidMagic,
     UnsupportedVersion(u16),
     UnexpectedEof,
@@ -29,6 +30,7 @@ pub enum ArchiveError {
 impl fmt::Display for ArchiveError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Io(message) => write!(f, "archive i/o error: {message}"),
             Self::InvalidMagic => f.write_str("invalid archive magic"),
             Self::UnsupportedVersion(version) => {
                 write!(f, "unsupported archive version: {version}")
@@ -59,3 +61,9 @@ impl fmt::Display for ArchiveError {
 }
 
 impl std::error::Error for ArchiveError {}
+
+impl From<std::io::Error> for ArchiveError {
+    fn from(value: std::io::Error) -> Self {
+        Self::Io(value.to_string())
+    }
+}

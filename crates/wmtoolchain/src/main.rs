@@ -57,7 +57,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("=== toolchain summary ===");
     println!("package: {}", build.manifest.package_name);
-    println!("archive bytes: {}", build.archive.len());
+    println!("archive bytes: {}", build.archive_size);
     println!("entry func: {:?}", build.program.entry());
     println!("output: {}", out_path.display());
     Ok(())

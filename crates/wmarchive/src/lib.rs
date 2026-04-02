@@ -6,6 +6,7 @@ mod builder;
 mod error;
 mod manifest;
 mod security;
+mod streaming;
 mod types;
 mod unpacker;
 
@@ -14,6 +15,7 @@ pub use builder::*;
 pub use error::*;
 pub use manifest::*;
 pub use security::*;
+pub use streaming::*;
 pub use types::*;
 pub use unpacker::*;
 

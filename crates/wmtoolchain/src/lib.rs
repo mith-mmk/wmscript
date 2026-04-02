@@ -3,17 +3,18 @@
 //! Toolchain support for compiling, packaging, and running WML game scripts.
 
 use core::fmt;
+use std::io::{Read, Seek};
 
 use wmarchive::{
-    ArchiveBuilder, ArchiveError, ArchiveSection, Manifest, ManifestBuilder, ManifestResourceEntry,
-    SectionDigest, SectionKind, Version, digest_section,
+    Archive, ArchiveBuilder, ArchiveError, ArchiveSection, ArchiveStreamReader, Manifest,
+    ManifestBuilder, ManifestResourceEntry, SectionDigest, SectionKind, Version, digest_section,
 };
 use wmcompiler::{CompileError, Compiler, CompilerConfig, ModuleCatalog};
 use wmext::standard_extension_registry;
 use wmplatform::PlatformProfile;
 use wmresource::ResourceType;
 use wmruntime::{LoadedArchive, Runtime, RuntimeError, StandardExtensions};
-use wmvm::{Program as VmProgram, RunOutcome, WorkerId};
+use wmvm::{Program as VmProgram, ProgramCodecError, RunOutcome, WorkerId};
 
 /// Toolchain configuration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -51,6 +52,7 @@ pub type Result<T> = core::result::Result<T, ToolchainError>;
 pub enum ToolchainError {
     Compile(CompileError),
     Archive(ArchiveError),
+    ProgramCodec(ProgramCodecError),
     Runtime(RuntimeError),
 }
 
@@ -59,6 +61,7 @@ impl fmt::Display for ToolchainError {
         match self {
             Self::Compile(error) => write!(f, "{error}"),
             Self::Archive(error) => write!(f, "{error}"),
+            Self::ProgramCodec(error) => write!(f, "{error}"),
             Self::Runtime(error) => write!(f, "{error}"),
         }
     }
@@ -75,6 +78,12 @@ impl From<CompileError> for ToolchainError {
 impl From<ArchiveError> for ToolchainError {
     fn from(value: ArchiveError) -> Self {
         Self::Archive(value)
+    }
+}
+
+impl From<ProgramCodecError> for ToolchainError {
+    fn from(value: ProgramCodecError) -> Self {
+        Self::ProgramCodec(value)
     }
 }
 
@@ -193,6 +202,7 @@ pub struct BuildArtifact {
     pub program: VmProgram,
     pub manifest: Manifest,
     pub archive: Vec<u8>,
+    pub archive_size: usize,
 }
 
 /// Result produced by a full build and run cycle.
@@ -234,11 +244,45 @@ impl Toolchain {
             &mut catalog,
         )?;
         let manifest = self.build_manifest(project, &program)?;
-        let archive = self.build_archive(project, &manifest)?;
+        let archive = self.build_archive(project, &program, &manifest)?;
+        let archive_size = archive.len();
         Ok(BuildArtifact {
             program,
             manifest,
             archive,
+            archive_size,
+        })
+    }
+
+    pub fn load_archive(&self, bytes: &[u8]) -> Result<BuildArtifact> {
+        let archive = Archive::decode(bytes)?;
+        archive.verify_layout()?;
+        archive.verify_manifest_digests()?;
+        let manifest = archive.manifest()?.ok_or_else(|| {
+            ArchiveError::InvalidManifest("archive is missing manifest".to_owned())
+        })?;
+        let program = decode_program_from_manifest_module(&archive, &manifest)?;
+        Ok(BuildArtifact {
+            program,
+            manifest,
+            archive: bytes.to_vec(),
+            archive_size: bytes.len(),
+        })
+    }
+
+    pub fn load_archive_reader<R: Read + Seek>(&self, reader: R) -> Result<BuildArtifact> {
+        let mut archive = ArchiveStreamReader::open(reader)?;
+        archive.verify_layout()?;
+        archive.verify_manifest_digests()?;
+        let manifest = archive.manifest()?.ok_or_else(|| {
+            ArchiveError::InvalidManifest("archive is missing manifest".to_owned())
+        })?;
+        let program = decode_program_from_stream_manifest_module(&mut archive, &manifest)?;
+        Ok(BuildArtifact {
+            program,
+            manifest,
+            archive: Vec::new(),
+            archive_size: archive.data_len() as usize,
         })
     }
 
@@ -253,6 +297,48 @@ impl Toolchain {
         let outcomes = runtime.run_until_idle(self.config.step_limit);
         Ok(ExecutionReport {
             build,
+            loaded_archive,
+            worker_id,
+            outcomes,
+        })
+    }
+
+    pub fn run_archive(&self, runtime: &mut Runtime, bytes: &[u8]) -> Result<ExecutionReport> {
+        let build = self.load_archive(bytes)?;
+        let loaded_archive = runtime.load_archive(bytes)?;
+        let worker_id = runtime.spawn_program(build.program.clone())?;
+        let outcomes = runtime.run_until_idle(self.config.step_limit);
+        Ok(ExecutionReport {
+            build,
+            loaded_archive,
+            worker_id,
+            outcomes,
+        })
+    }
+
+    pub fn run_archive_reader<R: Read + Seek>(
+        &self,
+        runtime: &mut Runtime,
+        reader: R,
+    ) -> Result<ExecutionReport> {
+        let mut archive = ArchiveStreamReader::open(reader)?;
+        archive.verify_layout()?;
+        archive.verify_manifest_digests()?;
+        let manifest = archive.manifest()?.ok_or_else(|| {
+            ArchiveError::InvalidManifest("archive is missing manifest".to_owned())
+        })?;
+        let program = decode_program_from_stream_manifest_module(&mut archive, &manifest)?;
+        let archive_size = archive.data_len() as usize;
+        let loaded_archive = runtime.load_archive_reader(&mut archive)?;
+        let worker_id = runtime.spawn_program(program.clone())?;
+        let outcomes = runtime.run_until_idle(self.config.step_limit);
+        Ok(ExecutionReport {
+            build: BuildArtifact {
+                program,
+                manifest,
+                archive: Vec::new(),
+                archive_size,
+            },
             loaded_archive,
             worker_id,
             outcomes,
@@ -286,20 +372,21 @@ impl Toolchain {
             .target_platform_mask(platform_mask(self.config.platform))
             .capability_mask(u64::MAX)
             .policy_flags(if self.config.release { 1 } else { 0 })
-            .entry(1, program.entry().unwrap_or(1) as u32);
+            .entry(2, program.entry().unwrap_or(1) as u32);
 
+        let module_bytes = program.encode_binary();
         let module_digest = digest_section(
             2,
             SectionKind::Module,
             0,
-            project.source.len() as u64,
-            project.source.as_bytes(),
+            module_bytes.len() as u64,
+            &module_bytes,
         );
         builder = builder.push_section_digest(SectionDigest {
             section_id: 2,
             section_kind: SectionKind::Module,
             flags_canonical: 0,
-            unpacked_size: project.source.len() as u64,
+            unpacked_size: module_bytes.len() as u64,
             digest: module_digest,
         });
 
@@ -327,10 +414,16 @@ impl Toolchain {
         Ok(builder.build())
     }
 
-    fn build_archive(&self, project: &GameProject, manifest: &Manifest) -> Result<Vec<u8>> {
+    fn build_archive(
+        &self,
+        project: &GameProject,
+        program: &VmProgram,
+        manifest: &Manifest,
+    ) -> Result<Vec<u8>> {
         let mut builder = ArchiveBuilder::new().push_manifest(1, manifest);
+        let module_bytes = program.encode_binary();
 
-        let mut module = ArchiveSection::new(2, SectionKind::Module, project.source.as_bytes());
+        let mut module = ArchiveSection::new(2, SectionKind::Module, module_bytes);
         module.align = 16;
         module.name_hash = stable_hash64(project.script_path.as_bytes());
         builder = builder.push_section(module);
@@ -349,6 +442,41 @@ impl Toolchain {
 
         Ok(builder.build()?)
     }
+}
+
+fn decode_program_from_manifest_module(
+    archive: &Archive<'_>,
+    manifest: &Manifest,
+) -> Result<VmProgram> {
+    let section_id = module_section_id(archive.sections(), manifest);
+    let bytes = archive.section_bytes(section_id).ok_or_else(|| {
+        ArchiveError::InvalidManifest(format!("missing module section {section_id}"))
+    })?;
+    Ok(VmProgram::decode_binary(bytes)?)
+}
+
+fn decode_program_from_stream_manifest_module<R: Read + Seek>(
+    archive: &mut ArchiveStreamReader<R>,
+    manifest: &Manifest,
+) -> Result<VmProgram> {
+    let section_id = module_section_id(archive.sections(), manifest);
+    let bytes = archive.read_section(section_id)?;
+    Ok(VmProgram::decode_binary(&bytes)?)
+}
+
+fn module_section_id(sections: &[wmarchive::SectionEntry], manifest: &Manifest) -> u32 {
+    if manifest.entry_module_id != 0
+        && sections
+            .iter()
+            .any(|section| section.id == manifest.entry_module_id)
+    {
+        return manifest.entry_module_id;
+    }
+    sections
+        .iter()
+        .find(|section| matches!(section.kind, SectionKind::Module))
+        .map(|section| section.id)
+        .unwrap_or(2)
 }
 
 fn platform_mask(platform: PlatformProfile) -> u64 {
@@ -401,6 +529,7 @@ mod tests {
     use super::*;
     use wmplatform::PlatformProfile;
     use wmruntime::{Runtime, RuntimeConfig};
+    use wmvm::Value;
 
     #[test]
     fn build_project_creates_archive_and_program() {
@@ -415,7 +544,7 @@ mod tests {
             ));
 
         let build = toolchain.build_project(&project).expect("build");
-        assert!(build.archive.len() > 64);
+        assert!(build.archive_size > 64);
         assert_eq!(build.program.entry(), Some(1));
         assert_eq!(build.manifest.resource_map.len(), 1);
     }
@@ -444,5 +573,36 @@ mod tests {
             Some((_, RunOutcome::Halted { value: Some(_), .. }))
         ));
         assert!(report.loaded_archive.resources_loaded >= 1);
+    }
+
+    #[test]
+    fn run_archive_reader_executes_compiled_module_from_archive() {
+        let toolchain = Toolchain::new(ToolchainConfig::new(PlatformProfile::native()));
+        let project = GameProject::new(
+            "sample",
+            "main.wms",
+            r#"export func main() { return "archive-ok"; }"#,
+        );
+        let build = toolchain.build_project(&project).expect("build");
+        let mut runtime = Runtime::new(RuntimeConfig::new(PlatformProfile::native()));
+
+        let report = toolchain
+            .run_archive_reader(&mut runtime, std::io::Cursor::new(build.archive.clone()))
+            .expect("run archive reader");
+
+        assert_eq!(report.worker_id, 1);
+        assert_eq!(report.build.manifest.entry_module_id, 2);
+        assert_eq!(report.build.archive_size, build.archive_size);
+        assert!(report.build.archive.is_empty());
+        assert!(matches!(
+            report.outcomes.last(),
+            Some((
+                _,
+                RunOutcome::Halted {
+                    value: Some(Value::String(text)),
+                    ..
+                }
+            )) if text == "archive-ok"
+        ));
     }
 }

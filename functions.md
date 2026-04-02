@@ -54,7 +54,8 @@ The current expression grammar is intentionally small:
   - `if expr { ... } else { ... }`
   - `if expr { ... } else if expr { ... } else { ... }`
 - literals:
-  - `nil`
+  - 
+il`
   - `true`
   - `false`
   - integer literals
@@ -118,7 +119,8 @@ Current default profiles:
 
 | Profile | File system | Async I/O | GUI | Network | Web compat |
 | --- | --- | --- | --- | --- | --- |
-| `native` | yes | yes | yes | yes | no |
+| 
+ative` | yes | yes | yes | yes | no |
 | `egui` | yes | yes | yes | yes | no |
 | `wasm` | no | yes | no | no | yes |
 
@@ -132,7 +134,8 @@ Requires: `CAP_FILE_SYSTEM`
 | Function | Signature | Returns | Notes |
 | --- | --- | --- | --- |
 | `ext.fs.read` | `read(path: string)` | `string` | Reads a text file from the host file system. |
-| `ext.fs.write` | `write(path: string, contents: string)` | `nil` | Writes a text file to the host file system. |
+| `ext.fs.write` | `write(path: string, contents: string)` | 
+il` | Writes a text file to the host file system. |
 | `ext.fs.exists` | `exists(path: string)` | `bool` | Checks whether a path exists. |
 
 ### 3.2 `ext.debug`
@@ -141,7 +144,8 @@ Requires: no capability
 
 | Function | Signature | Returns | Notes |
 | --- | --- | --- | --- |
-| `ext.debug.log` | `log(value)` | `nil` | Appends a rendered value to the runtime debug log. |
+| `ext.debug.log` | `log(value)` | 
+il` | Appends a rendered value to the runtime debug log. |
 | `ext.debug.inspect` | `inspect(value)` | `string` | Returns a rendered textual representation. |
 
 ### 3.3 `ext.net`
@@ -168,7 +172,7 @@ Requires: `CAP_GUI`
 | Function | Signature | Returns | Notes |
 | --- | --- | --- | --- |
 | `ext.scene.layout` | `layout(choice_x, choice_y, choice_w, choice_h, message_x, message_y, message_w, message_h)` | `bool` | Sets the frontend scene layout used for choice and message panels. |
-| `ext.scene.reset` | `reset()` | `bool` | Restores the default scene layout. |
+| `ext.scene.reset` | `reset()` | `bool` | Restores the default scene layout and clears the active message window and recorded image draws. |
 
 ### 3.6 `ext.message`
 
@@ -187,6 +191,12 @@ Requires: `CAP_GUI`
 | `ext.message.skip` | `skip(enabled)` | `bool` | Enables or disables skip mode in the message window. |
 | `ext.message.log_clear` | `log_clear()` | `bool` | Clears only the text log/backlog while leaving the current page state untouched. |
 | `ext.message.clear` | `clear()` | `bool` | Clears the message window text, prompt, and choices. |
+| `ext.message.box_style` | `box_style(fill_r, fill_g, fill_b, fill_a, stroke_r, stroke_g, stroke_b, stroke_a)` | `bool` | Sets the message window panel fill and stroke colors. |
+| `ext.message.text_color` | `text_color(r, g, b, a)` | `bool` | Sets the body text color. |
+| `ext.message.speaker_color` | `speaker_color(r, g, b, a)` | `bool` | Sets the speaker-name color. |
+| `ext.message.accent_color` | `accent_color(r, g, b, a)` | `bool` | Sets the accent color used for headings, hints, and emphasis. |
+| `ext.message.font_size` | `font_size(body, speaker)` | `bool` | Sets the body and speaker font sizes used by the frontend message window. |
+| `ext.message.reset_style` | `reset_style()` | `bool` | Restores the default message-window style preset. |
 
 ### 3.7 `ext.image`
 
@@ -197,7 +207,7 @@ Requires: `CAP_GUI`
 | `ext.image.load` | `load(resource_id: int)` | `handle \| request_id` | Loads an image resource and returns a handle when ready. |
 | `ext.image.info` | `info(handle)` | `table` | Returns resource id, type, size, and state metadata. |
 | `ext.image.status` | `status(handle)` | `int` | Returns a numeric resource state code. |
-| `ext.image.release` | `release(handle)` | `bool` | Releases the image handle. |
+| `ext.image.release` | `release(handle)` | `bool` | Releases the image handle and removes draw calls or icon-sheet state tied to that handle. |
 | `ext.image.draw` | `draw(handle, x, y)` | `bool` | Records an image draw call for the frontend renderer. |
 | `ext.image.draw_part` | `draw_part(handle, sx, sy, sw, sh, dx, dy)` | `bool` | Records a sub-rectangle image draw call. |
 | `ext.image.draw_ext` | `draw_ext(handle, sx, sy, sw, sh, dx, dy, dw, dh, rot, alpha)` | `bool` | Records an extended image draw call with scaling and rotation. |
@@ -238,7 +248,8 @@ Requires: no capability
 | `state.save` | `save(slot: int)` | `bool` | Stores the current persistent key/value state into a slot. |
 | `state.load` | `load(slot: int)` | `bool` | Restores the persistent key/value state from a slot. |
 | `state.has` | `has(key: string)` | `bool` | Checks whether a key exists in the current state. |
-| `state.get` | `get(key: string)` | `value` | Returns the current value for a key or `nil`. |
+| `state.get` | `get(key: string)` | `value` | Returns the current value for a key or 
+il`. |
 | `state.set` | `set(key: string, value)` | `bool` | Writes a value into the current state. |
 | `state.erase` | `erase(key: string)` | `bool` | Removes a key from the current state. |
 
@@ -264,6 +275,9 @@ current execution model and are useful to know when reading the runtime code.
 - For engine-driven message windows, a practical pattern is to call
   `ext.message.choices_named(...)`, wait with `recv()`, and branch on the value
   returned by `recv()` directly.
+- Message window colors and font sizes can also be authored from script with
+  `ext.message.box_style(...)`, `text_color(...)`, `speaker_color(...)`,
+  `accent_color(...)`, `font_size(...)`, and `reset_style()`.
 - The frontend still mirrors the latest reply into `ui.last_choice`,
   `ui.last_input`, and `ui.last_reply` for compatibility with older samples.
 
@@ -278,3 +292,8 @@ See:
 - `samples/imageaudio`
 - `samples/uiimage`
 - `samples/easynovel`
+
+
+
+
+

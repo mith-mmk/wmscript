@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use crate::{AudioBackend, SharedAudioBackend, create_disabled_audio_backend};
-use wmarchive::{Archive, ArchiveError, Manifest};
+use wmarchive::{Archive, ArchiveError, ArchiveStreamReader, Manifest};
 use wmext::{ExtError, ExtValueType, ExtensionFunctionSpec, ExtensionRegistry, NamespacePolicy};
 use wmhost::{
     CAP_ASYNC_IO, CAP_FILE_SYSTEM, CAP_GUI, CAP_NETWORK, CapabilityMask, HostFunction, HostId,
@@ -15,14 +15,14 @@ use wmhost::{
 };
 use wmplatform::PlatformProfile;
 use wmresource::{
-    Handle as ResourceHandle, LoadResult, ResourceError, ResourceManager, ResourceState,
-    ResourceType,
+    Handle as ResourceHandle, LoadResult, ResourceData, ResourceError, ResourceManager,
+    ResourceState, ResourceType, decode_resource_header,
 };
-use wmui::{UiRect, UiSceneLayoutState};
+use wmui::{UiColorRgba, UiMessageWindowStyle, UiRect, UiSceneLayoutState};
 use wmverifier::{VerificationError, verify_program};
 use wmvm::{
-    HostApi, HostError, Message, Program, RunOutcome, Scheduler, Value, Vm, VmConfig, WorkerId,
-    WorkerState,
+    HostApi, HostError, Message, Program, ProgramCodecError, RunOutcome, Scheduler, Value, Vm,
+    VmConfig, WorkerId, WorkerState,
 };
 
 /// Runtime configuration shared by the wrapper.
@@ -65,6 +65,7 @@ impl RuntimeConfig {
 pub enum RuntimeError {
     Archive(ArchiveError),
     Extension(ExtError),
+    ProgramCodec(ProgramCodecError),
     Resource(ResourceError),
     Verification(VerificationError),
     Host(HostError),
@@ -75,6 +76,7 @@ impl fmt::Display for RuntimeError {
         match self {
             Self::Archive(error) => write!(f, "{error}"),
             Self::Extension(error) => write!(f, "{error}"),
+            Self::ProgramCodec(error) => write!(f, "{error}"),
             Self::Resource(error) => write!(f, "{error}"),
             Self::Verification(error) => write!(f, "{error}"),
             Self::Host(error) => write!(f, "{error}"),
@@ -93,6 +95,12 @@ impl From<ArchiveError> for RuntimeError {
 impl From<ExtError> for RuntimeError {
     fn from(value: ExtError) -> Self {
         Self::Extension(value)
+    }
+}
+
+impl From<ProgramCodecError> for RuntimeError {
+    fn from(value: ProgramCodecError) -> Self {
+        Self::ProgramCodec(value)
     }
 }
 
@@ -162,6 +170,7 @@ pub struct MessageWindowState {
     pub text_speed: f32,
     pub auto_mode: bool,
     pub skip_mode: bool,
+    pub style: UiMessageWindowStyle,
 }
 
 impl Default for MessageWindowState {
@@ -176,6 +185,7 @@ impl Default for MessageWindowState {
             text_speed: 48.0,
             auto_mode: false,
             skip_mode: false,
+            style: UiMessageWindowStyle::default(),
         }
     }
 }
@@ -435,6 +445,80 @@ impl Runtime {
         })
     }
 
+    pub fn load_archive_reader<R: std::io::Read + std::io::Seek>(
+        &mut self,
+        archive: &mut ArchiveStreamReader<R>,
+    ) -> Result<LoadedArchive, RuntimeError> {
+        archive.verify_layout()?;
+        archive.verify_manifest_digests()?;
+        let manifest = archive.manifest()?;
+        if let Some(manifest) = &manifest {
+            for entry in &manifest.resource_map {
+                self.resources
+                    .borrow_mut()
+                    .catalog_mut()
+                    .insert_name_hash(entry.name_hash, entry.resource_id);
+            }
+            self.loaded_archives.borrow_mut().push(manifest.clone());
+        }
+
+        let mut resources_loaded = 0usize;
+        let sections = archive.sections().to_vec();
+        for section in sections {
+            if !matches!(section.kind, wmarchive::SectionKind::Asset) {
+                continue;
+            }
+            let bytes = archive.read_section_entry(&section)?;
+            let header = decode_resource_header(&bytes)?;
+            let start = header.data_offset as usize;
+            let end = start
+                .checked_add(header.unpacked_size as usize)
+                .ok_or_else(|| {
+                    ResourceError::InvalidArchiveSection(format!(
+                        "asset section {} payload overflows",
+                        section.id
+                    ))
+                })?;
+            let payload = bytes.get(start..end).ok_or_else(|| {
+                ResourceError::InvalidArchiveSection(format!(
+                    "asset section {} payload missing",
+                    section.id
+                ))
+            })?;
+            let data = match header.resource_type {
+                ResourceType::Image => ResourceData::Image(payload.to_vec()),
+                ResourceType::Audio => ResourceData::Audio(payload.to_vec()),
+                ResourceType::Binary => ResourceData::Binary(payload.to_vec()),
+                ResourceType::Font => ResourceData::Font(payload.to_vec()),
+                ResourceType::Video => ResourceData::Video(payload.to_vec()),
+                ResourceType::ScriptData | ResourceType::Unknown(_) => {
+                    ResourceData::ScriptData(payload.to_vec())
+                }
+            };
+            self.resources.borrow_mut().register_ready(
+                header.resource_id,
+                data,
+                header.flags as u32,
+            )?;
+            self.resources.borrow_mut().catalog_mut().insert(
+                header.resource_id,
+                wmresource::ResourceLocation {
+                    section_id: section.id,
+                    offset: header.data_offset as u64,
+                    size: header.unpacked_size as u64,
+                    resource_type: header.resource_type,
+                    flags: header.flags,
+                },
+            )?;
+            resources_loaded += 1;
+        }
+
+        Ok(LoadedArchive {
+            manifest,
+            resources_loaded,
+        })
+    }
+
     pub fn install_fs_extension(&mut self) -> Result<FsExtension, RuntimeError> {
         let read_host_id = 100;
         let write_host_id = 101;
@@ -677,6 +761,12 @@ impl Runtime {
         let skip_host_id = 133;
         let log_clear_host_id = 159;
         let clear_host_id = 149;
+        let box_style_host_id = 162;
+        let text_color_host_id = 163;
+        let speaker_color_host_id = 164;
+        let accent_color_host_id = 165;
+        let font_size_host_id = 166;
+        let reset_style_host_id = 167;
         let message_window = self.message_window.clone();
 
         let _ = self.register_host_function(
@@ -847,6 +937,71 @@ impl Runtime {
             },
         );
 
+        let message_window = self.message_window.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(box_style_host_id, 8, 8, CAP_GUI),
+            move |args| {
+                let fill = expect_rgba_args(args, 0, "fill")?;
+                let stroke = expect_rgba_args(args, 4, "stroke")?;
+                let mut window = message_window.borrow_mut();
+                window.style.panel_fill = fill;
+                window.style.panel_stroke = stroke;
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let message_window = self.message_window.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(text_color_host_id, 4, 4, CAP_GUI),
+            move |args| {
+                let color = expect_rgba_args(args, 0, "text")?;
+                message_window.borrow_mut().style.text_color = color;
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let message_window = self.message_window.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(speaker_color_host_id, 4, 4, CAP_GUI),
+            move |args| {
+                let color = expect_rgba_args(args, 0, "speaker")?;
+                message_window.borrow_mut().style.speaker_color = color;
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let message_window = self.message_window.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(accent_color_host_id, 4, 4, CAP_GUI),
+            move |args| {
+                let color = expect_rgba_args(args, 0, "accent")?;
+                message_window.borrow_mut().style.accent_color = color;
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let message_window = self.message_window.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(font_size_host_id, 2, 2, CAP_GUI),
+            move |args| {
+                let body = expect_number_arg(args, 0, "body_font_size")? as f32;
+                let speaker = expect_number_arg(args, 1, "speaker_font_size")? as f32;
+                let mut window = message_window.borrow_mut();
+                window.style.body_font_size = body.max(8.0);
+                window.style.speaker_font_size = speaker.max(8.0);
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let message_window = self.message_window.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(reset_style_host_id, 0, 0, CAP_GUI),
+            move |_args| {
+                message_window.borrow_mut().style = UiMessageWindowStyle::default();
+                Ok(Value::Bool(true))
+            },
+        );
+
         let ids = self.extensions.register_extension(
             "ext.message",
             &[
@@ -872,6 +1027,18 @@ impl Runtime {
                     .with_return_type(ExtValueType::Bool),
                 ExtensionFunctionSpec::new("clear", clear_host_id, 0, 0, CAP_GUI)
                     .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("box_style", box_style_host_id, 8, 8, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("text_color", text_color_host_id, 4, 4, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("speaker_color", speaker_color_host_id, 4, 4, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("accent_color", accent_color_host_id, 4, 4, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("font_size", font_size_host_id, 2, 2, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("reset_style", reset_style_host_id, 0, 0, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
             ],
         )?;
 
@@ -887,6 +1054,12 @@ impl Runtime {
             skip_ext_id: ids[8],
             log_clear_ext_id: ids[9],
             clear_ext_id: ids[10],
+            box_style_ext_id: ids[11],
+            text_color_ext_id: ids[12],
+            speaker_color_ext_id: ids[13],
+            accent_color_ext_id: ids[14],
+            font_size_ext_id: ids[15],
+            reset_style_ext_id: ids[16],
             show_host_id,
             append_host_id,
             choices_host_id,
@@ -898,9 +1071,14 @@ impl Runtime {
             skip_host_id,
             log_clear_host_id,
             clear_host_id,
+            box_style_host_id,
+            text_color_host_id,
+            speaker_color_host_id,
+            accent_color_host_id,
+            font_size_host_id,
+            reset_style_host_id,
         })
     }
-
     pub fn install_scene_extension(&mut self) -> Result<SceneExtension, RuntimeError> {
         let layout_host_id = 180;
         let reset_host_id = 181;
@@ -927,10 +1105,16 @@ impl Runtime {
         );
 
         let scene_layout = self.scene_layout.clone();
+        let image_draws = self.image_draws.clone();
+        let icon_sheets = self.icon_sheets.clone();
+        let message_window = self.message_window.clone();
         let _ = self.register_host_function(
             HostFunction::new(reset_host_id, 0, 0, CAP_GUI),
             move |_args| {
                 *scene_layout.borrow_mut() = UiSceneLayoutState::default();
+                image_draws.borrow_mut().clear();
+                icon_sheets.borrow_mut().clear();
+                *message_window.borrow_mut() = MessageWindowState::default();
                 Ok(Value::Bool(true))
             },
         );
@@ -964,7 +1148,6 @@ impl Runtime {
         let set_icon_sheet_host_id = 147;
         let draw_icon_host_id = 148;
         let resources = self.resources.clone();
-        let image_draws = self.image_draws.clone();
 
         let _ = self.register_host_function(
             HostFunction::new(load_host_id, 1, 1, CAP_GUI),
@@ -1042,10 +1225,16 @@ impl Runtime {
         );
 
         let resources = self.resources.clone();
+        let image_draws = self.image_draws.clone();
+        let icon_sheets = self.icon_sheets.clone();
         let _ = self.register_host_function(
             HostFunction::new(release_host_id, 1, 1, CAP_GUI),
             move |args| {
                 let handle = ResourceHandle::from(expect_handle_arg(args, 0, "handle")?);
+                image_draws
+                    .borrow_mut()
+                    .retain(|draw| draw.handle != handle.raw());
+                icon_sheets.borrow_mut().remove(&handle.raw());
                 resources
                     .borrow_mut()
                     .release(handle)
@@ -1055,6 +1244,7 @@ impl Runtime {
         );
 
         let resources = self.resources.clone();
+        let image_draws = self.image_draws.clone();
         let _ = self.register_host_function(
             HostFunction::new(draw_host_id, 3, 3, CAP_GUI),
             move |args| {
@@ -1712,6 +1902,65 @@ impl Runtime {
         self.state_manager.borrow_mut().set(key.into(), value);
     }
 
+    pub fn save_checkpoint(&self, slot: u32) {
+        self.checkpoints.borrow_mut().insert(
+            slot,
+            RuntimeCheckpoint {
+                scheduler: self.scheduler.borrow().snapshot(),
+                resources: self.resources.borrow().clone(),
+                loaded_archives: self.loaded_archives.borrow().clone(),
+                image_draws: self.image_draws.borrow().clone(),
+                icon_sheets: self.icon_sheets.borrow().clone(),
+                scene_layout: self.scene_layout.borrow().clone(),
+                message_window: self.message_window.borrow().clone(),
+                debug_log: self.debug_log.borrow().clone(),
+                audio_states: self.audio_states.borrow().clone(),
+                state_manager: self.state_manager.borrow().clone(),
+            },
+        );
+    }
+
+    pub fn load_checkpoint(&self, slot: u32) -> Result<bool, RuntimeError> {
+        let Some(checkpoint) = self.checkpoints.borrow().get(&slot).cloned() else {
+            return Ok(false);
+        };
+        *self.scheduler.borrow_mut() = Scheduler::from_snapshot(checkpoint.scheduler, |_| {
+            Box::new(SharedHostApi::new(self.host.clone()))
+        });
+        *self.resources.borrow_mut() = checkpoint.resources;
+        *self.loaded_archives.borrow_mut() = checkpoint.loaded_archives;
+        *self.image_draws.borrow_mut() = checkpoint.image_draws;
+        *self.icon_sheets.borrow_mut() = checkpoint.icon_sheets;
+        *self.scene_layout.borrow_mut() = checkpoint.scene_layout;
+        *self.message_window.borrow_mut() = checkpoint.message_window;
+        *self.debug_log.borrow_mut() = checkpoint.debug_log;
+        *self.audio_states.borrow_mut() = checkpoint.audio_states;
+        *self.state_manager.borrow_mut() = checkpoint.state_manager;
+        {
+            let backend = self.audio_backend.clone();
+            backend.clear()?;
+            let replay_states = self
+                .audio_states
+                .borrow()
+                .iter()
+                .filter(|(_, state)| state.playing)
+                .map(|(handle, state)| (*handle, state.clone()))
+                .collect::<Vec<_>>();
+            for (handle, state) in replay_states {
+                let bytes = audio_bytes_for_resource_id(&self.resources, state.resource_id)?;
+                backend.play(
+                    handle,
+                    state.resource_id,
+                    &bytes,
+                    state.looped,
+                    state.position_ms,
+                    state.volume,
+                )?;
+            }
+        }
+        Ok(true)
+    }
+
     pub fn audio_playback_states(&self) -> BTreeMap<u64, AudioPlaybackState> {
         self.audio_states.borrow().clone()
     }
@@ -1822,6 +2071,12 @@ pub struct MessageExtension {
     pub skip_ext_id: u32,
     pub log_clear_ext_id: u32,
     pub clear_ext_id: u32,
+    pub box_style_ext_id: u32,
+    pub text_color_ext_id: u32,
+    pub speaker_color_ext_id: u32,
+    pub accent_color_ext_id: u32,
+    pub font_size_ext_id: u32,
+    pub reset_style_ext_id: u32,
     pub show_host_id: HostId,
     pub append_host_id: HostId,
     pub choices_host_id: HostId,
@@ -1833,6 +2088,12 @@ pub struct MessageExtension {
     pub skip_host_id: HostId,
     pub log_clear_host_id: HostId,
     pub clear_host_id: HostId,
+    pub box_style_host_id: HostId,
+    pub text_color_host_id: HostId,
+    pub speaker_color_host_id: HostId,
+    pub accent_color_host_id: HostId,
+    pub font_size_host_id: HostId,
+    pub reset_style_host_id: HostId,
 }
 
 /// Stable ids assigned to the built-in scene extension.
@@ -2071,6 +2332,33 @@ fn expect_bool_arg(args: &[Value], index: usize, name: &'static str) -> Result<b
             "missing required argument {name} at index {index}"
         ))),
     }
+}
+
+fn expect_color_component_arg(args: &[Value], index: usize, name: &str) -> Result<u8, HostError> {
+    let value = match args.get(index) {
+        Some(Value::Integer(value)) => *value as f64,
+        Some(Value::Float(value)) => *value,
+        Some(found) => {
+            return Err(HostError::InvalidArguments(format!(
+                "expected {name} argument {index} to be a number, found {found:?}"
+            )));
+        }
+        None => {
+            return Err(HostError::InvalidArguments(format!(
+                "missing required argument {name} at index {index}"
+            )));
+        }
+    };
+    Ok(value.round().clamp(0.0, 255.0) as u8)
+}
+
+fn expect_rgba_args(args: &[Value], start: usize, name: &str) -> Result<UiColorRgba, HostError> {
+    Ok(UiColorRgba::new(
+        expect_color_component_arg(args, start, &format!("{name}_r"))?,
+        expect_color_component_arg(args, start + 1, &format!("{name}_g"))?,
+        expect_color_component_arg(args, start + 2, &format!("{name}_b"))?,
+        expect_color_component_arg(args, start + 3, &format!("{name}_a"))?,
+    ))
 }
 
 fn expect_handle_arg(args: &[Value], index: usize, name: &'static str) -> Result<u64, HostError> {
@@ -2588,6 +2876,42 @@ mod tests {
         );
         assert_eq!(
             runtime
+                .extension_registry()
+                .resolve_id("ext.message.box_style"),
+            Ok(extension.box_style_ext_id)
+        );
+        assert_eq!(
+            runtime
+                .extension_registry()
+                .resolve_id("ext.message.text_color"),
+            Ok(extension.text_color_ext_id)
+        );
+        assert_eq!(
+            runtime
+                .extension_registry()
+                .resolve_id("ext.message.speaker_color"),
+            Ok(extension.speaker_color_ext_id)
+        );
+        assert_eq!(
+            runtime
+                .extension_registry()
+                .resolve_id("ext.message.accent_color"),
+            Ok(extension.accent_color_ext_id)
+        );
+        assert_eq!(
+            runtime
+                .extension_registry()
+                .resolve_id("ext.message.font_size"),
+            Ok(extension.font_size_ext_id)
+        );
+        assert_eq!(
+            runtime
+                .extension_registry()
+                .resolve_id("ext.message.reset_style"),
+            Ok(extension.reset_style_ext_id)
+        );
+        assert_eq!(
+            runtime
                 .host
                 .borrow_mut()
                 .call(extension.speed_host_id, &[Value::Float(24.0)])
@@ -2610,6 +2934,85 @@ mod tests {
                 .expect("message skip"),
             Value::Bool(true)
         );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(
+                    extension.box_style_host_id,
+                    &[
+                        Value::Integer(12),
+                        Value::Integer(18),
+                        Value::Integer(24),
+                        Value::Integer(230),
+                        Value::Integer(120),
+                        Value::Integer(180),
+                        Value::Integer(90),
+                        Value::Integer(255),
+                    ],
+                )
+                .expect("message box style"),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(
+                    extension.text_color_host_id,
+                    &[
+                        Value::Integer(240),
+                        Value::Integer(245),
+                        Value::Integer(250),
+                        Value::Integer(255),
+                    ],
+                )
+                .expect("message text color"),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(
+                    extension.speaker_color_host_id,
+                    &[
+                        Value::Integer(255),
+                        Value::Integer(232),
+                        Value::Integer(160),
+                        Value::Integer(255),
+                    ],
+                )
+                .expect("message speaker color"),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(
+                    extension.accent_color_host_id,
+                    &[
+                        Value::Integer(170),
+                        Value::Integer(220),
+                        Value::Integer(255),
+                        Value::Integer(255),
+                    ],
+                )
+                .expect("message accent color"),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(
+                    extension.font_size_host_id,
+                    &[Value::Float(19.0), Value::Float(23.0)],
+                )
+                .expect("message font size"),
+            Value::Bool(true)
+        );
         let message = runtime.message_window_state();
         assert!(message.visible);
         assert_eq!(message.speaker.as_deref(), Some("Narrator"));
@@ -2620,6 +3023,25 @@ mod tests {
         assert_eq!(message.text_speed, 24.0);
         assert!(message.auto_mode);
         assert!(!message.skip_mode);
+        assert_eq!(message.style.panel_fill, UiColorRgba::new(12, 18, 24, 230));
+        assert_eq!(
+            message.style.panel_stroke,
+            UiColorRgba::new(120, 180, 90, 255)
+        );
+        assert_eq!(
+            message.style.text_color,
+            UiColorRgba::new(240, 245, 250, 255)
+        );
+        assert_eq!(
+            message.style.speaker_color,
+            UiColorRgba::new(255, 232, 160, 255)
+        );
+        assert_eq!(
+            message.style.accent_color,
+            UiColorRgba::new(170, 220, 255, 255)
+        );
+        assert_eq!(message.style.body_font_size, 19.0);
+        assert_eq!(message.style.speaker_font_size, 23.0);
         assert_eq!(
             runtime
                 .host
@@ -2661,8 +3083,17 @@ mod tests {
         let message = runtime.message_window_state();
         assert!(message.backlog.is_empty());
         assert_eq!(message.text, "Hello world");
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(extension.reset_style_host_id, &[])
+                .expect("message style reset"),
+            Value::Bool(true)
+        );
+        let message = runtime.message_window_state();
+        assert_eq!(message.style, UiMessageWindowStyle::default());
     }
-
     #[test]
     fn runtime_installs_and_executes_scene_extension() {
         let mut runtime = Runtime::new(RuntimeConfig::new(PlatformProfile::native()));
@@ -2700,6 +3131,26 @@ mod tests {
         assert_eq!(layout.message_window.x, 18.0);
         assert_eq!(layout.message_window.height, 130.0);
 
+        runtime
+            .message_window
+            .borrow_mut()
+            .text
+            .push_str("stale message");
+        runtime.image_draws.borrow_mut().push(ImageDrawState {
+            handle: 77,
+            resource_id: 100,
+            x: 12.0,
+            y: 16.0,
+            ..ImageDrawState::default()
+        });
+        runtime.icon_sheets.borrow_mut().insert(
+            77,
+            IconSheetState {
+                cell_width: 16,
+                cell_height: 16,
+            },
+        );
+
         assert_eq!(
             runtime
                 .host
@@ -2712,6 +3163,12 @@ mod tests {
             runtime.scene_layout_state(),
             wmui::UiSceneLayoutState::default()
         );
+        assert_eq!(
+            runtime.message_window_state(),
+            MessageWindowState::default()
+        );
+        assert!(runtime.image_draws().is_empty());
+        assert!(runtime.icon_sheets.borrow().is_empty());
     }
 
     #[test]
@@ -2856,6 +3313,8 @@ mod tests {
             .call(extension.release_host_id, &[Value::Handle(handle)])
             .expect("image release");
         assert_eq!(released, Value::Bool(true));
+        assert!(runtime.image_draws().is_empty());
+        assert!(!runtime.icon_sheets.borrow().contains_key(&handle));
     }
 
     #[test]

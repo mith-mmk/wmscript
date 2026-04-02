@@ -5,6 +5,8 @@
 use core::fmt;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::io::BufReader;
+use std::path::Path;
 use std::rc::Rc;
 
 pub mod demo;
@@ -395,7 +397,7 @@ fn collect_lines(build: &BuildArtifact, execution: &ExecutionReport) -> Vec<Stri
     lines.push(format!(
         "build: {} sections, archive {} bytes",
         build.manifest.section_digests.len() + 1,
-        build.archive.len()
+        build.archive_size
     ));
     lines.push(format!(
         "loaded resources: {}",
@@ -408,6 +410,84 @@ fn collect_lines(build: &BuildArtifact, execution: &ExecutionReport) -> Vec<Stri
         lines.push(format!("final outcome: {outcome:?}"));
     }
     lines
+}
+
+fn report_ui_state(
+    platform: PlatformProfile,
+    build: &BuildArtifact,
+    execution: &ExecutionReport,
+    runtime: &Runtime,
+) -> UiState {
+    let mut state = UiState::new(platform);
+    state.window.title = format!("WML Frontend - done ({})", build.manifest.package_name);
+    state.window.theme = UiTheme::System;
+    state.window.close_requested = true;
+    state.scene.layout = runtime.scene_layout_state();
+    state.scene.message_window = to_ui_message_window_state(runtime.message_window_state());
+    if state.scene.message_window.choices.is_empty() {
+        state
+            .scene
+            .message_window
+            .choices
+            .push(UiChoice::new("close", "Close"));
+    }
+    if !state.scene.message_window.visible
+        && let Some(story_text) = final_story_text(execution)
+    {
+        state.scene.message_window.visible = true;
+        state.scene.message_window.speaker = Some(build.manifest.package_name.clone());
+        state.scene.message_window.text = story_text.clone();
+        state.scene.message_window.backlog =
+            story_text.lines().map(|line| line.to_owned()).collect();
+    }
+    state.scene.draw_calls = runtime
+        .image_draws()
+        .into_iter()
+        .map(to_ui_draw_call)
+        .collect();
+    state.scene.audio_playback = runtime
+        .audio_playback_states()
+        .into_iter()
+        .map(|(handle, playback)| (handle, to_ui_audio_state(playback)))
+        .collect();
+    for entry in runtime.resource_manager().entries() {
+        if let Some(wmresource::ResourceData::Image(bytes)) = &entry.data {
+            state.scene.images.insert(
+                UiImageSlot::Named(format!("resource/{}", entry.id)),
+                UiImageSource::new(entry.id, format!("resource/{}", entry.id), bytes.clone()),
+            );
+        }
+    }
+    state
+}
+
+pub fn run_frontend_archive_path(
+    platform: PlatformProfile,
+    archive_path: impl AsRef<Path>,
+    step_limit: usize,
+) -> Result<FrontendReport, FrontendError> {
+    let archive_path = archive_path.as_ref();
+    let toolchain = Toolchain::new(ToolchainConfig::new(platform).with_step_limit(step_limit));
+    let mut runtime =
+        Runtime::new(wmruntime::RuntimeConfig::new(platform).with_step_limit(step_limit));
+    runtime.set_audio_backend(create_default_audio_backend());
+    toolchain
+        .bootstrap_runtime(&mut runtime)
+        .map_err(ToolchainError::from)?;
+    let file = std::fs::File::open(archive_path)
+        .map_err(|error| FrontendError::Gui(format!("failed to open archive: {error}")))?;
+    let execution = toolchain.run_archive_reader(&mut runtime, BufReader::new(file))?;
+    let build = execution.build.clone();
+    let log_lines = collect_lines(&build, &execution);
+    let ui_state = report_ui_state(platform, &build, &execution, &runtime);
+    Ok(FrontendReport {
+        build,
+        execution,
+        log_lines,
+        ui_state,
+        runtime: runtime.clone(),
+        audio_backend: runtime.audio_backend_handle(),
+    })
 }
 
 fn final_story_text(execution: &ExecutionReport) -> Option<String> {
@@ -466,6 +546,7 @@ fn to_ui_message_window_state(state: RuntimeMessageWindowState) -> wmui::UiMessa
         text_speed: state.text_speed,
         auto_mode: state.auto_mode,
         skip_mode: state.skip_mode,
+        style: state.style,
     }
 }
 
@@ -505,8 +586,10 @@ pub fn run_frontend(config: FrontendConfig) -> Result<FrontendReport, FrontendEr
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+
     use wmplatform::PlatformProfile;
-    use wmtoolchain::{GameAsset, GameProject};
+    use wmtoolchain::{GameAsset, GameProject, Toolchain, ToolchainConfig};
 
     #[test]
     fn frontend_runs_game_project_end_to_end() {
@@ -536,5 +619,45 @@ export func main() {
                 .images
                 .contains_key(&UiImageSlot::Named("ui/title".to_owned()))
         );
+    }
+
+    #[test]
+    fn frontend_runs_archive_path_end_to_end() {
+        let toolchain = Toolchain::new(ToolchainConfig::new(PlatformProfile::native()));
+        let project = GameProject::new(
+            "archive-game",
+            "samples/helloworld/main.wms",
+            r#"
+export func main() {
+    return "archive report";
+}
+"#,
+        );
+        let build = toolchain
+            .build_project(&project)
+            .expect("build archive project");
+        let archive_path = std::env::temp_dir().join(format!(
+            "wmfrontend-archive-{}-{}.warc",
+            std::process::id(),
+            build.archive_size
+        ));
+        fs::write(&archive_path, &build.archive).expect("write archive");
+
+        let report = run_frontend_archive_path(PlatformProfile::native(), &archive_path, 128)
+            .expect("run archive");
+
+        let _ = fs::remove_file(&archive_path);
+        assert_eq!(report.execution.worker_id, 1);
+        assert_eq!(report.build.archive_size, build.archive_size);
+        assert!(matches!(
+            report.execution.outcomes.last(),
+            Some((
+                _,
+                RunOutcome::Halted {
+                    value: Some(Value::String(text)),
+                    ..
+                }
+            )) if text == "archive report"
+        ));
     }
 }

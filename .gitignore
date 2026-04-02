@@ -1,4 +1,4 @@
-_test*
+.test*
 .env
 releases
 target

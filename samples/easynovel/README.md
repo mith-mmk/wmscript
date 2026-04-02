@@ -7,6 +7,7 @@ message-window API.
 - the selected chapter is read from `state.get("ui.last_choice")` after `recv()`
 - each chapter pages through multiple screens with `ext.message.show(...)` and `recv()`
 - read flags live in `state.*`
+- the script customizes the message window colors and font sizes through `ext.message.*` style calls
 - already-read chapters turn on `ext.message.skip(true)` until the chapter ends
 
 Source:
@@ -18,6 +19,12 @@ export let setting = "last train platform";
 export func main() {
     ext.message.clear();
     ext.message.log_clear();
+    ext.message.reset_style();
+    ext.message.box_style(10, 16, 26, 228, 120, 188, 148, 255);
+    ext.message.text_color(244, 246, 250, 255);
+    ext.message.speaker_color(255, 232, 188, 255);
+    ext.message.accent_color(162, 224, 206, 255);
+    ext.message.font_size(20, 24);
     ext.message.speed(26);
     ext.message.auto(false);
     ext.message.choices_named(
@@ -71,3 +78,8 @@ Run examples:
 - `cargo run -p wmfrontend -- samples/easynovel/main.wms --platform egui --font noto`
 - `cargo run -p wmfrontend -- samples/easynovel/main.wms --platform native`
 - `cargo run -p wmruntime --example easynovel`
+
+
+
+
+

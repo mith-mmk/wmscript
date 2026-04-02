@@ -6,6 +6,7 @@ use wmfrontend::{
     FrontendConfig, GuiFontPreset, demo::build_engine_worker_demo_project,
     demo::build_image_audio_demo_project, demo::build_message_window_demo_project,
     demo::build_ui_image_demo_project, launch_frontend_gui, run_frontend,
+    run_frontend_archive_path,
 };
 use wmplatform::{PlatformKind, PlatformProfile};
 use wmresource::ResourceType;
@@ -20,6 +21,30 @@ fn main() {
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args = CliArgs::parse(env::args().skip(1))?;
+    let egui_mode = matches!(args.platform.kind, PlatformKind::Egui);
+    if let Some(archive_path) = &args.archive_path {
+        let mut report =
+            run_frontend_archive_path(args.platform, archive_path, args.step_limit.unwrap_or(128))?;
+        if egui_mode {
+            report = launch_frontend_gui(report, args.font)?;
+        }
+        println!("=== frontend summary ===");
+        println!("package: {}", report.build.manifest.package_name);
+        println!("archive bytes: {}", report.build.archive_size);
+        println!("worker id: {}", report.execution.worker_id);
+        println!(
+            "message window: visible={} speaker={:?}",
+            report.ui_state.scene.message_window.visible,
+            report.ui_state.scene.message_window.speaker
+        );
+        println!("images: {}", report.ui_state.scene.images.len());
+        if let Some((_, outcome)) = report.execution.outcomes.last() {
+            println!("final outcome: {outcome:?}");
+        }
+        let _ = report.audio_backend.clear();
+        return Ok(());
+    }
+
     let mut project = if let Some(demo) = &args.demo {
         match demo.as_str() {
             "uiimage" => build_ui_image_demo_project(),
@@ -62,7 +87,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut config = FrontendConfig::new(args.platform, project);
     config.step_limit = args.step_limit.unwrap_or(config.step_limit);
     config.auto_run = true;
-    let egui_mode = matches!(args.platform.kind, PlatformKind::Egui);
     let mut report = run_frontend(config)?;
     if egui_mode {
         report = launch_frontend_gui(report, args.font)?;
@@ -70,7 +94,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("=== frontend summary ===");
     println!("package: {}", report.build.manifest.package_name);
-    println!("archive bytes: {}", report.build.archive.len());
+    println!("archive bytes: {}", report.build.archive_size);
     println!("worker id: {}", report.execution.worker_id);
     println!(
         "message window: visible={} speaker={:?}",
@@ -88,6 +112,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 struct CliArgs {
     demo: Option<String>,
     script_path: Option<PathBuf>,
+    archive_path: Option<PathBuf>,
     package_name: Option<String>,
     step_limit: Option<usize>,
     platform: PlatformProfile,
@@ -99,6 +124,7 @@ impl CliArgs {
     fn parse(mut args: impl Iterator<Item = String>) -> Result<Self, Box<dyn std::error::Error>> {
         let mut demo = None;
         let mut script_path = None;
+        let mut archive_path = None;
         let mut package_name = None;
         let mut step_limit = None;
         let mut platform = PlatformProfile::native();
@@ -123,6 +149,10 @@ impl CliArgs {
                     let value = args.next().ok_or("--demo requires a value")?;
                     demo = Some(value);
                 }
+                "--archive" => {
+                    let value = args.next().ok_or("--archive requires a value")?;
+                    archive_path = Some(PathBuf::from(value));
+                }
                 "--asset" => {
                     let value = args.next().ok_or("--asset requires a value")?;
                     assets.push(parse_asset_spec(&value, ResourceType::ScriptData)?);
@@ -143,23 +173,32 @@ impl CliArgs {
                     return Err(format!("unknown option: {value}").into());
                 }
                 value => {
-                    if script_path.is_some() {
+                    if script_path.is_some() || archive_path.is_some() {
                         return Err(format!("unexpected extra positional argument: {value}").into());
                     }
-                    script_path = Some(PathBuf::from(value));
+                    let path = PathBuf::from(value);
+                    if path.extension().and_then(|ext| ext.to_str()) == Some("warc") {
+                        archive_path = Some(path);
+                    } else {
+                        script_path = Some(path);
+                    }
                 }
             }
         }
 
-        if demo.is_none() && script_path.is_none() {
-            return Err("missing script path or demo".into());
+        if demo.is_none() && script_path.is_none() && archive_path.is_none() {
+            return Err("missing script path, archive path, or demo".into());
         }
-        if demo.is_some() && script_path.is_some() {
-            return Err("demo mode does not accept a positional script path".into());
+        if demo.is_some() && (script_path.is_some() || archive_path.is_some()) {
+            return Err("demo mode does not accept a positional script or archive path".into());
+        }
+        if archive_path.is_some() && script_path.is_some() {
+            return Err("archive mode does not accept a script path".into());
         }
         Ok(Self {
             demo,
             script_path,
+            archive_path,
             package_name,
             step_limit,
             platform,
@@ -210,6 +249,6 @@ fn parse_font(value: &str) -> Result<GuiFontPreset, Box<dyn std::error::Error>> 
 
 fn print_usage() {
     eprintln!(
-        "usage: wmfrontend [--demo uiimage|image-audio|engineworker|messagewindow | <script.wms>] [--package NAME] [--step-limit N] [--platform native|wasm|egui] [--font noto|default|mono] [--asset NAME=PATH] [--image NAME=PATH]"
+        "usage: wmfrontend [--demo uiimage|image-audio|engineworker|messagewindow | <script.wms> | <archive.warc> | --archive FILE] [--package NAME] [--step-limit N] [--platform native|wasm|egui] [--font noto|default|mono] [--asset NAME=PATH] [--image NAME=PATH]"
     );
 }

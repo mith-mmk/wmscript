@@ -22,7 +22,7 @@
 - `uiimage/`
   - `samples/uiimage.png` を再現する scene layout デモ。
 - `easynovel/`
-  - 章選択、ページ送り、既読スキップを持つエンジン主導の簡易ノベルサンプル。
+  - 章選択、ページ送り、script からの message window スタイル指定、既読スキップを持つエンジン主導の簡易ノベルサンプル。
 
 ## Hello World サンプル
 
@@ -105,7 +105,7 @@ export func main() {
 
 小さな物語系スクリプトです。ビジュアルノベル風の構造を保ちつつ、
 メッセージウィンドウの進行をエンジンスクリプト側から直接制御します。
-章選択、ページ送り、既読スキップはスクリプト側が持ち、frontend は
+章選択、ページ送り、message window の見た目、既読スキップはスクリプト側が持ち、frontend は
 表示と入力返却だけを担当します。
 
 ### ソース
@@ -148,6 +148,7 @@ export func main() {
 ### 補足
 
 - `ext.message.*` と `recv()` で章選択とページ送りを行います。
+- `box_style`、`text_color`、`speaker_color`、`accent_color`、`font_size` で message window の見た目も script 側から決められます。
 - 既読フラグは `state` に保存し、再読時は `ext.message.skip(true)` に切り替えられます。
 - frontend は現在ページを表示し、選択結果を `ui.last_choice` にも反映します。
 
@@ -171,6 +172,8 @@ cargo run -p wmfrontend -- --demo uiimage --platform egui --font noto
 cargo run -p wmfrontend -- --demo image-audio --platform egui --font noto
 cargo run -p wmfrontend -- --demo engineworker --platform egui --font noto
 cargo run -p wmfrontend -- --demo messagewindow --platform egui --font noto
+cargo run -p wmtoolchain -- samples/helloworld/main.wms --out releases/helloworld-cycle.warc
+cargo run -p wmfrontend -- releases/helloworld-cycle.warc --platform native
 ```
 
 egui フロントエンドの既定フォントは、日本語表示を優先して Noto Sans 系にしています。
@@ -189,6 +192,7 @@ egui フロントエンドの既定フォントは、日本語表示を優先し
 - `--package NAME` でデモのパッケージ名を上書きできます。
 - `--platform native|wasm|egui` で実行プロファイルを選べます。
 - `--image NAME=PATH` と `--asset NAME=PATH` はファイル指定の通常モードで追加アセットを付けるためのオプションです。
+- `<archive.warc>` または `--archive FILE` を渡すと、パッケージ済み archive を直接起動できます。
 
 ## Toolchain
 
@@ -225,6 +229,13 @@ cargo run -p wmtoolchain -- samples/easynovel/main.wms --package easynovel --out
 cargo run -p wmtoolchain -- samples/easynovel/main.wms --package easynovel --out build/easynovel.warc --image ui/background=assets/background.png
 ```
 
+一周の実行例:
+
+```bash
+cargo run -p wmtoolchain -- samples/helloworld/main.wms --out releases/helloworld-cycle.warc
+cargo run -p wmfrontend -- releases/helloworld-cycle.warc --platform native
+```
+
 ## ホスト関数の例
 
 `CALL_HOST` はランタイム側で登録したホスト関数を呼び出します。
@@ -238,6 +249,8 @@ runtime.register_host_function(wmhost::HostFunction::new(1, 1, 1, 0), |args| {
 ## アーカイブとリソースの例
 
 - `Runtime::load_archive` はバンドルをランタイムに読み込みます。
+- `Runtime::load_archive_reader` と `wmarchive::ArchiveStreamReader` を使うと、
+  `.warc` 全体をメモリへ積まずに `Read + Seek` で section 単位に読めます。
 - `ResourceManager` はリソース状態とハンドルを公開します。
 - 署名付きアーカイブは `wmarchive::Archive::verify_signature` で検証できます。
 
@@ -246,3 +259,7 @@ runtime.register_host_function(wmhost::HostFunction::new(1, 1, 1, 0), |args| {
 - コンパイラは現在、WMScript の一部だけに対応しています。
 - `samples/` の各例は意図的に小さく、ランタイム例と対応しています。
 - 新しいサンプルを追加するときは、README と対応するランタイム例を同期してください。
+
+
+
+

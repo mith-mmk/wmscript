@@ -54,7 +54,8 @@ export func main() {
   - `if expr { ... } else { ... }`
   - `if expr { ... } else if expr { ... } else { ... }`
 - リテラル:
-  - `nil`
+  - 
+il`
   - `true`
   - `false`
   - 整数
@@ -118,7 +119,8 @@ export func main() {
 
 | Profile | File system | Async I/O | GUI | Network | Web compat |
 | --- | --- | --- | --- | --- | --- |
-| `native` | yes | yes | yes | yes | no |
+| 
+ative` | yes | yes | yes | yes | no |
 | `egui` | yes | yes | yes | yes | no |
 | `wasm` | no | yes | no | no | yes |
 
@@ -132,7 +134,8 @@ export func main() {
 | 関数 | シグネチャ | 戻り値 | 説明 |
 | --- | --- | --- | --- |
 | `ext.fs.read` | `read(path: string)` | `string` | ホストのファイルシステムからテキストを読み込みます。 |
-| `ext.fs.write` | `write(path: string, contents: string)` | `nil` | ホストのファイルシステムへテキストを書き込みます。 |
+| `ext.fs.write` | `write(path: string, contents: string)` | 
+il` | ホストのファイルシステムへテキストを書き込みます。 |
 | `ext.fs.exists` | `exists(path: string)` | `bool` | パスが存在するか確認します。 |
 
 ### 3.2 `ext.debug`
@@ -141,7 +144,8 @@ export func main() {
 
 | 関数 | シグネチャ | 戻り値 | 説明 |
 | --- | --- | --- | --- |
-| `ext.debug.log` | `log(value)` | `nil` | 値を整形してデバッグログへ追記します。 |
+| `ext.debug.log` | `log(value)` | 
+il` | 値を整形してデバッグログへ追記します。 |
 | `ext.debug.inspect` | `inspect(value)` | `string` | 値の文字列表現を返します。 |
 
 ### 3.3 `ext.net`
@@ -168,7 +172,7 @@ export func main() {
 | 関数 | シグネチャ | 戻り値 | 説明 |
 | --- | --- | --- | --- |
 | `ext.scene.layout` | `layout(choice_x, choice_y, choice_w, choice_h, message_x, message_y, message_w, message_h)` | `bool` | choice 窓と message 窓の配置を frontend 側に指示します。 |
-| `ext.scene.reset` | `reset()` | `bool` | 既定の scene layout に戻します。 |
+| `ext.scene.reset` | `reset()` | `bool` | 既定の scene layout に戻し、現在の message window と記録済みの画像描画状態も消去します。 |
 
 ### 3.6 `ext.message`
 
@@ -187,6 +191,12 @@ export func main() {
 | `ext.message.skip` | `skip(enabled)` | `bool` | メッセージ窓の skip モードを切り替えます。 |
 | `ext.message.log_clear` | `log_clear()` | `bool` | 現在のページ状態は維持したまま、text log / backlog だけを消去します。 |
 | `ext.message.clear` | `clear()` | `bool` | メッセージ窓の本文、プロンプト、選択肢を消去します。 |
+| `ext.message.box_style` | `box_style(fill_r, fill_g, fill_b, fill_a, stroke_r, stroke_g, stroke_b, stroke_a)` | `bool` | メッセージ窓パネルの塗り色と枠色を設定します。 |
+| `ext.message.text_color` | `text_color(r, g, b, a)` | `bool` | 本文の文字色を設定します。 |
+| `ext.message.speaker_color` | `speaker_color(r, g, b, a)` | `bool` | 話者名の文字色を設定します。 |
+| `ext.message.accent_color` | `accent_color(r, g, b, a)` | `bool` | 見出しやヒントに使うアクセント色を設定します。 |
+| `ext.message.font_size` | `font_size(body, speaker)` | `bool` | frontend のメッセージ窓で使う本文と話者名の文字サイズを設定します。 |
+| `ext.message.reset_style` | `reset_style()` | `bool` | メッセージ窓の既定スタイルに戻します。 |
 
 ### 3.7 `ext.image`
 
@@ -197,7 +207,7 @@ export func main() {
 | `ext.image.load` | `load(resource_id: int)` | `handle \| request_id` | 画像リソースを読み込み、準備済みなら handle を返します。 |
 | `ext.image.info` | `info(handle)` | `table` | resource id / type / size / state のメタデータを返します。 |
 | `ext.image.status` | `status(handle)` | `int` | 数値の resource state code を返します。 |
-| `ext.image.release` | `release(handle)` | `bool` | 画像 handle を解放します。 |
+| `ext.image.release` | `release(handle)` | `bool` | 画像 handle を解放し、その handle に紐づく描画命令と icon sheet 状態も消去します。 |
 | `ext.image.draw` | `draw(handle, x, y)` | `bool` | frontend レンダラ向けの描画命令を記録します。 |
 | `ext.image.draw_part` | `draw_part(handle, sx, sy, sw, sh, dx, dy)` | `bool` | 画像の一部分を描画する命令を記録します。 |
 | `ext.image.draw_ext` | `draw_ext(handle, sx, sy, sw, sh, dx, dy, dw, dh, rot, alpha)` | `bool` | 拡大縮小と回転つきの描画命令を記録します。 |
@@ -238,7 +248,8 @@ export func main() {
 | `state.save` | `save(slot: int)` | `bool` | 現在の永続キー値状態をスロットに保存します。 |
 | `state.load` | `load(slot: int)` | `bool` | スロットから永続キー値状態を復元します。 |
 | `state.has` | `has(key: string)` | `bool` | 現在の状態にキーが存在するか確認します。 |
-| `state.get` | `get(key: string)` | `value` | 現在のキー値を返します。存在しない場合は `nil` です。 |
+| `state.get` | `get(key: string)` | `value` | 現在のキー値を返します。存在しない場合は 
+il` です。 |
 | `state.set` | `set(key: string, value)` | `bool` | 現在の状態に値を書き込みます。 |
 | `state.erase` | `erase(key: string)` | `bool` | 現在の状態からキーを削除します。 |
 
@@ -255,7 +266,8 @@ export func main() {
 ## 5. 実用上の補足
 
 - `wmtoolchain` は現在のサブセットを archive にまとめます。
-- `wmfrontend` は `native` / `wasm` / `egui` で同じプロジェクトを実行できます。
+- `wmfrontend` は 
+ative` / `wasm` / `egui` で同じプロジェクトを実行できます。
 - `egui` フロントエンドの既定フォントは、日本語向けに Noto Sans 系です。
 - 既読フラグは `state` で管理するのが素直です。たとえば
   `read:chapter_1:0001` のようなキーを `state.set(...)` で保存し、
@@ -263,6 +275,9 @@ export func main() {
   エンジン側で制御しやすくなります。
 - エンジン主導のメッセージ窓では、`ext.message.choices_named(...)` を出し、
   `recv()` で応答を待って、その返り値をそのまま分岐に使う形が扱いやすいです。
+- メッセージ窓の色や文字サイズも、`ext.message.box_style(...)`、
+  `text_color(...)`、`speaker_color(...)`、`accent_color(...)`、
+  `font_size(...)`、`reset_style()` で script 側から決められます。
 - 互換用に、frontend は最新の応答を `ui.last_choice`、`ui.last_input`、
   `ui.last_reply` にも保存します。
 
@@ -277,3 +292,7 @@ export func main() {
 - `samples/imageaudio`
 - `samples/uiimage`
 - `samples/easynovel`
+
+
+
+

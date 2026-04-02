@@ -8,8 +8,9 @@
 　- 仕様書はSPEC/の下にあり
 　- 問題点や曖昧な仕様はissue.mdで管理
 
+# カレント
 
-
+# 実装
 0. Crate分割
     - [+] .gitignoreの整理
     - [+] Workflowの作成
@@ -353,6 +354,8 @@ Toolchain
  [+] bundle構造生成
 
  [+] manifest生成
+ [+] compile済みmoduleを archive に格納して .warc 単体起動を可能化
+ [+] streaming reader で archive を section 単位ロード可能化
 
  ネットワークダウンロードに対応するためのファイル配置の最適化
 
@@ -388,6 +391,8 @@ Toolchain
  [+] 入力
  [+] 音声再生バックエンド
  [+] auto / skip進行制御
+ [+] scene.reset で message window と描画済みゲーム画面を初期化
+ [+] image.release で解放済み handle の描画状態を除去
 
 10.3 WebGL
 
@@ -473,3 +478,4 @@ Toolchain
     - 恐らくバイナリ+外部用dll(so)の組み合わせ
     - android, iOS だと パッケージ化？
     - これ有料ライセンスにしようか(issue)
+
