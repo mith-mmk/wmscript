@@ -56,6 +56,7 @@ struct ReportApp {
     message_history_open: bool,
     debug_panel_open: bool,
     runtime_menu_open: bool,
+    active_runtime_view: RuntimeView,
     selected_checkpoint_slot: u32,
     runtime_status_line: Option<String>,
     message_reveal_chars: usize,
@@ -70,6 +71,23 @@ struct ReportApp {
 struct TextureEntry {
     texture: egui::TextureHandle,
     size: egui::Vec2,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RuntimeView {
+    Title,
+    Config,
+    SaveLoad,
+}
+
+impl RuntimeView {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Title => "Title",
+            Self::Config => "Config",
+            Self::SaveLoad => "Save / Load",
+        }
+    }
 }
 
 impl ReportApp {
@@ -93,6 +111,7 @@ impl ReportApp {
             message_history_open: false,
             debug_panel_open: false,
             runtime_menu_open: false,
+            active_runtime_view: RuntimeView::Title,
             selected_checkpoint_slot: 1,
             runtime_status_line: None,
             message_reveal_chars: 0,
@@ -310,6 +329,20 @@ impl ReportApp {
         }
     }
 
+    fn open_runtime_view(&mut self, view: RuntimeView) {
+        self.runtime_menu_open = true;
+        self.active_runtime_view = view;
+    }
+
+    fn close_runtime_view(&mut self) {
+        self.runtime_menu_open = false;
+    }
+
+    fn apply_theme(&mut self, theme: UiTheme) {
+        self.report.ui_state.window.theme = theme;
+        self.runtime_status_line = Some(format!("theme: {theme:?}"));
+    }
+
     fn sync_runtime_state(&mut self) {
         let runtime_message = self.report.runtime.message_window_state();
         self.report.ui_state.scene.message_window =
@@ -445,6 +478,169 @@ impl ReportApp {
     fn scale_scene_rect(rect: UiRect, canvas_rect: egui::Rect, scale: f32) -> egui::Rect {
         let min = canvas_rect.min + egui::vec2(rect.x * scale, rect.y * scale);
         egui::Rect::from_min_size(min, egui::vec2(rect.width * scale, rect.height * scale))
+    }
+
+    fn draw_runtime_overlay(&mut self, ctx: &egui::Context) {
+        if !self.runtime_menu_open {
+            return;
+        }
+
+        egui::Window::new(self.active_runtime_view.label())
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .collapsible(false)
+            .resizable(false)
+            .default_width(420.0)
+            .show(ctx, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    for view in [
+                        RuntimeView::Title,
+                        RuntimeView::Config,
+                        RuntimeView::SaveLoad,
+                    ] {
+                        ui.selectable_value(&mut self.active_runtime_view, view, view.label());
+                    }
+                    ui.separator();
+                    if ui.button("Close").clicked() {
+                        self.close_runtime_view();
+                    }
+                });
+                ui.separator();
+
+                match self.active_runtime_view {
+                    RuntimeView::Title => {
+                        ui.heading(&self.report.build.manifest.package_name);
+                        ui.label(format!("worker: {}", self.report.execution.worker_id));
+                        ui.label(format!("archive: {} bytes", self.report.build.archive_size));
+                        ui.add_space(8.0);
+                        ui.label("Runtime actions");
+                        ui.horizontal_wrapped(|ui| {
+                            if ui.button("Config").clicked() {
+                                self.active_runtime_view = RuntimeView::Config;
+                            }
+                            if ui.button("Save / Load").clicked() {
+                                self.active_runtime_view = RuntimeView::SaveLoad;
+                            }
+                            if ui.button("Toggle Log").clicked() {
+                                self.message_history_open = !self.message_history_open;
+                            }
+                            if ui.button("Toggle Debug").clicked() {
+                                self.debug_panel_open = !self.debug_panel_open;
+                            }
+                            if ui.button("Close Game").clicked() {
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                            }
+                        });
+                        ui.add_space(8.0);
+                        ui.label("Current message");
+                        let message = &self.report.ui_state.scene.message_window;
+                        ui.monospace(format!(
+                            "visible={} auto={} skip={} choices={} prompt={}",
+                            message.visible,
+                            message.auto_mode,
+                            message.skip_mode,
+                            message.choices.len(),
+                            message.input_prompt.is_some()
+                        ));
+                        if let Some(status) = &self.runtime_status_line {
+                            ui.separator();
+                            ui.label(status);
+                        }
+                    }
+                    RuntimeView::Config => {
+                        ui.label("Theme");
+                        ui.horizontal(|ui| {
+                            for theme in [UiTheme::System, UiTheme::Dark, UiTheme::Light] {
+                                if ui
+                                    .selectable_label(
+                                        self.report.ui_state.window.theme == theme,
+                                        format!("{theme:?}"),
+                                    )
+                                    .clicked()
+                                {
+                                    self.apply_theme(theme);
+                                }
+                            }
+                        });
+                        ui.add_space(8.0);
+                        egui::ComboBox::from_label("Font")
+                            .selected_text(self.font_preset.label())
+                            .show_ui(ui, |ui| {
+                                for preset in [
+                                    GuiFontPreset::NotoSans,
+                                    GuiFontPreset::EguiDefault,
+                                    GuiFontPreset::Monospace,
+                                ] {
+                                    ui.selectable_value(
+                                        &mut self.font_preset,
+                                        preset,
+                                        preset.label(),
+                                    );
+                                }
+                            });
+                        ui.add_space(8.0);
+                        let mut speed = self.report.ui_state.scene.message_window.text_speed;
+                        if ui
+                            .add(egui::Slider::new(&mut speed, 0.0..=120.0).text("Text Speed"))
+                            .changed()
+                        {
+                            self.report.runtime.set_message_speed(speed);
+                            self.report.ui_state.scene.message_window.text_speed = speed;
+                        }
+                        let mut auto_mode = self.report.ui_state.scene.message_window.auto_mode;
+                        if ui.checkbox(&mut auto_mode, "Auto Mode").changed() {
+                            self.report.runtime.set_message_auto_mode(auto_mode);
+                            self.report.ui_state.scene.message_window.auto_mode = auto_mode;
+                            self.auto_advance_sent = false;
+                            self.auto_advance_elapsed_seconds = 0.0;
+                        }
+                        let mut skip_mode = self.report.ui_state.scene.message_window.skip_mode;
+                        if ui.checkbox(&mut skip_mode, "Skip Mode").changed() {
+                            self.report.runtime.set_message_skip_mode(skip_mode);
+                            self.report.ui_state.scene.message_window.skip_mode = skip_mode;
+                            if skip_mode {
+                                self.message_reveal_chars = self
+                                    .report
+                                    .ui_state
+                                    .scene
+                                    .message_window
+                                    .text
+                                    .chars()
+                                    .count();
+                            }
+                            self.auto_advance_sent = false;
+                            self.auto_advance_elapsed_seconds = 0.0;
+                        }
+                        if let Some(status) = &self.runtime_status_line {
+                            ui.separator();
+                            ui.label(status);
+                        }
+                    }
+                    RuntimeView::SaveLoad => {
+                        ui.label("Checkpoint Slot");
+                        ui.add(
+                            egui::DragValue::new(&mut self.selected_checkpoint_slot).range(1..=99),
+                        );
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            if ui.button("Save").clicked() {
+                                self.save_runtime_slot();
+                            }
+                            if ui.button("Load").clicked() {
+                                self.load_runtime_slot();
+                            }
+                        });
+                        ui.add_space(8.0);
+                        ui.label("Save stores an in-memory runtime checkpoint.");
+                        ui.label(
+                            "Load restores VM, scene, resource, and audio state from that slot.",
+                        );
+                        if let Some(status) = &self.runtime_status_line {
+                            ui.separator();
+                            ui.label(status);
+                        }
+                    }
+                }
+            });
     }
 
     fn draw_scene_overlays(&mut self, ctx: &egui::Context, stage_rect: egui::Rect) {
@@ -753,7 +949,11 @@ impl eframe::App for ReportApp {
         )));
 
         if ctx.input(|input| input.key_pressed(egui::Key::Escape)) {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            if self.runtime_menu_open {
+                self.close_runtime_view();
+            } else {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
         }
         if ctx.input(|input| input.key_pressed(egui::Key::Space)) {
             if !self.advance_message() {
@@ -780,15 +980,14 @@ impl eframe::App for ReportApp {
         egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.heading("WMS Runtime");
-                if ui
-                    .button(if self.runtime_menu_open {
-                        "Hide Menu"
-                    } else {
-                        "Menu"
-                    })
-                    .clicked()
-                {
-                    self.runtime_menu_open = !self.runtime_menu_open;
+                if ui.button("Title").clicked() {
+                    self.open_runtime_view(RuntimeView::Title);
+                }
+                if ui.button("Config").clicked() {
+                    self.open_runtime_view(RuntimeView::Config);
+                }
+                if ui.button("Save / Load").clicked() {
+                    self.open_runtime_view(RuntimeView::SaveLoad);
                 }
                 if ui
                     .selectable_label(self.message_history_open, "Log")
@@ -831,39 +1030,8 @@ impl eframe::App for ReportApp {
                     ui.label(status);
                 }
             });
-            if self.runtime_menu_open {
-                ui.separator();
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(format!(
-                        "package: {}",
-                        self.report.build.manifest.package_name
-                    ));
-                    ui.label(format!("worker: {}", self.report.execution.worker_id));
-                    ui.label(format!("archive: {} bytes", self.report.build.archive_size));
-                    ui.separator();
-                    ui.label("Slot");
-                    ui.add(egui::DragValue::new(&mut self.selected_checkpoint_slot).range(1..=99));
-                    if ui.button("Save").clicked() {
-                        self.save_runtime_slot();
-                    }
-                    if ui.button("Load").clicked() {
-                        self.load_runtime_slot();
-                    }
-                    ui.separator();
-                    egui::ComboBox::from_label("Font")
-                        .selected_text(self.font_preset.label())
-                        .show_ui(ui, |ui| {
-                            for preset in [
-                                GuiFontPreset::NotoSans,
-                                GuiFontPreset::EguiDefault,
-                                GuiFontPreset::Monospace,
-                            ] {
-                                ui.selectable_value(&mut self.font_preset, preset, preset.label());
-                            }
-                        });
-                });
-            }
         });
+        self.draw_runtime_overlay(ctx);
 
         if self.debug_panel_open {
             egui::SidePanel::right("debug")
