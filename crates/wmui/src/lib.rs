@@ -367,15 +367,20 @@ pub struct UiSceneState {
 pub struct UiSceneLayoutState {
     pub reference_size: UiSize,
     pub choice_panel: UiRect,
+    pub choice_panel_z: i32,
     pub message_window: UiRect,
+    pub message_window_z: i32,
+    pub input_panel_z: i32,
 }
-
 impl Default for UiSceneLayoutState {
     fn default() -> Self {
         Self {
             reference_size: UiSize::new(1280.0, 720.0),
             choice_panel: UiRect::new(270.0, 124.0, 560.0, 210.0),
+            choice_panel_z: 10,
             message_window: UiRect::new(20.0, 502.0, 1240.0, 184.0),
+            message_window_z: 30,
+            input_panel_z: 20,
         }
     }
 }

@@ -554,6 +554,29 @@ impl ReportApp {
         egui::Rect::from_min_size(min, egui::vec2(rect.width * scale, rect.height * scale))
     }
 
+    fn scene_overlay_orders(
+        layout: &UiSceneLayoutState,
+    ) -> (egui::Order, egui::Order, egui::Order) {
+        let mut layers = [
+            (layout.choice_panel_z, 0usize),
+            (layout.input_panel_z, 1usize),
+            (layout.message_window_z, 2usize),
+        ];
+        layers.sort_by_key(|(z, index)| (*z, *index));
+
+        let mut orders = [egui::Order::Middle; 3];
+        let ranked_orders = [
+            egui::Order::Middle,
+            egui::Order::Foreground,
+            egui::Order::Debug,
+        ];
+        for (rank, (_, index)) in layers.into_iter().enumerate() {
+            orders[index] = ranked_orders[rank];
+        }
+
+        (orders[0], orders[1], orders[2])
+    }
+
     fn draw_runtime_overlay(&mut self, ctx: &egui::Context) {
         if !self.runtime_menu_open {
             return;
@@ -564,6 +587,7 @@ impl ReportApp {
             .collapsible(false)
             .resizable(false)
             .default_width(420.0)
+            .order(egui::Order::Debug)
             .show(ctx, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     for view in [
@@ -739,7 +763,7 @@ impl ReportApp {
         }
 
         egui::Area::new(egui::Id::new("runtime_hud"))
-            .order(egui::Order::Foreground)
+            .order(egui::Order::Debug)
             .anchor(egui::Align2::LEFT_TOP, egui::vec2(14.0, 14.0))
             .show(ctx, |ui| {
                 let label = chips.join("   ");
@@ -804,10 +828,12 @@ impl ReportApp {
         let body_text_size = style.body_font_size * scale.max(0.75);
         let speaker_text_size = style.speaker_font_size * scale.max(0.75);
 
+        let (choice_order, input_order, message_order) = Self::scene_overlay_orders(&layout);
+
         let choice_rect = Self::scale_scene_rect(layout.choice_panel, canvas_rect, scale);
         if visible && !choices.is_empty() {
             egui::Area::new(egui::Id::new("choice_panel"))
-                .order(egui::Order::Foreground)
+                .order(choice_order)
                 .fixed_pos(choice_rect.min)
                 .show(ctx, |ui| {
                     let (panel_rect, _) =
@@ -909,9 +935,86 @@ impl ReportApp {
                 });
         }
         let message_rect = Self::scale_scene_rect(layout.message_window, canvas_rect, scale);
+        let input_rect = input_prompt.as_ref().map(|_| {
+            let width =
+                (canvas_rect.width() * 0.44).clamp(420.0 * scale.max(0.75), 680.0 * scale.max(0.9));
+            let height = 86.0 * scale.max(0.78);
+            let x = canvas_rect.center().x - (width * 0.5);
+            let y = (message_rect.min.y - height - 18.0 * scale.max(0.75))
+                .max(canvas_rect.min.y + 16.0 * scale.max(0.75));
+            egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(width, height))
+        });
+        if let (true, Some(prompt), Some(input_rect)) =
+            (visible, input_prompt.as_deref(), input_rect)
+        {
+            egui::Area::new(egui::Id::new("message_input_window"))
+                .order(input_order)
+                .fixed_pos(input_rect.min)
+                .show(ctx, |ui| {
+                    let (panel_rect, _) =
+                        ui.allocate_exact_size(input_rect.size(), egui::Sense::hover());
+                    let painter = ui.painter_at(panel_rect);
+                    painter.rect_filled(
+                        panel_rect.translate(egui::vec2(0.0, 10.0 * scale.max(0.75))),
+                        14.0 * scale.max(0.75),
+                        egui::Color32::from_rgba_premultiplied(0, 0, 0, 54),
+                    );
+                    painter.rect_filled(
+                        panel_rect,
+                        14.0 * scale.max(0.75),
+                        panel_fill.gamma_multiply(0.88),
+                    );
+                    painter.rect_stroke(
+                        panel_rect,
+                        14.0 * scale.max(0.75),
+                        egui::Stroke::new(
+                            (1.6 * scale).max(1.0),
+                            accent_color.gamma_multiply(0.75),
+                        ),
+                        egui::StrokeKind::Inside,
+                    );
+                    let content_rect = egui::Rect::from_min_max(
+                        panel_rect.min + egui::vec2(18.0 * scale.max(0.75), 12.0 * scale.max(0.75)),
+                        panel_rect.max - egui::vec2(18.0 * scale.max(0.75), 12.0 * scale.max(0.75)),
+                    );
+                    ui.allocate_ui_at_rect(content_rect, |ui| {
+                        ui.set_clip_rect(content_rect);
+                        ui.label(
+                            egui::RichText::new(prompt)
+                                .size((body_text_size - 1.0).max(13.0))
+                                .color(accent_color),
+                        );
+                        ui.add_space(8.0 * scale.max(0.75));
+                        let response = ui.add_sized(
+                            [content_rect.width().max(1.0), 32.0 * scale.max(0.75)],
+                            egui::TextEdit::singleline(&mut self.player_input)
+                                .hint_text("Enter to send")
+                                .frame(false),
+                        );
+                        let response_rect = response.rect.expand2(egui::vec2(8.0, 6.0));
+                        let response_painter = ui.painter_at(response_rect);
+                        response_painter.rect_filled(
+                            response_rect,
+                            8.0 * scale.max(0.75),
+                            egui::Color32::from_rgba_premultiplied(8, 14, 24, 208),
+                        );
+                        response_painter.rect_stroke(
+                            response_rect,
+                            8.0 * scale.max(0.75),
+                            egui::Stroke::new(1.0, accent_color.gamma_multiply(0.65)),
+                            egui::StrokeKind::Inside,
+                        );
+                        if response.lost_focus()
+                            && ui.input(|input| input.key_pressed(egui::Key::Enter))
+                        {
+                            self.submit_player_input();
+                        }
+                    });
+                });
+        }
         if visible {
             egui::Area::new(egui::Id::new("message_window"))
-                .order(egui::Order::Foreground)
+                .order(message_order)
                 .fixed_pos(message_rect.min)
                 .show(ctx, |ui| {
                     let (frame_rect, _) =
@@ -1042,42 +1145,6 @@ impl ReportApp {
                                     }
                                 }
                             });
-
-                        if let Some(prompt) = input_prompt.as_deref() {
-                            ui.add_space(10.0 * scale);
-                            ui.label(
-                                egui::RichText::new(prompt)
-                                    .size((body_text_size - 2.0).max(12.0))
-                                    .color(accent_color),
-                            );
-                            let response = ui.add_sized(
-                                [
-                                    inner_rect.width().min(message_rect.width() * 0.72),
-                                    32.0 * scale.max(0.75),
-                                ],
-                                egui::TextEdit::singleline(&mut self.player_input)
-                                    .hint_text("Enter to send")
-                                    .frame(false),
-                            );
-                            let response_rect = response.rect.expand2(egui::vec2(8.0, 6.0));
-                            let response_painter = ui.painter_at(response_rect);
-                            response_painter.rect_filled(
-                                response_rect,
-                                8.0 * scale.max(0.75),
-                                panel_fill.gamma_multiply(0.72),
-                            );
-                            response_painter.rect_stroke(
-                                response_rect,
-                                8.0 * scale.max(0.75),
-                                egui::Stroke::new(1.0, accent_color.gamma_multiply(0.65)),
-                                egui::StrokeKind::Inside,
-                            );
-                            if response.lost_focus()
-                                && ui.input(|input| input.key_pressed(egui::Key::Enter))
-                            {
-                                self.submit_player_input();
-                            }
-                        }
 
                         ui.add_space(10.0 * scale);
                         ui.horizontal_wrapped(|ui| {
@@ -1212,9 +1279,6 @@ impl eframe::App for ReportApp {
             self.debug_panel_open = !self.debug_panel_open;
         }
         self.update_message_reveal(ctx);
-
-        self.draw_runtime_overlay(ctx);
-        self.draw_runtime_hud(ctx);
 
         if self.debug_panel_open {
             egui::SidePanel::right("debug")
@@ -1362,6 +1426,9 @@ impl eframe::App for ReportApp {
         if let Some(stage_rect) = stage_rect {
             self.draw_scene_overlays(ctx, stage_rect);
         }
+
+        self.draw_runtime_hud(ctx);
+        self.draw_runtime_overlay(ctx);
 
         if self.auto_close && !self.close_sent {
             self.close_sent = true;
