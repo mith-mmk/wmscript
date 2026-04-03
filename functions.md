@@ -197,6 +197,10 @@ Requires: `CAP_GUI`
 | `ext.message.accent_color` | `accent_color(r, g, b, a)` | `bool` | Sets the accent color used for headings, hints, and emphasis. |
 | `ext.message.font_size` | `font_size(body, speaker)` | `bool` | Sets the body and speaker font sizes used by the frontend message window. |
 | `ext.message.reset_style` | `reset_style()` | `bool` | Restores the default message-window style preset. |`r`n| `ext.message.frame` | `frame()` or `frame(resource_id)` | `bool` | Sets or clears the image resource used as the message-window frame. |`r`n| `ext.message.content_inset` | `content_inset(left, top, right, bottom)` | `bool` | Sets the inner text region inset from the outer frame image. |
+| `ext.message.input_box_style` | `input_box_style(fill_r, fill_g, fill_b, fill_a, stroke_r, stroke_g, stroke_b, stroke_a)` | `bool` | Sets the player-input panel fill and stroke colors. |
+| `ext.message.input_text_color` | `input_text_color(r, g, b, a)` | `bool` | Sets the typed-text color used by the player input field. |
+| `ext.message.input_hint_color` | `input_hint_color(r, g, b, a)` | `bool` | Sets the placeholder hint color used by the player input field. |
+| `ext.message.input_prompt_color` | `input_prompt_color(r, g, b, a)` | `bool` | Sets the prompt label color shown above the player input field. |
 
 ### 3.7 `ext.image`
 

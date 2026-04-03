@@ -404,6 +404,14 @@ pub fn standard_extension_registry() -> Result<ExtensionRegistry> {
                 .with_return_type(ExtValueType::Bool),
             ExtensionFunctionSpec::new("content_inset", 169, 4, 4, CAP_GUI)
                 .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("input_box_style", 170, 8, 8, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("input_text_color", 171, 4, 4, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("input_hint_color", 172, 4, 4, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("input_prompt_color", 173, 4, 4, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
         ],
     )?;
     registry.register_extension(

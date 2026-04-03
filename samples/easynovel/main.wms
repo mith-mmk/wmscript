@@ -11,6 +11,10 @@ export func main() {
     ext.message.text_color(236, 244, 250, 255);
     ext.message.speaker_color(240, 250, 255, 255);
     ext.message.accent_color(140, 214, 234, 255);
+    ext.message.input_box_style(12, 20, 34, 236, 124, 198, 228, 210);
+    ext.message.input_text_color(244, 250, 255, 255);
+    ext.message.input_hint_color(150, 182, 204, 228);
+    ext.message.input_prompt_color(164, 226, 244, 255);
     ext.message.font_size(22, 24);
     ext.message.speed(26);
     ext.message.auto(false);

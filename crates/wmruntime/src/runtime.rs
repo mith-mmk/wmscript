@@ -769,6 +769,10 @@ impl Runtime {
         let reset_style_host_id = 167;
         let frame_host_id = 168;
         let content_inset_host_id = 169;
+        let input_box_style_host_id = 170;
+        let input_text_color_host_id = 171;
+        let input_hint_color_host_id = 172;
+        let input_prompt_color_host_id = 173;
         let message_window = self.message_window.clone();
 
         let _ = self.register_host_function(
@@ -1073,6 +1077,38 @@ impl Runtime {
                     .with_return_type(ExtValueType::Bool),
                 ExtensionFunctionSpec::new("content_inset", content_inset_host_id, 4, 4, CAP_GUI)
                     .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new(
+                    "input_box_style",
+                    input_box_style_host_id,
+                    8,
+                    8,
+                    CAP_GUI,
+                )
+                .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new(
+                    "input_text_color",
+                    input_text_color_host_id,
+                    4,
+                    4,
+                    CAP_GUI,
+                )
+                .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new(
+                    "input_hint_color",
+                    input_hint_color_host_id,
+                    4,
+                    4,
+                    CAP_GUI,
+                )
+                .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new(
+                    "input_prompt_color",
+                    input_prompt_color_host_id,
+                    4,
+                    4,
+                    CAP_GUI,
+                )
+                .with_return_type(ExtValueType::Bool),
             ],
         )?;
 
@@ -1096,6 +1132,10 @@ impl Runtime {
             reset_style_ext_id: ids[16],
             frame_ext_id: ids[17],
             content_inset_ext_id: ids[18],
+            input_box_style_ext_id: ids[19],
+            input_text_color_ext_id: ids[20],
+            input_hint_color_ext_id: ids[21],
+            input_prompt_color_ext_id: ids[22],
             show_host_id,
             append_host_id,
             choices_host_id,
@@ -1115,6 +1155,10 @@ impl Runtime {
             reset_style_host_id,
             frame_host_id,
             content_inset_host_id,
+            input_box_style_host_id,
+            input_text_color_host_id,
+            input_hint_color_host_id,
+            input_prompt_color_host_id,
         })
     }
     pub fn install_scene_extension(&mut self) -> Result<SceneExtension, RuntimeError> {
@@ -2129,6 +2173,10 @@ pub struct MessageExtension {
     pub reset_style_ext_id: u32,
     pub frame_ext_id: u32,
     pub content_inset_ext_id: u32,
+    pub input_box_style_ext_id: u32,
+    pub input_text_color_ext_id: u32,
+    pub input_hint_color_ext_id: u32,
+    pub input_prompt_color_ext_id: u32,
     pub show_host_id: HostId,
     pub append_host_id: HostId,
     pub choices_host_id: HostId,
@@ -2148,6 +2196,10 @@ pub struct MessageExtension {
     pub reset_style_host_id: HostId,
     pub frame_host_id: HostId,
     pub content_inset_host_id: HostId,
+    pub input_box_style_host_id: HostId,
+    pub input_text_color_host_id: HostId,
+    pub input_hint_color_host_id: HostId,
+    pub input_prompt_color_host_id: HostId,
 }
 
 /// Stable ids assigned to the built-in scene extension.

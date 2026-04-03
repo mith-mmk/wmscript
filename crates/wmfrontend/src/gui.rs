@@ -857,6 +857,11 @@ impl ReportApp {
         let text_color = Self::egui_color(style.text_color);
         let speaker_color = Self::egui_color(style.speaker_color);
         let accent_color = Self::egui_color(style.accent_color);
+        let input_panel_fill = Self::egui_color(style.input_panel_fill);
+        let input_panel_stroke = Self::egui_color(style.input_panel_stroke);
+        let input_text_color = Self::egui_color(style.input_text_color);
+        let input_hint_color = Self::egui_color(style.input_hint_color);
+        let input_prompt_color = Self::egui_color(style.input_prompt_color);
         let (canvas_rect, scale) = Self::scene_canvas_rect(stage_rect, &layout);
         let body_text_size = style.body_font_size * scale.max(0.75);
         let speaker_text_size = style.speaker_font_size * scale.max(0.75);
@@ -992,18 +997,11 @@ impl ReportApp {
                         14.0 * scale.max(0.75),
                         egui::Color32::from_rgba_premultiplied(0, 0, 0, 54),
                     );
-                    painter.rect_filled(
-                        panel_rect,
-                        14.0 * scale.max(0.75),
-                        panel_fill.gamma_multiply(0.88),
-                    );
+                    painter.rect_filled(panel_rect, 14.0 * scale.max(0.75), input_panel_fill);
                     painter.rect_stroke(
                         panel_rect,
                         14.0 * scale.max(0.75),
-                        egui::Stroke::new(
-                            (1.6 * scale).max(1.0),
-                            accent_color.gamma_multiply(0.75),
-                        ),
+                        egui::Stroke::new((1.6 * scale).max(1.0), input_panel_stroke),
                         egui::StrokeKind::Inside,
                     );
                     let content_rect = egui::Rect::from_min_max(
@@ -1015,15 +1013,30 @@ impl ReportApp {
                         ui.label(
                             egui::RichText::new(prompt)
                                 .size((body_text_size - 1.0).max(13.0))
-                                .color(accent_color),
+                                .color(input_prompt_color),
                         );
                         ui.add_space(8.0 * scale.max(0.75));
-                        let response = ui.add_sized(
-                            [content_rect.width().max(1.0), 32.0 * scale.max(0.75)],
-                            egui::TextEdit::singleline(&mut self.player_input)
-                                .hint_text("Enter to send")
-                                .frame(false),
-                        );
+                        let response = ui
+                            .scope(|ui| {
+                                ui.visuals_mut().override_text_color = Some(input_text_color);
+                                ui.visuals_mut().widgets.inactive.fg_stroke.color =
+                                    input_text_color;
+                                ui.visuals_mut().widgets.hovered.fg_stroke.color = input_text_color;
+                                ui.visuals_mut().widgets.active.fg_stroke.color = input_text_color;
+                                ui.visuals_mut().widgets.noninteractive.fg_stroke.color =
+                                    input_text_color;
+                                ui.add_sized(
+                                    [content_rect.width().max(1.0), 32.0 * scale.max(0.75)],
+                                    egui::TextEdit::singleline(&mut self.player_input)
+                                        .hint_text(
+                                            egui::RichText::new("Enter to send")
+                                                .color(input_hint_color),
+                                        )
+                                        .text_color(input_text_color)
+                                        .frame(false),
+                                )
+                            })
+                            .inner;
                         let response_rect = response.rect.expand2(egui::vec2(8.0, 6.0));
                         let response_painter = ui.painter_at(response_rect);
                         response_painter.rect_filled(
@@ -1034,7 +1047,7 @@ impl ReportApp {
                         response_painter.rect_stroke(
                             response_rect,
                             8.0 * scale.max(0.75),
-                            egui::Stroke::new(1.0, accent_color.gamma_multiply(0.65)),
+                            egui::Stroke::new(1.0, input_panel_stroke),
                             egui::StrokeKind::Inside,
                         );
                         if response.lost_focus()
