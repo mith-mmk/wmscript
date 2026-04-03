@@ -361,6 +361,33 @@ impl ReportApp {
         }
     }
 
+    fn restart_from_beginning(&mut self) {
+        match self.report.runtime.load_checkpoint(0) {
+            Ok(true) => {
+                self.report.execution.outcomes = self.report.runtime.run_until_idle(8);
+                self.sync_runtime_state();
+                self.reset_message_progress();
+                self.selected_choice = self
+                    .report
+                    .ui_state
+                    .scene
+                    .message_window
+                    .choices
+                    .iter()
+                    .find(|choice| choice.enabled)
+                    .map(|choice| choice.id.clone());
+                self.player_input.clear();
+                self.runtime_status_line = Some("restarted from beginning".to_owned());
+            }
+            Ok(false) => {
+                self.runtime_status_line = Some("restart point is not available".to_owned());
+            }
+            Err(error) => {
+                self.runtime_status_line = Some(format!("restart failed: {error}"));
+            }
+        }
+    }
+
     fn open_runtime_view(&mut self, view: RuntimeView) {
         self.runtime_menu_open = true;
         self.active_runtime_view = view;
@@ -618,6 +645,9 @@ impl ReportApp {
                             if ui.button("Save / Load").clicked() {
                                 self.active_runtime_view = RuntimeView::SaveLoad;
                             }
+                            if ui.button("Restart").clicked() {
+                                self.restart_from_beginning();
+                            }
                             if ui.button("Toggle Log").clicked() {
                                 self.message_history_open = !self.message_history_open;
                             }
@@ -725,6 +755,9 @@ impl ReportApp {
                             }
                             if ui.button("Load").clicked() {
                                 self.load_runtime_slot();
+                            }
+                            if ui.button("Restart").clicked() {
+                                self.restart_from_beginning();
                             }
                         });
                         ui.add_space(8.0);
@@ -1277,6 +1310,9 @@ impl eframe::App for ReportApp {
         }
         if shortcut_keys_enabled && ctx.input(|input| input.key_pressed(egui::Key::D)) {
             self.debug_panel_open = !self.debug_panel_open;
+        }
+        if shortcut_keys_enabled && ctx.input(|input| input.key_pressed(egui::Key::R)) {
+            self.restart_from_beginning();
         }
         self.update_message_reveal(ctx);
 

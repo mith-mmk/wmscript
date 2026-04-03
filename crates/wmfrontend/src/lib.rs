@@ -370,9 +370,6 @@ impl UiApp for FrontendApp {
                     "WML Frontend - done ({})",
                     self.config.project.package_name
                 ));
-                if ctx.state().scene.message_window.choices.is_empty() {
-                    ctx.set_message_choices(vec![UiChoice::new("close", "Close")]);
-                }
                 ctx.close_window();
                 *self.report_slot.borrow_mut() = Some(FrontendReport {
                     build,
@@ -424,13 +421,6 @@ fn report_ui_state(
     state.window.close_requested = true;
     state.scene.layout = runtime.scene_layout_state();
     state.scene.message_window = to_ui_message_window_state(runtime.message_window_state());
-    if state.scene.message_window.choices.is_empty() {
-        state
-            .scene
-            .message_window
-            .choices
-            .push(UiChoice::new("close", "Close"));
-    }
     if !state.scene.message_window.visible
         && let Some(story_text) = final_story_text(execution)
     {

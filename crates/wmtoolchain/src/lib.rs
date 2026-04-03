@@ -294,6 +294,7 @@ impl Toolchain {
         let build = self.build_project(project)?;
         let loaded_archive = runtime.load_archive(&build.archive)?;
         let worker_id = runtime.spawn_program(build.program.clone())?;
+        runtime.save_checkpoint(0);
         let outcomes = runtime.run_until_idle(self.config.step_limit);
         Ok(ExecutionReport {
             build,
@@ -307,6 +308,7 @@ impl Toolchain {
         let build = self.load_archive(bytes)?;
         let loaded_archive = runtime.load_archive(bytes)?;
         let worker_id = runtime.spawn_program(build.program.clone())?;
+        runtime.save_checkpoint(0);
         let outcomes = runtime.run_until_idle(self.config.step_limit);
         Ok(ExecutionReport {
             build,
@@ -331,6 +333,7 @@ impl Toolchain {
         let archive_size = archive.data_len() as usize;
         let loaded_archive = runtime.load_archive_reader(&mut archive)?;
         let worker_id = runtime.spawn_program(program.clone())?;
+        runtime.save_checkpoint(0);
         let outcomes = runtime.run_until_idle(self.config.step_limit);
         Ok(ExecutionReport {
             build: BuildArtifact {
