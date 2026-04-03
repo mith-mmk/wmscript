@@ -18,7 +18,7 @@ use wmresource::{
     Handle as ResourceHandle, LoadResult, ResourceData, ResourceError, ResourceManager,
     ResourceState, ResourceType, decode_resource_header,
 };
-use wmui::{UiColorRgba, UiMessageWindowStyle, UiRect, UiSceneLayoutState};
+use wmui::{UiColorRgba, UiInsets, UiMessageWindowStyle, UiRect, UiSceneLayoutState};
 use wmverifier::{VerificationError, verify_program};
 use wmvm::{
     HostApi, HostError, Message, Program, ProgramCodecError, RunOutcome, Scheduler, Value, Vm,
@@ -767,6 +767,8 @@ impl Runtime {
         let accent_color_host_id = 165;
         let font_size_host_id = 166;
         let reset_style_host_id = 167;
+        let frame_host_id = 168;
+        let content_inset_host_id = 169;
         let message_window = self.message_window.clone();
 
         let _ = self.register_host_function(
@@ -1002,6 +1004,34 @@ impl Runtime {
             },
         );
 
+        let message_window = self.message_window.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(frame_host_id, 0, 1, CAP_GUI),
+            move |args| {
+                let mut window = message_window.borrow_mut();
+                window.style.frame_resource_id = if args.is_empty() {
+                    None
+                } else {
+                    Some(expect_integer_arg(args, 0, "frame_resource_id")? as u32)
+                };
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let message_window = self.message_window.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(content_inset_host_id, 4, 4, CAP_GUI),
+            move |args| {
+                let left = expect_number_arg(args, 0, "left")? as f32;
+                let top = expect_number_arg(args, 1, "top")? as f32;
+                let right = expect_number_arg(args, 2, "right")? as f32;
+                let bottom = expect_number_arg(args, 3, "bottom")? as f32;
+                message_window.borrow_mut().style.content_inset =
+                    UiInsets::new(left.max(0.0), top.max(0.0), right.max(0.0), bottom.max(0.0));
+                Ok(Value::Bool(true))
+            },
+        );
+
         let ids = self.extensions.register_extension(
             "ext.message",
             &[
@@ -1039,6 +1069,10 @@ impl Runtime {
                     .with_return_type(ExtValueType::Bool),
                 ExtensionFunctionSpec::new("reset_style", reset_style_host_id, 0, 0, CAP_GUI)
                     .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("frame", frame_host_id, 0, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("content_inset", content_inset_host_id, 4, 4, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
             ],
         )?;
 
@@ -1060,6 +1094,8 @@ impl Runtime {
             accent_color_ext_id: ids[14],
             font_size_ext_id: ids[15],
             reset_style_ext_id: ids[16],
+            frame_ext_id: ids[17],
+            content_inset_ext_id: ids[18],
             show_host_id,
             append_host_id,
             choices_host_id,
@@ -1077,6 +1113,8 @@ impl Runtime {
             accent_color_host_id,
             font_size_host_id,
             reset_style_host_id,
+            frame_host_id,
+            content_inset_host_id,
         })
     }
     pub fn install_scene_extension(&mut self) -> Result<SceneExtension, RuntimeError> {
@@ -2077,6 +2115,8 @@ pub struct MessageExtension {
     pub accent_color_ext_id: u32,
     pub font_size_ext_id: u32,
     pub reset_style_ext_id: u32,
+    pub frame_ext_id: u32,
+    pub content_inset_ext_id: u32,
     pub show_host_id: HostId,
     pub append_host_id: HostId,
     pub choices_host_id: HostId,
@@ -2094,6 +2134,8 @@ pub struct MessageExtension {
     pub accent_color_host_id: HostId,
     pub font_size_host_id: HostId,
     pub reset_style_host_id: HostId,
+    pub frame_host_id: HostId,
+    pub content_inset_host_id: HostId,
 }
 
 /// Stable ids assigned to the built-in scene extension.

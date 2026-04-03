@@ -163,7 +163,7 @@ cargo run -p wmruntime --example input_link
 cargo run -p wmruntime --example worker_comm
 cargo run -p wmruntime --example asset_load
 cargo run -p wmruntime --example easynovel
-cargo run -p wmfrontend -- samples/easynovel/main.wms --platform egui --font noto
+cargo run -p wmfrontend -- samples/easynovel/main.wms --platform egui --font noto --image ui/message_frame=samples/easynovel/message_frame.png
 cargo run -p wmfrontend -- samples/messagewindow/main.wms --platform egui --font noto
 cargo run -p wmfrontend -- --demo uiimage --platform egui --font noto
 cargo run -p wmfrontend -- --demo image-audio --platform egui --font noto
@@ -189,6 +189,7 @@ available under `wasm`, while `state.*` and `ext.vm.*` remain portable.
 - `--package NAME` overrides the demo package name.
 - `--platform native|wasm|egui` selects the runtime/backend profile.
 - `--image NAME=PATH` and `--asset NAME=PATH` attach extra resources in file-backed mode.
+- The `easynovel` sample includes `samples/easynovel/message_frame.png`; pass it with `--image ui/message_frame=...` so `ext.message.frame(100)` resolves to a real texture.
 - Passing `<archive.warc>` or `--archive FILE` launches a packaged archive directly.
 
 ## Toolchain
@@ -257,4 +258,5 @@ runtime.register_host_function(wmhost::HostFunction::new(1, 1, 1, 0), |args| {
 - The compiler currently handles a limited subset of WMScript.
 - The examples in `samples/` are intentionally small and map to the runtime examples.
 - When adding a new sample, keep its README and the corresponding runtime example in sync.
+
 

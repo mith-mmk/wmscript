@@ -196,7 +196,7 @@ Requires: `CAP_GUI`
 | `ext.message.speaker_color` | `speaker_color(r, g, b, a)` | `bool` | Sets the speaker-name color. |
 | `ext.message.accent_color` | `accent_color(r, g, b, a)` | `bool` | Sets the accent color used for headings, hints, and emphasis. |
 | `ext.message.font_size` | `font_size(body, speaker)` | `bool` | Sets the body and speaker font sizes used by the frontend message window. |
-| `ext.message.reset_style` | `reset_style()` | `bool` | Restores the default message-window style preset. |
+| `ext.message.reset_style` | `reset_style()` | `bool` | Restores the default message-window style preset. |`r`n| `ext.message.frame` | `frame()` or `frame(resource_id)` | `bool` | Sets or clears the image resource used as the message-window frame. |`r`n| `ext.message.content_inset` | `content_inset(left, top, right, bottom)` | `bool` | Sets the inner text region inset from the outer frame image. |
 
 ### 3.7 `ext.image`
 
@@ -292,6 +292,7 @@ See:
 - `samples/imageaudio`
 - `samples/uiimage`
 - `samples/easynovel`
+
 
 
 

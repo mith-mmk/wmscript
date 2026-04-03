@@ -271,6 +271,25 @@ impl Default for UiColorRgba {
     }
 }
 
+/// Insets from the outer message window frame into the content region.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct UiInsets {
+    pub left: f32,
+    pub top: f32,
+    pub right: f32,
+    pub bottom: f32,
+}
+
+impl UiInsets {
+    pub const fn new(left: f32, top: f32, right: f32, bottom: f32) -> Self {
+        Self {
+            left,
+            top,
+            right,
+            bottom,
+        }
+    }
+}
 /// Style used by the message window and related runtime UI panels.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct UiMessageWindowStyle {
@@ -281,6 +300,8 @@ pub struct UiMessageWindowStyle {
     pub accent_color: UiColorRgba,
     pub body_font_size: f32,
     pub speaker_font_size: f32,
+    pub frame_resource_id: Option<u32>,
+    pub content_inset: UiInsets,
 }
 
 impl Default for UiMessageWindowStyle {
@@ -293,6 +314,8 @@ impl Default for UiMessageWindowStyle {
             accent_color: UiColorRgba::new(180, 220, 180, 255),
             body_font_size: 18.0,
             speaker_font_size: 20.0,
+            frame_resource_id: None,
+            content_inset: UiInsets::new(18.0, 16.0, 18.0, 14.0),
         }
     }
 }
@@ -351,8 +374,8 @@ impl Default for UiSceneLayoutState {
     fn default() -> Self {
         Self {
             reference_size: UiSize::new(1280.0, 720.0),
-            choice_panel: UiRect::new(240.0, 80.0, 560.0, 200.0),
-            message_window: UiRect::new(18.0, 380.0, 1244.0, 130.0),
+            choice_panel: UiRect::new(270.0, 124.0, 560.0, 210.0),
+            message_window: UiRect::new(20.0, 502.0, 1240.0, 184.0),
         }
     }
 }

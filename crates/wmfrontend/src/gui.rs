@@ -236,6 +236,38 @@ impl ReportApp {
         self.send_user_reply(Value::String(choice.id.clone()));
     }
 
+    fn selected_or_first_choice(&self) -> Option<UiChoice> {
+        let choices = &self.report.ui_state.scene.message_window.choices;
+        if let Some(selected) = self.selected_choice.as_deref()
+            && let Some(choice) = choices
+                .iter()
+                .find(|choice| choice.enabled && choice.id == selected)
+        {
+            return Some(choice.clone());
+        }
+        choices.iter().find(|choice| choice.enabled).cloned()
+    }
+
+    fn select_adjacent_choice(&mut self, delta: i32) {
+        let choices = &self.report.ui_state.scene.message_window.choices;
+        let enabled = choices
+            .iter()
+            .filter(|choice| choice.enabled)
+            .cloned()
+            .collect::<Vec<_>>();
+        if enabled.is_empty() {
+            self.selected_choice = None;
+            return;
+        }
+        let current_index = self
+            .selected_choice
+            .as_deref()
+            .and_then(|selected| enabled.iter().position(|choice| choice.id == selected))
+            .unwrap_or(0) as i32;
+        let next_index = (current_index + delta).rem_euclid(enabled.len() as i32) as usize;
+        self.selected_choice = Some(enabled[next_index].id.clone());
+    }
+
     fn submit_player_input(&mut self) {
         let text = self.player_input.trim().to_owned();
         if text.is_empty() {
@@ -343,6 +375,38 @@ impl ReportApp {
         self.runtime_status_line = Some(format!("theme: {theme:?}"));
     }
 
+    fn toggle_message_history(&mut self) {
+        self.message_history_open = !self.message_history_open;
+    }
+
+    fn toggle_auto_mode(&mut self) {
+        let enabled = !self.report.ui_state.scene.message_window.auto_mode;
+        self.report.runtime.set_message_auto_mode(enabled);
+        self.report.ui_state.scene.message_window.auto_mode = enabled;
+        self.auto_advance_sent = false;
+        self.auto_advance_elapsed_seconds = 0.0;
+        self.runtime_status_line = Some(format!("auto: {}", if enabled { "on" } else { "off" }));
+    }
+
+    fn toggle_skip_mode(&mut self) {
+        let enabled = !self.report.ui_state.scene.message_window.skip_mode;
+        self.report.runtime.set_message_skip_mode(enabled);
+        self.report.ui_state.scene.message_window.skip_mode = enabled;
+        if enabled {
+            self.message_reveal_chars = self
+                .report
+                .ui_state
+                .scene
+                .message_window
+                .text
+                .chars()
+                .count();
+        }
+        self.auto_advance_sent = false;
+        self.auto_advance_elapsed_seconds = 0.0;
+        self.runtime_status_line = Some(format!("skip: {}", if enabled { "on" } else { "off" }));
+    }
+
     fn sync_runtime_state(&mut self) {
         let runtime_message = self.report.runtime.message_window_state();
         self.report.ui_state.scene.message_window =
@@ -364,6 +428,16 @@ impl ReportApp {
             .collect::<BTreeMap<_, _>>();
         if self.report.ui_state.scene.message_window.choices.is_empty() {
             self.selected_choice = None;
+        } else if self.selected_choice.is_none() {
+            self.selected_choice = self
+                .report
+                .ui_state
+                .scene
+                .message_window
+                .choices
+                .iter()
+                .find(|choice| choice.enabled)
+                .map(|choice| choice.id.clone());
         }
     }
 
@@ -643,6 +717,63 @@ impl ReportApp {
             });
     }
 
+    fn draw_runtime_hud(&mut self, ctx: &egui::Context) {
+        let mut chips = Vec::new();
+        if self.report.ui_state.scene.message_window.auto_mode {
+            chips.push("AUTO".to_owned());
+        }
+        if self.report.ui_state.scene.message_window.skip_mode {
+            chips.push("SKIP".to_owned());
+        }
+        if self.message_history_open {
+            chips.push("LOG".to_owned());
+        }
+        if self.debug_panel_open {
+            chips.push("DEBUG".to_owned());
+        }
+        if let Some(status) = &self.runtime_status_line {
+            chips.push(status.clone());
+        }
+        if chips.is_empty() {
+            chips.push("M MENU".to_owned());
+        }
+
+        egui::Area::new(egui::Id::new("runtime_hud"))
+            .order(egui::Order::Foreground)
+            .anchor(egui::Align2::LEFT_TOP, egui::vec2(14.0, 14.0))
+            .show(ctx, |ui| {
+                let label = chips.join("   ");
+                let font = egui::FontId::proportional(13.0);
+                let galley = ui.painter().layout_no_wrap(
+                    label.clone(),
+                    font.clone(),
+                    egui::Color32::from_rgba_premultiplied(218, 234, 244, 220),
+                );
+                let size = galley.size() + egui::vec2(22.0, 12.0);
+                let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+                let painter = ui.painter_at(rect);
+                painter.rect_filled(
+                    rect,
+                    10.0,
+                    egui::Color32::from_rgba_premultiplied(6, 10, 18, 164),
+                );
+                painter.rect_stroke(
+                    rect,
+                    10.0,
+                    egui::Stroke::new(
+                        1.0,
+                        egui::Color32::from_rgba_premultiplied(84, 164, 202, 150),
+                    ),
+                    egui::StrokeKind::Inside,
+                );
+                painter.galley(
+                    rect.min + egui::vec2(11.0, 6.0),
+                    galley,
+                    egui::Color32::WHITE,
+                );
+            });
+    }
+
     fn draw_scene_overlays(&mut self, ctx: &egui::Context, stage_rect: egui::Rect) {
         let layout = self.report.ui_state.scene.layout.clone();
         let message = self.report.ui_state.scene.message_window.clone();
@@ -679,233 +810,326 @@ impl ReportApp {
                 .order(egui::Order::Foreground)
                 .fixed_pos(choice_rect.min)
                 .show(ctx, |ui| {
-                    ui.set_min_size(choice_rect.size());
-                    egui::Frame::NONE
-                        .fill(panel_fill)
-                        .stroke(egui::Stroke::new((2.0 * scale).max(1.0), panel_stroke))
-                        .show(ui, |ui| {
-                            ui.add_space(10.0 * scale);
-                            ui.label(
-                                egui::RichText::new("Choices")
-                                    .size(speaker_text_size)
-                                    .color(accent_color),
+                    let (panel_rect, _) =
+                        ui.allocate_exact_size(choice_rect.size(), egui::Sense::hover());
+                    let painter = ui.painter_at(panel_rect);
+                    let shadow_offset = 10.0 * scale.max(0.75);
+                    painter.rect_filled(
+                        panel_rect.translate(egui::vec2(0.0, shadow_offset)),
+                        18.0 * scale.max(0.75),
+                        egui::Color32::from_rgba_premultiplied(0, 0, 0, 52),
+                    );
+                    painter.rect_filled(
+                        panel_rect,
+                        18.0 * scale.max(0.75),
+                        panel_fill.gamma_multiply(0.92),
+                    );
+                    painter.rect_stroke(
+                        panel_rect,
+                        18.0 * scale.max(0.75),
+                        egui::Stroke::new(
+                            (2.0 * scale).max(1.0),
+                            panel_stroke.gamma_multiply(0.95),
+                        ),
+                        egui::StrokeKind::Inside,
+                    );
+                    painter.line_segment(
+                        [
+                            panel_rect.left_top()
+                                + egui::vec2(28.0 * scale.max(0.75), 18.0 * scale.max(0.75)),
+                            panel_rect.right_top()
+                                - egui::vec2(28.0 * scale.max(0.75), -18.0 * scale.max(0.75)),
+                        ],
+                        egui::Stroke::new((1.5 * scale).max(1.0), accent_color.gamma_multiply(0.8)),
+                    );
+                    painter.text(
+                        panel_rect.left_top()
+                            + egui::vec2(26.0 * scale.max(0.75), 18.0 * scale.max(0.75)),
+                        egui::Align2::LEFT_TOP,
+                        "SELECTION",
+                        egui::FontId::proportional((14.0 * scale).max(11.0)),
+                        accent_color,
+                    );
+
+                    let content_rect = egui::Rect::from_min_max(
+                        panel_rect.min + egui::vec2(28.0 * scale.max(0.75), 50.0 * scale.max(0.75)),
+                        panel_rect.max - egui::vec2(28.0 * scale.max(0.75), 24.0 * scale.max(0.75)),
+                    );
+                    ui.allocate_ui_at_rect(content_rect, |ui| {
+                        ui.set_clip_rect(content_rect);
+                        let row_height = 38.0 * scale.max(0.82);
+                        for choice in &choices {
+                            let (row_rect, response) = ui.allocate_exact_size(
+                                egui::vec2(ui.available_width().max(1.0), row_height),
+                                egui::Sense::click(),
                             );
-                            ui.add_space(8.0 * scale);
-                            for choice in &choices {
-                                let selected = self
-                                    .selected_choice
-                                    .as_deref()
-                                    .is_some_and(|selected| selected == choice.id);
-                                let button = egui::Button::new(
-                                    egui::RichText::new(choice.label.clone())
-                                        .size(body_text_size)
-                                        .color(text_color),
-                                )
-                                .fill(panel_fill.gamma_multiply(0.45))
-                                .stroke(egui::Stroke::new(
-                                    1.0,
-                                    if selected {
-                                        accent_color
-                                    } else {
-                                        panel_stroke.gamma_multiply(0.6)
-                                    },
-                                ))
-                                .selected(selected);
-                                if ui.add_enabled(choice.enabled, button).clicked() {
-                                    self.apply_choice(choice);
-                                }
-                                ui.add_space(4.0 * scale.max(0.75));
+                            let selected = self
+                                .selected_choice
+                                .as_deref()
+                                .is_some_and(|selected| selected == choice.id);
+                            let row_painter = ui.painter_at(row_rect);
+                            if selected {
+                                row_painter.rect_filled(
+                                    row_rect,
+                                    10.0 * scale.max(0.75),
+                                    accent_color.gamma_multiply(0.16),
+                                );
+                                row_painter.rect_stroke(
+                                    row_rect,
+                                    10.0 * scale.max(0.75),
+                                    egui::Stroke::new(1.0, accent_color.gamma_multiply(0.75)),
+                                    egui::StrokeKind::Inside,
+                                );
                             }
-                        });
+                            let label_color = if choice.enabled {
+                                text_color
+                            } else {
+                                text_color.gamma_multiply(0.35)
+                            };
+                            row_painter.text(
+                                row_rect.left_center() + egui::vec2(18.0 * scale.max(0.75), 0.0),
+                                egui::Align2::LEFT_CENTER,
+                                if selected { "▸" } else { "  " },
+                                egui::FontId::proportional((20.0 * scale).max(14.0)),
+                                accent_color,
+                            );
+                            row_painter.text(
+                                row_rect.left_center() + egui::vec2(42.0 * scale.max(0.75), 0.0),
+                                egui::Align2::LEFT_CENTER,
+                                &choice.label,
+                                egui::FontId::proportional(body_text_size),
+                                label_color,
+                            );
+                            if response.clicked() && choice.enabled {
+                                self.apply_choice(choice);
+                            }
+                            ui.add_space(6.0 * scale.max(0.75));
+                        }
+                    });
                 });
         }
-
         let message_rect = Self::scale_scene_rect(layout.message_window, canvas_rect, scale);
         if visible {
             egui::Area::new(egui::Id::new("message_window"))
                 .order(egui::Order::Foreground)
                 .fixed_pos(message_rect.min)
                 .show(ctx, |ui| {
-                    ui.set_min_size(message_rect.size());
-                    let frame_response = egui::Frame::NONE
-                        .fill(panel_fill)
-                        .stroke(egui::Stroke::new((2.0 * scale).max(1.0), panel_stroke))
-                        .show(ui, |ui| {
-                            ui.add_space(10.0 * scale);
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    egui::RichText::new(&speaker)
-                                        .size(speaker_text_size)
-                                        .color(speaker_color)
-                                        .strong(),
-                                );
-                            });
-                            ui.add_space(6.0 * scale);
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    egui::RichText::new("Speed")
-                                        .size(14.0 * scale.max(0.75))
-                                        .color(text_color),
-                                );
-                                let mut speed =
-                                    self.report.ui_state.scene.message_window.text_speed;
-                                if ui
-                                    .add_sized(
-                                        [message_rect.width() * 0.35, 18.0 * scale.max(0.75)],
-                                        egui::Slider::new(&mut speed, 0.0..=120.0).show_value(true),
-                                    )
-                                    .changed()
-                                {
-                                    self.report.runtime.set_message_speed(speed);
-                                    self.report.ui_state.scene.message_window.text_speed = speed;
-                                }
-                                let mut auto_mode =
-                                    self.report.ui_state.scene.message_window.auto_mode;
-                                if ui.checkbox(&mut auto_mode, "Auto").changed() {
-                                    self.report.runtime.set_message_auto_mode(auto_mode);
-                                    self.report.ui_state.scene.message_window.auto_mode = auto_mode;
-                                    self.auto_advance_sent = false;
-                                    self.auto_advance_elapsed_seconds = 0.0;
-                                }
-                                let mut skip_mode =
-                                    self.report.ui_state.scene.message_window.skip_mode;
-                                if ui.checkbox(&mut skip_mode, "Skip").changed() {
-                                    self.report.runtime.set_message_skip_mode(skip_mode);
-                                    self.report.ui_state.scene.message_window.skip_mode = skip_mode;
-                                    if skip_mode {
-                                        self.message_reveal_chars = message.text.chars().count();
-                                    }
-                                    self.auto_advance_sent = false;
-                                    self.auto_advance_elapsed_seconds = 0.0;
-                                }
-                            });
-                            ui.separator();
-                            egui::ScrollArea::vertical()
-                                .id_salt("message_window_text")
-                                .max_height(message_rect.height() * 0.55)
-                                .show(ui, |ui| {
-                                    if text_lines.is_empty() {
+                    let (frame_rect, _) =
+                        ui.allocate_exact_size(message_rect.size(), egui::Sense::hover());
+                    let painter = ui.painter_at(frame_rect);
+                    let shadow_offset = 14.0 * scale.max(0.75);
+                    painter.rect_filled(
+                        frame_rect.translate(egui::vec2(0.0, shadow_offset)),
+                        18.0 * scale.max(0.75),
+                        egui::Color32::from_rgba_premultiplied(0, 0, 0, 68),
+                    );
+                    if let Some(frame_resource_id) = message.style.frame_resource_id {
+                        if let Some(texture_entry) =
+                            self.textures_by_resource_id.get(&frame_resource_id)
+                        {
+                            painter.image(
+                                texture_entry.texture.id(),
+                                frame_rect,
+                                egui::Rect::from_min_max(
+                                    egui::pos2(0.0, 0.0),
+                                    egui::pos2(1.0, 1.0),
+                                ),
+                                egui::Color32::WHITE,
+                            );
+                        } else {
+                            painter.rect_filled(
+                                frame_rect,
+                                16.0 * scale.max(0.75),
+                                panel_fill.gamma_multiply(0.92),
+                            );
+                            painter.rect_stroke(
+                                frame_rect,
+                                16.0 * scale.max(0.75),
+                                egui::Stroke::new((2.0 * scale).max(1.0), panel_stroke),
+                                egui::StrokeKind::Inside,
+                            );
+                        }
+                    } else {
+                        painter.rect_filled(
+                            frame_rect,
+                            16.0 * scale.max(0.75),
+                            panel_fill.gamma_multiply(0.92),
+                        );
+                        painter.rect_stroke(
+                            frame_rect,
+                            16.0 * scale.max(0.75),
+                            egui::Stroke::new((2.0 * scale).max(1.0), panel_stroke),
+                            egui::StrokeKind::Inside,
+                        );
+                        painter.line_segment(
+                            [
+                                frame_rect.left_top()
+                                    + egui::vec2(34.0 * scale.max(0.75), 18.0 * scale.max(0.75)),
+                                frame_rect.right_top()
+                                    - egui::vec2(34.0 * scale.max(0.75), -18.0 * scale.max(0.75)),
+                            ],
+                            egui::Stroke::new(
+                                (1.5 * scale).max(1.0),
+                                accent_color.gamma_multiply(0.75),
+                            ),
+                        );
+                    }
+
+                    let inset = message.style.content_inset;
+                    let left = (inset.left * scale.max(0.75)).min(frame_rect.width() * 0.45);
+                    let right = (inset.right * scale.max(0.75)).min(frame_rect.width() * 0.45);
+                    let top = (inset.top * scale.max(0.75)).min(frame_rect.height() * 0.45);
+                    let bottom = (inset.bottom * scale.max(0.75)).min(frame_rect.height() * 0.45);
+                    let inner_rect = egui::Rect::from_min_max(
+                        frame_rect.min + egui::vec2(left, top),
+                        frame_rect.max - egui::vec2(right, bottom),
+                    );
+                    ui.allocate_ui_at_rect(inner_rect, |ui| {
+                        ui.set_clip_rect(inner_rect);
+
+                        let badge_height = 28.0 * scale.max(0.8);
+                        let speaker_width =
+                            ((speaker.chars().count() as f32 * speaker_text_size * 0.7)
+                                + 30.0 * scale.max(0.75))
+                            .clamp(96.0 * scale.max(0.75), inner_rect.width() * 0.55);
+                        let (speaker_rect, _) = ui.allocate_exact_size(
+                            egui::vec2(speaker_width, badge_height),
+                            egui::Sense::hover(),
+                        );
+                        let speaker_painter = ui.painter_at(speaker_rect);
+                        speaker_painter.rect_filled(
+                            speaker_rect,
+                            8.0 * scale.max(0.75),
+                            accent_color.gamma_multiply(0.14),
+                        );
+                        speaker_painter.rect_stroke(
+                            speaker_rect,
+                            8.0 * scale.max(0.75),
+                            egui::Stroke::new(1.0, accent_color.gamma_multiply(0.75)),
+                            egui::StrokeKind::Inside,
+                        );
+                        speaker_painter.text(
+                            speaker_rect.left_center() + egui::vec2(14.0 * scale.max(0.75), 0.0),
+                            egui::Align2::LEFT_CENTER,
+                            &speaker,
+                            egui::FontId::proportional(speaker_text_size),
+                            speaker_color,
+                        );
+                        ui.add_space(10.0 * scale);
+
+                        let text_area_height = if self.message_history_open && !backlog.is_empty() {
+                            message_rect.height() * 0.28
+                        } else {
+                            message_rect.height() * 0.44
+                        };
+                        egui::ScrollArea::vertical()
+                            .id_salt("message_window_text")
+                            .max_height(text_area_height)
+                            .show(ui, |ui| {
+                                if text_lines.is_empty() {
+                                    ui.label(
+                                        egui::RichText::new("...")
+                                            .size(body_text_size)
+                                            .color(text_color.gamma_multiply(0.7)),
+                                    );
+                                } else {
+                                    for line in &text_lines {
                                         ui.label(
-                                            egui::RichText::new("...")
+                                            egui::RichText::new(line)
                                                 .size(body_text_size)
                                                 .color(text_color),
                                         );
-                                    } else {
-                                        for line in &text_lines {
-                                            ui.label(
-                                                egui::RichText::new(line)
-                                                    .size(body_text_size)
-                                                    .color(text_color),
-                                            );
-                                        }
                                     }
-                                });
-
-                            if let Some(prompt) = input_prompt.as_deref() {
-                                ui.add_space(8.0 * scale);
-                                ui.separator();
-                                ui.label(
-                                    egui::RichText::new(prompt)
-                                        .size((body_text_size - 2.0).max(12.0))
-                                        .color(accent_color),
-                                );
-                                ui.horizontal(|ui| {
-                                    let response = ui.add_sized(
-                                        [message_rect.width() * 0.55, 28.0 * scale.max(0.75)],
-                                        egui::TextEdit::singleline(&mut self.player_input)
-                                            .hint_text("Type a line and press Enter"),
-                                    );
-                                    let enter_pressed = response.lost_focus()
-                                        && ui.input(|input| input.key_pressed(egui::Key::Enter));
-                                    if ui.button("Send").clicked() || enter_pressed {
-                                        self.submit_player_input();
-                                    }
-                                });
-                            }
-
-                            ui.add_space(6.0 * scale);
-                            ui.horizontal(|ui| {
-                                ui.checkbox(&mut self.message_history_open, "Text Log");
-                                ui.label(
-                                    egui::RichText::new(
-                                        if self.report.ui_state.scene.message_window.skip_mode {
-                                            "skip"
-                                        } else if self
-                                            .report
-                                            .ui_state
-                                            .scene
-                                            .message_window
-                                            .auto_mode
-                                        {
-                                            "auto"
-                                        } else {
-                                            "manual"
-                                        },
-                                    )
-                                    .size(13.0 * scale.max(0.75))
-                                    .color(accent_color),
-                                );
-                                if choices.is_empty() && input_prompt.is_none() {
-                                    let button_label = if self.message_reveal_chars
-                                        < message.text.chars().count()
-                                    {
-                                        "Reveal"
-                                    } else {
-                                        "Next"
-                                    };
-                                    if ui.button(button_label).clicked() {
-                                        self.advance_message();
-                                    }
-                                }
-                                if can_advance {
-                                    let hint = if self
-                                        .report
-                                        .ui_state
-                                        .scene
-                                        .message_window
-                                        .skip_mode
-                                        && reveal_complete
-                                    {
-                                        "Skip progressing..."
-                                    } else if self.report.ui_state.scene.message_window.auto_mode
-                                        && reveal_complete
-                                    {
-                                        "Auto progressing..."
-                                    } else if reveal_complete {
-                                        "Click / Enter / Next"
-                                    } else {
-                                        "Click / Enter to reveal"
-                                    };
-                                    ui.label(
-                                        egui::RichText::new(hint)
-                                            .size(13.0 * scale.max(0.75))
-                                            .color(accent_color.gamma_multiply(0.9)),
-                                    );
                                 }
                             });
-                            if self.message_history_open && !backlog.is_empty() {
-                                ui.add_space(4.0 * scale);
-                                egui::ScrollArea::vertical()
-                                    .id_salt("message_window_backlog")
-                                    .max_height(message_rect.height() * 0.22)
-                                    .show(ui, |ui| {
-                                        for (index, line) in backlog.iter().enumerate() {
-                                            ui.label(
-                                                egui::RichText::new(format!(
-                                                    "{:02}. {}",
-                                                    index + 1,
-                                                    line
-                                                ))
-                                                .size(14.0 * scale.max(0.75))
-                                                .color(text_color),
-                                            );
-                                        }
-                                    });
+
+                        if let Some(prompt) = input_prompt.as_deref() {
+                            ui.add_space(10.0 * scale);
+                            ui.label(
+                                egui::RichText::new(prompt)
+                                    .size((body_text_size - 2.0).max(12.0))
+                                    .color(accent_color),
+                            );
+                            let response = ui.add_sized(
+                                [
+                                    inner_rect.width().min(message_rect.width() * 0.72),
+                                    32.0 * scale.max(0.75),
+                                ],
+                                egui::TextEdit::singleline(&mut self.player_input)
+                                    .hint_text("Enter to send")
+                                    .frame(false),
+                            );
+                            let response_rect = response.rect.expand2(egui::vec2(8.0, 6.0));
+                            let response_painter = ui.painter_at(response_rect);
+                            response_painter.rect_filled(
+                                response_rect,
+                                8.0 * scale.max(0.75),
+                                panel_fill.gamma_multiply(0.72),
+                            );
+                            response_painter.rect_stroke(
+                                response_rect,
+                                8.0 * scale.max(0.75),
+                                egui::Stroke::new(1.0, accent_color.gamma_multiply(0.65)),
+                                egui::StrokeKind::Inside,
+                            );
+                            if response.lost_focus()
+                                && ui.input(|input| input.key_pressed(egui::Key::Enter))
+                            {
+                                self.submit_player_input();
+                            }
+                        }
+
+                        ui.add_space(10.0 * scale);
+                        ui.horizontal_wrapped(|ui| {
+                            let mut chips = Vec::new();
+                            if self.report.ui_state.scene.message_window.skip_mode {
+                                chips.push("SKIP".to_owned());
+                            } else if self.report.ui_state.scene.message_window.auto_mode {
+                                chips.push("AUTO".to_owned());
+                            } else {
+                                chips.push("MANUAL".to_owned());
+                            }
+                            if !choices.is_empty() {
+                                chips.push(format!("CHOICE {}", choices.len()));
+                            }
+                            if input_prompt.is_some() {
+                                chips.push("INPUT".to_owned());
+                            }
+                            if self.message_history_open {
+                                chips.push("LOG".to_owned());
+                            }
+                            for chip in chips {
+                                ui.label(
+                                    egui::RichText::new(chip)
+                                        .size(12.0 * scale.max(0.8))
+                                        .color(accent_color),
+                                );
                             }
                         });
+
+                        if self.message_history_open && !backlog.is_empty() {
+                            ui.add_space(8.0 * scale);
+                            egui::ScrollArea::vertical()
+                                .id_salt("message_window_backlog")
+                                .max_height(message_rect.height() * 0.18)
+                                .show(ui, |ui| {
+                                    for (index, line) in backlog.iter().enumerate() {
+                                        ui.label(
+                                            egui::RichText::new(format!(
+                                                "{:02}. {}",
+                                                index + 1,
+                                                line
+                                            ))
+                                            .size(14.0 * scale.max(0.75))
+                                            .color(text_color.gamma_multiply(0.92)),
+                                        );
+                                    }
+                                });
+                        }
+                    });
                     if can_advance {
                         let click_response = ui.interact(
-                            frame_response.response.rect,
+                            frame_rect,
                             ui.id().with("message_window_click_surface"),
                             egui::Sense::click(),
                         );
@@ -915,7 +1139,7 @@ impl ReportApp {
                         let pulse_on = ctx.input(|input| ((input.time * 2.0) as i32) % 2 == 0);
                         if pulse_on {
                             let indicator = if reveal_complete { "▼" } else { "…" };
-                            let indicator_pos = frame_response.response.rect.right_bottom()
+                            let indicator_pos = frame_rect.right_bottom()
                                 - egui::vec2(18.0 * scale.max(0.75), 14.0 * scale.max(0.75));
                             ui.painter().text(
                                 indicator_pos,
@@ -956,82 +1180,41 @@ impl eframe::App for ReportApp {
             }
         }
         if ctx.input(|input| input.key_pressed(egui::Key::Space)) {
-            if !self.advance_message() {
-                self.message_history_open = !self.message_history_open;
-            }
+            let _ = self.advance_message();
+        }
+        let shortcut_keys_enabled = !ctx.wants_keyboard_input();
+        if shortcut_keys_enabled && ctx.input(|input| input.key_pressed(egui::Key::ArrowUp)) {
+            self.select_adjacent_choice(-1);
+        }
+        if shortcut_keys_enabled && ctx.input(|input| input.key_pressed(egui::Key::ArrowDown)) {
+            self.select_adjacent_choice(1);
         }
         if ctx.input(|input| input.key_pressed(egui::Key::Enter))
-            && let Some(choice) = self
-                .report
-                .ui_state
-                .scene
-                .message_window
-                .choices
-                .iter()
-                .find(|choice| choice.enabled)
-                .cloned()
+            && let Some(choice) = self.selected_or_first_choice()
         {
             self.apply_choice(&choice);
         } else if ctx.input(|input| input.key_pressed(egui::Key::Enter)) {
             let _ = self.advance_message();
         }
+        if shortcut_keys_enabled && ctx.input(|input| input.key_pressed(egui::Key::A)) {
+            self.toggle_auto_mode();
+        }
+        if shortcut_keys_enabled && ctx.input(|input| input.key_pressed(egui::Key::S)) {
+            self.toggle_skip_mode();
+        }
+        if shortcut_keys_enabled && ctx.input(|input| input.key_pressed(egui::Key::L)) {
+            self.toggle_message_history();
+        }
+        if shortcut_keys_enabled && ctx.input(|input| input.key_pressed(egui::Key::M)) {
+            self.open_runtime_view(RuntimeView::Title);
+        }
+        if shortcut_keys_enabled && ctx.input(|input| input.key_pressed(egui::Key::D)) {
+            self.debug_panel_open = !self.debug_panel_open;
+        }
         self.update_message_reveal(ctx);
 
-        egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                ui.heading("WMS Runtime");
-                if ui.button("Title").clicked() {
-                    self.open_runtime_view(RuntimeView::Title);
-                }
-                if ui.button("Config").clicked() {
-                    self.open_runtime_view(RuntimeView::Config);
-                }
-                if ui.button("Save / Load").clicked() {
-                    self.open_runtime_view(RuntimeView::SaveLoad);
-                }
-                if ui
-                    .selectable_label(self.message_history_open, "Log")
-                    .clicked()
-                {
-                    self.message_history_open = !self.message_history_open;
-                }
-                let auto_mode = self.report.ui_state.scene.message_window.auto_mode;
-                if ui.selectable_label(auto_mode, "Auto").clicked() {
-                    self.report.runtime.set_message_auto_mode(!auto_mode);
-                    self.report.ui_state.scene.message_window.auto_mode = !auto_mode;
-                    self.auto_advance_sent = false;
-                    self.auto_advance_elapsed_seconds = 0.0;
-                }
-                let skip_mode = self.report.ui_state.scene.message_window.skip_mode;
-                if ui.selectable_label(skip_mode, "Skip").clicked() {
-                    self.report.runtime.set_message_skip_mode(!skip_mode);
-                    self.report.ui_state.scene.message_window.skip_mode = !skip_mode;
-                    if !skip_mode {
-                        self.message_reveal_chars = self
-                            .report
-                            .ui_state
-                            .scene
-                            .message_window
-                            .text
-                            .chars()
-                            .count();
-                    }
-                    self.auto_advance_sent = false;
-                    self.auto_advance_elapsed_seconds = 0.0;
-                }
-                if ui
-                    .selectable_label(self.debug_panel_open, "Debug")
-                    .clicked()
-                {
-                    self.debug_panel_open = !self.debug_panel_open;
-                }
-                if let Some(status) = &self.runtime_status_line {
-                    ui.separator();
-                    ui.label(status);
-                }
-            });
-        });
         self.draw_runtime_overlay(ctx);
+        self.draw_runtime_hud(ctx);
 
         if self.debug_panel_open {
             egui::SidePanel::right("debug")

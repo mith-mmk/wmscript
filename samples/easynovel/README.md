@@ -7,7 +7,7 @@ message-window API.
 - the selected chapter is read from `state.get("ui.last_choice")` after `recv()`
 - each chapter pages through multiple screens with `ext.message.show(...)` and `recv()`
 - read flags live in `state.*`
-- the script customizes the message window colors and font sizes through `ext.message.*` style calls
+- the script swaps in a framed message window through `ext.message.frame(100)` and `ext.message.content_inset(...)`
 - already-read chapters turn on `ext.message.skip(true)` until the chapter ends
 
 Source:
@@ -75,11 +75,13 @@ Runtime behavior:
 
 Run examples:
 
-- `cargo run -p wmfrontend -- samples/easynovel/main.wms --platform egui --font noto`
-- `cargo run -p wmfrontend -- samples/easynovel/main.wms --platform native`
+- `cargo run -p wmfrontend -- samples/easynovel/main.wms --platform egui --font noto --image ui/message_frame=samples/easynovel/message_frame.png`
+- `cargo run -p wmfrontend -- samples/easynovel/main.wms --platform native --image ui/message_frame=samples/easynovel/message_frame.png`
 - `cargo run -p wmruntime --example easynovel`
 
 
 
 
 
+
+The sample ships with `message_frame.png`. When launched through `wmfrontend`, the first `--image` asset gets resource id `100`, so the script can bind it directly with `ext.message.frame(100)`.

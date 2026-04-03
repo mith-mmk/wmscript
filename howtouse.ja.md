@@ -166,7 +166,7 @@ cargo run -p wmruntime --example input_link
 cargo run -p wmruntime --example worker_comm
 cargo run -p wmruntime --example asset_load
 cargo run -p wmruntime --example easynovel
-cargo run -p wmfrontend -- samples/easynovel/main.wms --platform egui --font noto
+cargo run -p wmfrontend -- samples/easynovel/main.wms --platform egui --font noto --image ui/message_frame=samples/easynovel/message_frame.png
 cargo run -p wmfrontend -- samples/messagewindow/main.wms --platform egui --font noto
 cargo run -p wmfrontend -- --demo uiimage --platform egui --font noto
 cargo run -p wmfrontend -- --demo image-audio --platform egui --font noto
@@ -192,6 +192,7 @@ egui フロントエンドの既定フォントは、日本語表示を優先し
 - `--package NAME` でデモのパッケージ名を上書きできます。
 - `--platform native|wasm|egui` で実行プロファイルを選べます。
 - `--image NAME=PATH` と `--asset NAME=PATH` はファイル指定の通常モードで追加アセットを付けるためのオプションです。
+- `easynovel` サンプルには `samples/easynovel/message_frame.png` が付いています。`ext.message.frame(100)` を実画像に解決したい場合は `--image ui/message_frame=...` を付けて起動します。
 - `<archive.warc>` または `--archive FILE` を渡すと、パッケージ済み archive を直接起動できます。
 
 ## Toolchain
@@ -259,6 +260,7 @@ runtime.register_host_function(wmhost::HostFunction::new(1, 1, 1, 0), |args| {
 - コンパイラは現在、WMScript の一部だけに対応しています。
 - `samples/` の各例は意図的に小さく、ランタイム例と対応しています。
 - 新しいサンプルを追加するときは、README と対応するランタイム例を同期してください。
+
 
 
 

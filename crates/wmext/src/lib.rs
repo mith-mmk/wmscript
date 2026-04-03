@@ -398,6 +398,10 @@ pub fn standard_extension_registry() -> Result<ExtensionRegistry> {
                 .with_return_type(ExtValueType::Bool),
             ExtensionFunctionSpec::new("reset_style", 167, 0, 0, CAP_GUI)
                 .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("frame", 168, 0, 1, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("content_inset", 169, 4, 4, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
         ],
     )?;
     registry.register_extension(
