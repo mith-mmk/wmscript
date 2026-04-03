@@ -413,7 +413,10 @@ Toolchain
 
  [+] ext.llm  llama-cpp +  0.6B-0.8Bの軽量LLM([qwen3](https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/blob/main/Qwen3.5-0.8B-Q8_0.gguf))で人工無能
 
- [+] ext.image
+- [+] ext.image
+  - [ ] ext.image.load
+  - [ ] ext.image.draw # affine transration + effects
+  - [ ] ext.image.clear # effect
 
  [+] ext.audio
 
@@ -451,12 +454,6 @@ Toolchain
  [+] 全フロー通し実行
  [+] セーブ/ロード整合確認
 
-13．拡張機能
-13.1 FFIラッパー
-- C/C++, .net, node, pythonからも呼べる様にする
-- Unity統合
-- Unreal Engineに統合
-
 ```
 依存関係（重要）
 仕様 → VM → コンパイラ → アーカイバ
@@ -469,14 +466,42 @@ Toolchain
 13.2.  ランタイムの作成
     - [+] ランタイムは素のランタイムと有料ランタイムを作る
 
-14.1 ランタイムは以下の追加機能を追加させる。そのための薄いラッパーを被せること
-    - アーカイブ分割 （ファイル境界をまたがない様に分割）
-    - アーカイブ暗号化
-    - 認証チェック機能
-    - セーブデータ難読化
-    - 要するに有料販売するためのDRM関係の機能
-    - 恐らくバイナリ+外部用dll(so)の組み合わせ
-    - android, iOS だと パッケージ化？
-    - これ有料ライセンスにしようか(issue)
+14. UIの調整(first target)
+  - [ ] ノベルゲームエンジンを備える
+  - [ ] スクリプトを分割してコンパイルできるようにする
+  - [ ] UI Customize API
+  - [ ] egui ui
+  - [ ] wasm ui
+  - [ ] select
+  - [ ] input
+  - [ ] message
+  - [ ] message speed
+  - [ ] message auto
+  - [ ] message skip
+  - [ ] back log
+  - [ ] back log effect
+  - [ ] save/load
+  - [ ] 画像表示
+  - [ ] 音楽
+  - [ ] 音声(lip sync)
+  - [ ] opening/ending
+  - [ ] 言語切り替え
+  - [ ] text 2 script(toolchain) (md -> script toolchain)
 
+
+15．拡張機能(next target)
+15.1 FFIラッパー
+- [ ] C/C++, .net, node, pythonからも呼べる様にする
+- [ ] Unity統合
+- [ ] Unreal Engineに統合
+
+15.1 ランタイムは以下の追加機能を追加させる。そのための薄いラッパーを被せること
+  - [ ] アーカイブ分割 （ファイル境界をまたがない様に分割）
+  - [ ] アーカイブ暗号化
+  - [ ] 認証チェック機能
+  - [ ] セーブデータ難読化
+  - [ ] 要するに有料販売するためのDRM関係の機能
+  - [ ] 恐らくバイナリ+外部用dll(so)の組み合わせ
+  - [ ] android, iOS だと パッケージ化？
+  - [ ] これ有料ライセンスにしようか(issue)
 

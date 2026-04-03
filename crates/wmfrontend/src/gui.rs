@@ -852,11 +852,16 @@ impl ReportApp {
         let can_advance = choices.is_empty() && input_prompt.is_none();
         let reveal_complete = self.message_reveal_chars >= message.text.chars().count();
         let style = message.style.clone();
-        let panel_fill = Self::egui_color(style.panel_fill);
         let panel_stroke = Self::egui_color(style.panel_stroke);
         let text_color = Self::egui_color(style.text_color);
         let speaker_color = Self::egui_color(style.speaker_color);
         let accent_color = Self::egui_color(style.accent_color);
+        let choice_panel_fill = Self::egui_color(style.choice_panel_fill);
+        let choice_panel_stroke = Self::egui_color(style.choice_panel_stroke);
+        let choice_text_color = Self::egui_color(style.choice_text_color);
+        let choice_accent_color = Self::egui_color(style.choice_accent_color);
+        let choice_selected_fill = Self::egui_color(style.choice_selected_fill);
+        let choice_selected_stroke = Self::egui_color(style.choice_selected_stroke);
         let input_panel_fill = Self::egui_color(style.input_panel_fill);
         let input_panel_stroke = Self::egui_color(style.input_panel_stroke);
         let input_text_color = Self::egui_color(style.input_text_color);
@@ -886,14 +891,14 @@ impl ReportApp {
                     painter.rect_filled(
                         panel_rect,
                         18.0 * scale.max(0.75),
-                        panel_fill.gamma_multiply(0.92),
+                        choice_panel_fill.gamma_multiply(0.92),
                     );
                     painter.rect_stroke(
                         panel_rect,
                         18.0 * scale.max(0.75),
                         egui::Stroke::new(
                             (2.0 * scale).max(1.0),
-                            panel_stroke.gamma_multiply(0.95),
+                            choice_panel_stroke.gamma_multiply(0.95),
                         ),
                         egui::StrokeKind::Inside,
                     );
@@ -904,7 +909,10 @@ impl ReportApp {
                             panel_rect.right_top()
                                 - egui::vec2(28.0 * scale.max(0.75), -18.0 * scale.max(0.75)),
                         ],
-                        egui::Stroke::new((1.5 * scale).max(1.0), accent_color.gamma_multiply(0.8)),
+                        egui::Stroke::new(
+                            (1.5 * scale).max(1.0),
+                            choice_accent_color.gamma_multiply(0.8),
+                        ),
                     );
                     painter.text(
                         panel_rect.left_top()
@@ -912,7 +920,7 @@ impl ReportApp {
                         egui::Align2::LEFT_TOP,
                         "SELECTION",
                         egui::FontId::proportional((14.0 * scale).max(11.0)),
-                        accent_color,
+                        choice_accent_color,
                     );
 
                     let content_rect = egui::Rect::from_min_max(
@@ -936,26 +944,26 @@ impl ReportApp {
                                 row_painter.rect_filled(
                                     row_rect,
                                     10.0 * scale.max(0.75),
-                                    accent_color.gamma_multiply(0.16),
+                                    choice_selected_fill,
                                 );
                                 row_painter.rect_stroke(
                                     row_rect,
                                     10.0 * scale.max(0.75),
-                                    egui::Stroke::new(1.0, accent_color.gamma_multiply(0.75)),
+                                    egui::Stroke::new(1.0, choice_selected_stroke),
                                     egui::StrokeKind::Inside,
                                 );
                             }
                             let label_color = if choice.enabled {
-                                text_color
+                                choice_text_color
                             } else {
-                                text_color.gamma_multiply(0.35)
+                                choice_text_color.gamma_multiply(0.35)
                             };
                             row_painter.text(
                                 row_rect.left_center() + egui::vec2(18.0 * scale.max(0.75), 0.0),
                                 egui::Align2::LEFT_CENTER,
                                 if selected { "▸" } else { "  " },
                                 egui::FontId::proportional((20.0 * scale).max(14.0)),
-                                accent_color,
+                                choice_accent_color,
                             );
                             row_painter.text(
                                 row_rect.left_center() + egui::vec2(42.0 * scale.max(0.75), 0.0),
@@ -1089,7 +1097,7 @@ impl ReportApp {
                             painter.rect_filled(
                                 frame_rect,
                                 16.0 * scale.max(0.75),
-                                panel_fill.gamma_multiply(0.92),
+                                choice_panel_fill.gamma_multiply(0.92),
                             );
                             painter.rect_stroke(
                                 frame_rect,
@@ -1102,7 +1110,7 @@ impl ReportApp {
                         painter.rect_filled(
                             frame_rect,
                             16.0 * scale.max(0.75),
-                            panel_fill.gamma_multiply(0.92),
+                            choice_panel_fill.gamma_multiply(0.92),
                         );
                         painter.rect_stroke(
                             frame_rect,
@@ -1259,7 +1267,7 @@ impl ReportApp {
                                 egui::Align2::RIGHT_BOTTOM,
                                 indicator,
                                 egui::FontId::proportional(18.0 * scale.max(0.75)),
-                                accent_color,
+                                choice_accent_color,
                             );
                         }
                     }

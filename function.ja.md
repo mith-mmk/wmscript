@@ -196,7 +196,17 @@ il` | 値を整形してデバッグログへ追記します。 |
 | `ext.message.speaker_color` | `speaker_color(r, g, b, a)` | `bool` | 話者名の文字色を設定します。 |
 | `ext.message.accent_color` | `accent_color(r, g, b, a)` | `bool` | 見出しやヒントに使うアクセント色を設定します。 |
 | `ext.message.font_size` | `font_size(body, speaker)` | `bool` | frontend のメッセージ窓で使う本文と話者名の文字サイズを設定します。 |
-| `ext.message.reset_style` | `reset_style()` | `bool` | メッセージ窓の既定スタイルに戻します。 |`r`n| `ext.message.frame` | `frame()` または `frame(resource_id)` | `bool` | メッセージ窓のフレーム画像として使う resource を設定または解除します。 |`r`n| `ext.message.content_inset` | `content_inset(left, top, right, bottom)` | `bool` | 外側のフレーム画像から本文領域までの inset を設定します。 |
+| `ext.message.reset_style` | `reset_style()` | `bool` | メッセージ窓の既定スタイルに戻します。 |
+| `ext.message.frame` | `frame()` または `frame(resource_id)` | `bool` | メッセージ窓のフレーム画像として使う resource を設定または解除します。 |
+| `ext.message.content_inset` | `content_inset(left, top, right, bottom)` | `bool` | 外側のフレーム画像から本文領域までの inset を設定します。 |
+| `ext.message.input_box_style` | `input_box_style(fill_r, fill_g, fill_b, fill_a, stroke_r, stroke_g, stroke_b, stroke_a)` | `bool` | プレイヤー入力パネルの塗りと枠線の色を設定します。 |
+| `ext.message.input_text_color` | `input_text_color(r, g, b, a)` | `bool` | 入力欄に表示される入力文字色を設定します。 |
+| `ext.message.input_hint_color` | `input_hint_color(r, g, b, a)` | `bool` | 入力欄のヒント文字色を設定します。 |
+| `ext.message.input_prompt_color` | `input_prompt_color(r, g, b, a)` | `bool` | 入力欄の上に表示されるプロンプト文字色を設定します。 |
+| `ext.message.choice_box_style` | `choice_box_style(fill_r, fill_g, fill_b, fill_a, stroke_r, stroke_g, stroke_b, stroke_a)` | `bool` | 選択肢パネルの塗りと枠線の色を設定します。 |
+| `ext.message.choice_text_color` | `choice_text_color(r, g, b, a)` | `bool` | 選択肢ラベルの文字色を設定します。 |
+| `ext.message.choice_accent_color` | `choice_accent_color(r, g, b, a)` | `bool` | 選択肢パネルの見出しやカーソルのアクセント色を設定します。 |
+| `ext.message.choice_selected_style` | `choice_selected_style(fill_r, fill_g, fill_b, fill_a, stroke_r, stroke_g, stroke_b, stroke_a)` | `bool` | 選択中の行の塗りと枠線の色を設定します。 |
 
 ### 3.7 `ext.image`
 
@@ -292,6 +302,7 @@ ative` / `wasm` / `egui` で同じプロジェクトを実行できます。
 - `samples/imageaudio`
 - `samples/uiimage`
 - `samples/easynovel`
+
 
 
 

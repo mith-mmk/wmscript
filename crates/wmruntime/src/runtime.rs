@@ -773,6 +773,10 @@ impl Runtime {
         let input_text_color_host_id = 171;
         let input_hint_color_host_id = 172;
         let input_prompt_color_host_id = 173;
+        let choice_box_style_host_id = 174;
+        let choice_text_color_host_id = 175;
+        let choice_accent_color_host_id = 176;
+        let choice_selected_style_host_id = 177;
         let message_window = self.message_window.clone();
 
         let _ = self.register_host_function(
@@ -1036,6 +1040,52 @@ impl Runtime {
             },
         );
 
+        let message_window = self.message_window.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(choice_box_style_host_id, 8, 8, CAP_GUI),
+            move |args| {
+                let fill = expect_rgba_args(args, 0, "fill")?;
+                let stroke = expect_rgba_args(args, 4, "stroke")?;
+                let mut window = message_window.borrow_mut();
+                window.style.choice_panel_fill = fill;
+                window.style.choice_panel_stroke = stroke;
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let message_window = self.message_window.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(choice_text_color_host_id, 4, 4, CAP_GUI),
+            move |args| {
+                let color = expect_rgba_args(args, 0, "choice_text")?;
+                message_window.borrow_mut().style.choice_text_color = color;
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let message_window = self.message_window.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(choice_accent_color_host_id, 4, 4, CAP_GUI),
+            move |args| {
+                let color = expect_rgba_args(args, 0, "choice_accent")?;
+                message_window.borrow_mut().style.choice_accent_color = color;
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let message_window = self.message_window.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(choice_selected_style_host_id, 8, 8, CAP_GUI),
+            move |args| {
+                let fill = expect_rgba_args(args, 0, "selected_fill")?;
+                let stroke = expect_rgba_args(args, 4, "selected_stroke")?;
+                let mut window = message_window.borrow_mut();
+                window.style.choice_selected_fill = fill;
+                window.style.choice_selected_stroke = stroke;
+                Ok(Value::Bool(true))
+            },
+        );
+
         let ids = self.extensions.register_extension(
             "ext.message",
             &[
@@ -1109,6 +1159,38 @@ impl Runtime {
                     CAP_GUI,
                 )
                 .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new(
+                    "choice_box_style",
+                    choice_box_style_host_id,
+                    8,
+                    8,
+                    CAP_GUI,
+                )
+                .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new(
+                    "choice_text_color",
+                    choice_text_color_host_id,
+                    4,
+                    4,
+                    CAP_GUI,
+                )
+                .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new(
+                    "choice_accent_color",
+                    choice_accent_color_host_id,
+                    4,
+                    4,
+                    CAP_GUI,
+                )
+                .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new(
+                    "choice_selected_style",
+                    choice_selected_style_host_id,
+                    8,
+                    8,
+                    CAP_GUI,
+                )
+                .with_return_type(ExtValueType::Bool),
             ],
         )?;
 
@@ -1136,6 +1218,10 @@ impl Runtime {
             input_text_color_ext_id: ids[20],
             input_hint_color_ext_id: ids[21],
             input_prompt_color_ext_id: ids[22],
+            choice_box_style_ext_id: ids[23],
+            choice_text_color_ext_id: ids[24],
+            choice_accent_color_ext_id: ids[25],
+            choice_selected_style_ext_id: ids[26],
             show_host_id,
             append_host_id,
             choices_host_id,
@@ -1159,6 +1245,10 @@ impl Runtime {
             input_text_color_host_id,
             input_hint_color_host_id,
             input_prompt_color_host_id,
+            choice_box_style_host_id,
+            choice_text_color_host_id,
+            choice_accent_color_host_id,
+            choice_selected_style_host_id,
         })
     }
     pub fn install_scene_extension(&mut self) -> Result<SceneExtension, RuntimeError> {
@@ -2177,6 +2267,10 @@ pub struct MessageExtension {
     pub input_text_color_ext_id: u32,
     pub input_hint_color_ext_id: u32,
     pub input_prompt_color_ext_id: u32,
+    pub choice_box_style_ext_id: u32,
+    pub choice_text_color_ext_id: u32,
+    pub choice_accent_color_ext_id: u32,
+    pub choice_selected_style_ext_id: u32,
     pub show_host_id: HostId,
     pub append_host_id: HostId,
     pub choices_host_id: HostId,
@@ -2200,6 +2294,10 @@ pub struct MessageExtension {
     pub input_text_color_host_id: HostId,
     pub input_hint_color_host_id: HostId,
     pub input_prompt_color_host_id: HostId,
+    pub choice_box_style_host_id: HostId,
+    pub choice_text_color_host_id: HostId,
+    pub choice_accent_color_host_id: HostId,
+    pub choice_selected_style_host_id: HostId,
 }
 
 /// Stable ids assigned to the built-in scene extension.

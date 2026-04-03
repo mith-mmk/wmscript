@@ -15,6 +15,10 @@ export func main() {
     ext.message.input_text_color(244, 250, 255, 255);
     ext.message.input_hint_color(150, 182, 204, 228);
     ext.message.input_prompt_color(164, 226, 244, 255);
+    ext.message.choice_box_style(8, 14, 26, 226, 92, 180, 214, 224);
+    ext.message.choice_text_color(238, 246, 255, 255);
+    ext.message.choice_accent_color(138, 220, 246, 255);
+    ext.message.choice_selected_style(24, 64, 92, 196, 150, 230, 255, 228);
     ext.message.font_size(22, 24);
     ext.message.speed(26);
     ext.message.auto(false);
