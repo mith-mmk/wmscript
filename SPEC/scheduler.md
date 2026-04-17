@@ -16,4 +16,6 @@
 - `sleep` は wake 時刻まで sleeping に遷移する。
 - `recv` はメッセージが無ければ waiting に遷移する。
 - 1 フレームの実行は step budget を超えない。
-
+- `tick` は 1 回の scheduling round を実行する。
+- sleeping / waiting worker は `wake(worker_id)` で再実行可能状態へ戻せる。
+- `sleep` は VM 内部では一時停止状態を維持し、`wake` 後に次命令から再開する。

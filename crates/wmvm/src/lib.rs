@@ -723,6 +723,13 @@ impl Vm {
         self.inbox.push_back(message);
     }
 
+    /// Wakes a sleeping or waiting worker VM so it can be scheduled again.
+    pub fn wake(&mut self) {
+        if matches!(self.state, VmState::Sleeping | VmState::WaitingMessage) {
+            self.state = VmState::Idle;
+        }
+    }
+
     pub fn drain_outbox(&mut self) -> Vec<Message> {
         self.outbox.drain(..).collect()
     }
@@ -1532,14 +1539,19 @@ impl Scheduler {
     }
 
     /// Wakes a worker that is waiting or sleeping.
-    pub fn wake(&mut self, worker_id: WorkerId) {
+    pub fn wake(&mut self, worker_id: WorkerId) -> bool {
         self.waiting.remove(&worker_id);
         self.sleeping.remove(&worker_id);
         self.halted.remove(&worker_id);
         self.errors.remove(&worker_id);
-        if self.workers.contains_key(&worker_id) && !self.runnable.contains(&worker_id) {
+        let Some(worker) = self.workers.get_mut(&worker_id) else {
+            return false;
+        };
+        worker.wake();
+        if !self.runnable.contains(&worker_id) {
             self.runnable.push_back(worker_id);
         }
+        true
     }
 
     /// Delivers a message to the target worker.
@@ -1784,6 +1796,43 @@ mod tests {
     }
 
     #[test]
+    fn vm_sleep_resumes_after_wake() {
+        let mut program = Program::new();
+        program.push_constant(Value::Integer(9));
+        program.insert_function(Function::new(
+            1,
+            vec![
+                0xA1, // sleep
+                0x10, 0x00, 0x00, // push const 0
+                0x72, // return
+            ],
+            0,
+            0,
+        ));
+        program.set_entry(1);
+
+        let mut vm = Vm::with_program(
+            VmConfig::new(
+                PlatformProfile::native(),
+                HostRegistry::new(PlatformProfile::native()),
+                128,
+            ),
+            program,
+        );
+
+        let outcome = vm.run_frame(32);
+        assert!(matches!(outcome, RunOutcome::Sleeping { .. }));
+
+        let outcome = vm.run_frame(32);
+        assert!(matches!(outcome, RunOutcome::Sleeping { steps: 0 }));
+
+        vm.wake();
+        let outcome = vm.run_frame(32);
+        assert!(matches!(outcome, RunOutcome::Halted { .. }));
+        assert_eq!(vm.last_return(), Some(&Value::Integer(9)));
+    }
+
+    #[test]
     fn scheduler_routes_messages_between_workers() {
         let mut sender_program = Program::new();
         sender_program.push_constant(Value::Integer(7));
@@ -1839,6 +1888,50 @@ mod tests {
             scheduler.worker_state(receiver_id),
             Some(WorkerState::Halted)
         ));
+    }
+
+    #[test]
+    fn scheduler_wake_resumes_sleeping_worker() {
+        let mut program = Program::new();
+        program.push_constant(Value::Integer(5));
+        program.insert_function(Function::new(
+            1,
+            vec![
+                0xA1, // sleep
+                0x10, 0x00, 0x00, // push const 0
+                0x72, // return
+            ],
+            0,
+            0,
+        ));
+        program.set_entry(1);
+
+        let vm = Vm::with_program(
+            VmConfig::new(
+                PlatformProfile::native(),
+                HostRegistry::new(PlatformProfile::native()),
+                128,
+            ),
+            program,
+        );
+
+        let mut scheduler = Scheduler::new();
+        let worker_id = scheduler.spawn(vm);
+        let outcomes = scheduler.run_round(32);
+        assert!(matches!(outcomes.as_slice(), [(_, RunOutcome::Sleeping { .. })]));
+        assert!(matches!(
+            scheduler.worker_state(worker_id),
+            Some(WorkerState::Sleeping)
+        ));
+
+        assert!(scheduler.wake(worker_id));
+        let outcomes = scheduler.run_round(32);
+        assert!(matches!(outcomes.as_slice(), [(_, RunOutcome::Halted { .. })]));
+        assert!(matches!(
+            scheduler.worker_state(worker_id),
+            Some(WorkerState::Halted)
+        ));
+        assert!(!scheduler.wake(9999));
     }
 
     #[test]

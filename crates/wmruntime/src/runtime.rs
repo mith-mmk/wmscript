@@ -2166,6 +2166,23 @@ impl Runtime {
             .collect()
     }
 
+    pub fn sleeping_workers(&self) -> Vec<WorkerId> {
+        let scheduler = self.scheduler.borrow();
+        scheduler
+            .worker_ids()
+            .filter(|worker_id| {
+                matches!(
+                    scheduler.worker_state(*worker_id),
+                    Some(WorkerState::Sleeping)
+                )
+            })
+            .collect()
+    }
+
+    pub fn wake_worker(&mut self, worker_id: WorkerId) -> bool {
+        self.scheduler.borrow_mut().wake(worker_id)
+    }
+
     /// Stops all running audio sessions.
     pub fn shutdown(&mut self) {
         let _ = self.audio_backend.clear();
@@ -2754,6 +2771,37 @@ mod tests {
         let outcomes = runtime.run_until_idle(8);
         assert_eq!(worker_id, 1);
         assert!(!outcomes.is_empty());
+    }
+
+    #[test]
+    fn runtime_time_control_api_wakes_sleeping_worker() {
+        let mut runtime = Runtime::new(RuntimeConfig::new(PlatformProfile::native()));
+        let mut program = Program::new();
+        let value_idx = program.push_constant(Value::Integer(42));
+        program.insert_function(Function::new(
+            1,
+            vec![
+                0xA1, // sleep
+                0x10,
+                value_idx as u8,
+                (value_idx >> 8) as u8,
+                0x72, // return
+            ],
+            0,
+            0,
+        ));
+        program.set_entry(1);
+
+        let worker_id = runtime.spawn_program(program).expect("spawn");
+        let outcomes = runtime.tick();
+        assert!(matches!(outcomes.as_slice(), [(_, RunOutcome::Sleeping { .. })]));
+        assert_eq!(runtime.sleeping_workers(), vec![worker_id]);
+
+        assert!(runtime.wake_worker(worker_id));
+        let outcomes = runtime.tick();
+        assert!(matches!(outcomes.as_slice(), [(_, RunOutcome::Halted { .. })]));
+        assert!(runtime.sleeping_workers().is_empty());
+        assert!(!runtime.wake_worker(9999));
     }
 
     #[test]
