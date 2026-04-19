@@ -3,13 +3,16 @@
 //! Toolchain support for compiling, packaging, and running WML game scripts.
 
 use core::fmt;
+use std::collections::BTreeSet;
+use std::fs;
 use std::io::{Read, Seek};
+use std::path::{Path, PathBuf};
 
 use wmarchive::{
     Archive, ArchiveBuilder, ArchiveError, ArchiveSection, ArchiveStreamReader, Manifest,
     ManifestBuilder, ManifestResourceEntry, SectionDigest, SectionKind, Version, digest_section,
 };
-use wmcompiler::{CompileError, Compiler, CompilerConfig, ModuleCatalog};
+use wmcompiler::{CompileError, Compiler, CompilerConfig, ModuleCatalog, ModuleItem};
 use wmext::standard_extension_registry;
 use wmplatform::PlatformProfile;
 use wmresource::ResourceType;
@@ -238,6 +241,7 @@ impl Toolchain {
 
     pub fn build_project(&self, project: &GameProject) -> Result<BuildArtifact> {
         let mut catalog = ModuleCatalog::new();
+        self.seed_catalog_with_imports(&mut catalog, &project.script_path, &project.source)?;
         let program = self.compiler.compile_program(
             project.script_path.clone(),
             project.source.clone(),
@@ -252,6 +256,47 @@ impl Toolchain {
             archive,
             archive_size,
         })
+    }
+
+    fn seed_catalog_with_imports(
+        &self,
+        catalog: &mut ModuleCatalog,
+        root_path: &str,
+        root_source: &str,
+    ) -> Result<()> {
+        let mut pending = vec![(root_path.to_owned(), root_source.to_owned())];
+        let mut visited = BTreeSet::new();
+
+        while let Some((module_path, source)) = pending.pop() {
+            if !visited.insert(module_path.clone()) {
+                continue;
+            }
+
+            catalog.register(&module_path);
+            let ast = self
+                .compiler
+                .parse_module(module_path.clone(), source)
+                .map_err(ToolchainError::from)?;
+
+            for item in ast.items {
+                if let ModuleItem::Import(import_decl) = item {
+                    catalog.register(&import_decl.path);
+                    let import_path = resolve_import_path(&module_path, &import_decl.path);
+                    catalog.register(&import_path);
+                    if visited.contains(&import_path) {
+                        continue;
+                    }
+                    let import_source = fs::read_to_string(&import_path).map_err(|_| {
+                        ToolchainError::Compile(CompileError::UnknownModule {
+                            path: import_path.clone(),
+                        })
+                    })?;
+                    pending.push((import_path, import_source));
+                }
+            }
+        }
+
+        Ok(())
     }
 
     pub fn load_archive(&self, bytes: &[u8]) -> Result<BuildArtifact> {
@@ -497,6 +542,19 @@ fn stable_hash64(bytes: &[u8]) -> u64 {
         hash = hash.wrapping_mul(0x0000_0001_0000_01B3);
     }
     hash
+}
+
+fn resolve_import_path(module_path: &str, import_path: &str) -> String {
+    let import = Path::new(import_path);
+    if import.is_absolute() {
+        return import.to_string_lossy().to_string();
+    }
+
+    let base_dir = Path::new(module_path)
+        .parent()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
+    base_dir.join(import).to_string_lossy().to_string()
 }
 
 fn stable_hash128(parts: &[&[u8]]) -> u128 {

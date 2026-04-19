@@ -15,6 +15,7 @@
 | `uiimage` | scene/layout + image draw | `cargo run -p wmfrontend -- samples/uiimage/main.wms --platform egui --font noto --image ui/background=samples/uiimage.png` | `cargo run -p wmfrontend -- --demo uiimage --platform egui --font noto` | `cargo run -p wmtoolchain -- samples/uiimage/main.wms --platform egui --image ui/background=samples/uiimage.png` |
 | `imageaudio` | image + audio 統合 | `cargo run -p wmfrontend -- samples/imageaudio/main.wms --platform egui --font noto` | `cargo run -p wmfrontend --example image_audio_demo` | `cargo run -p wmtoolchain -- samples/imageaudio/main.wms --platform egui` |
 | `easynovel` | writer-first VN flow | `cargo run -p wmfrontend -- samples/easynovel/main.wms --platform egui --font noto --image ui/message_frame=samples/easynovel/message_frame.png` | `cargo run -p wmruntime --example easynovel` | `cargo run -p wmtoolchain -- samples/easynovel/main.wms --platform egui --image ui/message_frame=samples/easynovel/message_frame.png` |
+| `splitimport` | 分割スクリプト + nested import | `cargo run -p wmfrontend -- samples/splitimport/main.wms --platform native` | - | `cargo run -p wmtoolchain -- samples/splitimport/main.wms --platform native` |
 
 ## End-to-End Pipeline
 

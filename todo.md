@@ -497,11 +497,11 @@ Toolchain
     - [ ] B9. back log effect
     - [ ] B10. opening/ending
     - [ ] B11. 言語切り替え
-  - [*] C. Toolchain 実証（script + assets -> demo 実行）
-    - [ ] C1. スクリプト分割コンパイルと import 運用を固定
+  - [+] C. Toolchain 実証（script + assets -> demo 実行）
+    - [+] C1. スクリプト分割コンパイルと import 運用を固定
     - [+] C2. archive/package を通した起動手順を固定
-    - [*] C3. samples で end-to-end 実証（messagewindow/easynovel）
+    - [+] C3. samples で end-to-end 実証（messagewindow/easynovel）
   - [ ] D. next phase へ分離
     - [ ] D1. 音声(lip sync)
-    - [ ] D2. text 2 script(toolchain) (md -> script toolchain)
+    - [ ] D2. text 2 script(toolchain) (md -> wms script toolchain)
     - [ ] D3. core engine 切り出し + DSL 風 API

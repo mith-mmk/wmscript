@@ -1,3 +1,10 @@
 export func main() {
-    return input();
+    ext.message.clear();
+    ext.message.log_clear();
+    ext.message.prompt("Type any text");
+    ext.message.show("InputLink", "Enter text and submit to return it from script.");
+    recv();
+    let value = state.get("ui.last_input");
+    ext.message.prompt();
+    return value;
 }

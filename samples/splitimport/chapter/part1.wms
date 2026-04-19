@@ -1,0 +1,3 @@
+import "part2.wms" as chapter2;
+
+export let chapter_title = "Part 1";

@@ -769,14 +769,14 @@ impl Runtime {
         let reset_style_host_id = 167;
         let frame_host_id = 168;
         let content_inset_host_id = 169;
-        let input_box_style_host_id = 170;
-        let input_text_color_host_id = 171;
-        let input_hint_color_host_id = 172;
-        let input_prompt_color_host_id = 173;
-        let choice_box_style_host_id = 174;
-        let choice_text_color_host_id = 175;
-        let choice_accent_color_host_id = 176;
-        let choice_selected_style_host_id = 177;
+        let input_box_style_host_id = 220;
+        let input_text_color_host_id = 221;
+        let input_hint_color_host_id = 222;
+        let input_prompt_color_host_id = 223;
+        let choice_box_style_host_id = 224;
+        let choice_text_color_host_id = 225;
+        let choice_accent_color_host_id = 226;
+        let choice_selected_style_host_id = 227;
         let message_window = self.message_window.clone();
 
         let _ = self.register_host_function(
@@ -1036,6 +1036,49 @@ impl Runtime {
                 let bottom = expect_number_arg(args, 3, "bottom")? as f32;
                 message_window.borrow_mut().style.content_inset =
                     UiInsets::new(left.max(0.0), top.max(0.0), right.max(0.0), bottom.max(0.0));
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let message_window = self.message_window.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(input_box_style_host_id, 8, 8, CAP_GUI),
+            move |args| {
+                let fill = expect_rgba_args(args, 0, "fill")?;
+                let stroke = expect_rgba_args(args, 4, "stroke")?;
+                let mut window = message_window.borrow_mut();
+                window.style.input_panel_fill = fill;
+                window.style.input_panel_stroke = stroke;
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let message_window = self.message_window.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(input_text_color_host_id, 4, 4, CAP_GUI),
+            move |args| {
+                let color = expect_rgba_args(args, 0, "input_text")?;
+                message_window.borrow_mut().style.input_text_color = color;
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let message_window = self.message_window.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(input_hint_color_host_id, 4, 4, CAP_GUI),
+            move |args| {
+                let color = expect_rgba_args(args, 0, "input_hint")?;
+                message_window.borrow_mut().style.input_hint_color = color;
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let message_window = self.message_window.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(input_prompt_color_host_id, 4, 4, CAP_GUI),
+            move |args| {
+                let color = expect_rgba_args(args, 0, "input_prompt")?;
+                message_window.borrow_mut().style.input_prompt_color = color;
                 Ok(Value::Bool(true))
             },
         );

@@ -32,6 +32,9 @@ cargo run -p wmtoolchain -- samples/easynovel/main.wms --asset ui/title=assets/t
 
 # with image asset
 cargo run -p wmtoolchain -- samples/easynovel/main.wms --image ui/background=assets/background.png
+
+# split scripts with nested imports
+cargo run -p wmtoolchain -- samples/splitimport/main.wms --platform native
 ```
 
 ## Output
@@ -48,3 +51,4 @@ cargo run -p wmtoolchain -- samples/easynovel/main.wms --image ui/background=ass
 - `--platform` は capability gate に影響します。
 - profile 非対応の `ext.*` 呼び出しは compile 時に失敗します。
 - `--asset` / `--image` は複数回指定できます。
+- import を含む分割スクリプトは、entry script から再帰的に解決されます。
