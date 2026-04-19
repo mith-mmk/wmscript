@@ -20,7 +20,8 @@ export func main() {
         "south", "Go South"
     );
     ext.message.prompt("Choose a route");
-    let route = recv();
+    recv();
+    let route = state.get("ui.last_choice");
 
     ext.message.choices_named();
     ext.message.prompt();
@@ -28,7 +29,8 @@ export func main() {
     if route == "north" {
         ext.message.show("Guide", "North road selected.\nEnter the companion name.");
         ext.message.prompt("Companion name");
-        let name = recv();
+        recv();
+        let name = state.get("ui.last_input");
         ext.message.prompt();
         if name == "Mika" {
             ext.message.show("Narrator", "North road selected.\nMika joins the trip.");
@@ -40,7 +42,8 @@ export func main() {
     } else if route == "south" {
         ext.message.show("Guide", "South road selected.\nEnter the weather.");
         ext.message.prompt("Weather");
-        let weather = recv();
+        recv();
+        let weather = state.get("ui.last_input");
         ext.message.prompt();
         if weather == "rain" {
             ext.message.show("Narrator", "South road selected.\nRain starts over the bridge.");

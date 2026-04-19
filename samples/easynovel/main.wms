@@ -35,6 +35,12 @@ export func main() {
     recv();
     let chapter = state.get("ui.last_choice");
 
+    if chapter != nil {
+        state.set("save.last_chapter", chapter);
+        state.save(1);
+        ext.vm.save(1);
+    }
+
     ext.message.choices_named();
     ext.message.prompt();
 

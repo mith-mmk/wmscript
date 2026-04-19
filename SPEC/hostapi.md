@@ -75,6 +75,34 @@ enum HostReturn {
 
 推奨
 
+## 6. Writer-First 契約（save/load layering と UI ownership）
+
+### 6.1 save/load layering
+- `state.save/load`:
+    - 用途: 永続ゲーム状態（分岐フラグ、進行度、設定、既読状態など）
+    - 性質: profile をまたいだ移行互換を優先する。
+- `ext.vm.save/load`:
+    - 用途: 実行チェックポイント（VM 実行位置、待機状態、UI の一時状態、再開に必要な runtime 状態）
+    - 性質: 同一 runtime/profile 内の再開を優先する。
+- 推奨運用:
+    - 長期保存は `state.save/load` を主に使う。
+    - 即時再開は `ext.vm.save/load` を使う。
+
+### 6.2 復元責務
+- `ext.vm.load` 復元時に最低限保証する項目:
+    - worker の `pc` / stack / wait 状態
+    - message window の表示コンテキスト
+    - `ui.last_choice` / `ui.last_input` / `ui.last_reply` の直近整合
+- profile 差異で復元不能な要素（例: 特定デバイス依存リソース）は `status` で通知し、script 側が degrade 可能であること。
+
+### 6.3 UI ownership
+- script worker が所有するもの:
+    - シナリオ進行意図（show/choice/prompt 等の要求）
+    - 状態遷移の判断（分岐、保存タイミング、既読管理）
+- renderer/frontend が所有するもの:
+    - 描画レイアウト詳細、入力デバイス差分、瞬間的な表示状態
+- host API はこの境界を越えて script へ実装詳細を漏らしてはならない。
+
 即時完了: Value
 
 継続待ち: VM状態を blocked にして nil か request handle を返す

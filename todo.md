@@ -9,15 +9,18 @@
 　- 問題点や曖昧な仕様はissue.mdで管理
 
 # カレント
-- [*] first target の仕上げ
-  - egui のメッセージウィンドウをゲームUIとして詰める
-  - engine script 主導の message / choice / input の流れを固める
-  - save/load, auto/skip, restart の導線をゲームUIとして整える
-- [ ] Web UI 系
-  - WebGL frontend
-  - wasm bridge
-- [ ] 仕様固定の最終確認
-  - SPEC/issue.md の残項目を SPEC/*.md に戻す
+- [*] first target: Writer-First 仕様固定 + Toolchain 実証
+  - [+] 必須契約5点を SPEC に反映
+    - recv()/message progression 契約
+    - ui.last_choice / ui.last_input / ui.last_reply の標準化
+    - state.save/load と ext.vm.save/load の責務分離
+    - worker 間 input routing 契約
+    - platform capability matrix（egui/wasm/native）
+  - [ ] script + assets -> compile -> archive/package -> runtime/frontend 実行の導線を一本化
+  - [ ] samples/easynovel と samples/messagewindow を契約準拠で再検証
+- [ ] next phase 準備
+  - core engine 切り出し
+  - DSL 風高レベル API 設計
 
 # 実装
 0. Crate分割
@@ -475,24 +478,30 @@ Toolchain
 13.2.  ランタイムの作成
     - [+] ランタイムは素のランタイムと有料ランタイムを作る
 
-14. UIの調整(first target)
-  - [*] ノベルゲームエンジンを備える
-  - [ ] スクリプトを分割してコンパイルできるようにする
-  - [+] UI Customize API
-  - [+] egui ui
-  - [ ] wasm ui
-  - [+] select(choice)
-  - [+] input
-  - [+] message
-  - [+] message speed
-  - [+] message auto
-  - [+] message skip
-  - [+] back log
-  - [ ] back log effect
-  - [+] save/load
-  - [+] 画像表示
-  - [+] 音楽
-  - [ ] 音声(lip sync)
-  - [ ] opening/ending
-  - [ ] 言語切り替え
-  - [ ] text 2 script(toolchain) (md -> script toolchain)
+14. first target: Writer-First 仕様固定 + Toolchain 実証
+  - [+] A. 契約固定（writer が frontend script に専念できる状態を作る）
+    - [+] A1. recv()/message progression 契約を SPEC に固定
+    - [+] A2. input return ABI（ui.last_choice/ui.last_input/ui.last_reply）を標準化
+    - [+] A3. save/load layering（state と vm）を固定
+    - [+] A4. worker 間 input routing を固定
+    - [+] A5. platform capability matrix（egui/wasm/native）を固定
+  - [*] B. 実装基盤（既存実装の整理）
+    - [+] B1. UI Customize API
+    - [+] B2. egui ui
+    - [ ] B3. wasm ui（first target は smoke レベル）
+    - [+] B4. message / choice / input
+    - [+] B5. message speed / auto / skip
+    - [+] B6. back log
+    - [+] B7. save/load
+    - [+] B8. 画像表示 / 音楽
+    - [ ] B9. back log effect
+    - [ ] B10. opening/ending
+    - [ ] B11. 言語切り替え
+  - [*] C. Toolchain 実証（script + assets -> demo 実行）
+    - [ ] C1. スクリプト分割コンパイルと import 運用を固定
+    - [+] C2. archive/package を通した起動手順を固定
+    - [*] C3. samples で end-to-end 実証（messagewindow/easynovel）
+  - [ ] D. next phase へ分離
+    - [ ] D1. 音声(lip sync)
+    - [ ] D2. text 2 script(toolchain) (md -> script toolchain)
+    - [ ] D3. core engine 切り出し + DSL 風 API

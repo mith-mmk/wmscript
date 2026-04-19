@@ -8,6 +8,7 @@ This sample shows the engine-side part of the separation:
 - the frontend still owns the actual window layout and rendering
 - it pages plain message screens with `recv()`
 - it uses named choices and then asks for a second text input
+- it reads standardized ABI keys (`ui.last_choice`, `ui.last_input`) after `recv()`
 
 Source:
 
@@ -38,12 +39,17 @@ export func main() {
         "chapter_2", "Chapter 2"
     );
     ext.message.prompt("Choose a chapter");
-    let choice = recv();
+    recv();
+    let choice = state.get("ui.last_choice");
+    ext.message.choices_named();
+    ext.message.prompt();
     if choice == "prologue" {
         state.set("read:engineworker:prologue", true);
         ext.message.show("Engine", "Prologue selected.\nEnter the hero name.");
         ext.message.prompt("Hero name");
-        let hero_name = recv();
+        recv();
+        let hero_name = state.get("ui.last_input");
+        ext.message.prompt();
         if hero_name == "Aki" {
             ext.message.show("Narrator", "Prologue selected.\nAki: I'm ready to start.");
         } else {
@@ -99,5 +105,10 @@ Runtime behavior:
 - The frontend still renders the actual choice and message panels.
 - The plain message pages advance with `Next` or `Enter`; if the page is still animating, the first action reveals it immediately.
 - `ext.message.choices_named(...)` gives the engine stable choice ids such as `prologue` and `chapter_1`.
-- Selecting a choice or submitting input wakes the waiting worker and returns that payload from `recv()`.
+- Selecting a choice or submitting input wakes the waiting worker, then the script reads normalized values from `state.get("ui.last_choice")` / `state.get("ui.last_input")`.
 - The two-worker split example lives in `crates/wmruntime/examples/engine_worker_split.rs`.
+
+Run examples:
+
+- `cargo run -p wmfrontend -- samples/engineworker/main.wms --platform egui --font noto`
+- `cargo run -p wmfrontend -- --demo engineworker --platform egui --font noto`

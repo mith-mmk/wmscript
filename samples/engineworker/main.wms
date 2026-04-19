@@ -24,12 +24,17 @@ export func main() {
         "chapter_2", "Chapter 2"
     );
     ext.message.prompt("Choose a chapter");
-    let choice = recv();
+    recv();
+    let choice = state.get("ui.last_choice");
+    ext.message.choices_named();
+    ext.message.prompt();
     if choice == "prologue" {
         state.set("read:engineworker:prologue", true);
         ext.message.show("Engine", "Prologue selected.\nEnter the hero name.");
         ext.message.prompt("Hero name");
-        let hero_name = recv();
+        recv();
+        let hero_name = state.get("ui.last_input");
+        ext.message.prompt();
         if hero_name == "Aki" {
             ext.message.show("Narrator", "Prologue selected.\nAki: I'm ready to start.");
         } else {
@@ -44,7 +49,9 @@ export func main() {
         state.set("read:engineworker:chapter_1", true);
         ext.message.show("Engine", "Chapter 1 selected.\nEnter the scene name.");
         ext.message.prompt("Scene name");
-        let scene_name = recv();
+        recv();
+        let scene_name = state.get("ui.last_input");
+        ext.message.prompt();
         if scene_name == "station" {
             ext.message.show("Narrator", "Chapter 1 selected.\nThe station scene opens.");
         } else {
@@ -59,7 +66,9 @@ export func main() {
         state.set("read:engineworker:chapter_2", true);
         ext.message.show("Engine", "Chapter 2 selected.\nEnter the route name.");
         ext.message.prompt("Route name");
-        let route_name = recv();
+        recv();
+        let route_name = state.get("ui.last_input");
+        ext.message.prompt();
         if route_name == "river" {
             ext.message.show("Narrator", "Chapter 2 selected.\nThe river route opens.");
         } else {

@@ -54,8 +54,7 @@ export func main() {
   - `if expr { ... } else { ... }`
   - `if expr { ... } else if expr { ... } else { ... }`
 - リテラル:
-  - 
-il`
+  - `nil`
   - `true`
   - `false`
   - 整数
@@ -119,8 +118,7 @@ il`
 
 | Profile | File system | Async I/O | GUI | Network | Web compat |
 | --- | --- | --- | --- | --- | --- |
-| 
-ative` | yes | yes | yes | yes | no |
+| `native` | yes | yes | yes | yes | no |
 | `egui` | yes | yes | yes | yes | no |
 | `wasm` | no | yes | no | no | yes |
 
@@ -134,8 +132,7 @@ ative` | yes | yes | yes | yes | no |
 | 関数 | シグネチャ | 戻り値 | 説明 |
 | --- | --- | --- | --- |
 | `ext.fs.read` | `read(path: string)` | `string` | ホストのファイルシステムからテキストを読み込みます。 |
-| `ext.fs.write` | `write(path: string, contents: string)` | 
-il` | ホストのファイルシステムへテキストを書き込みます。 |
+| `ext.fs.write` | `write(path: string, contents: string)` | `nil` | ホストのファイルシステムへテキストを書き込みます。 |
 | `ext.fs.exists` | `exists(path: string)` | `bool` | パスが存在するか確認します。 |
 
 ### 3.2 `ext.debug`
@@ -144,8 +141,7 @@ il` | ホストのファイルシステムへテキストを書き込みます�
 
 | 関数 | シグネチャ | 戻り値 | 説明 |
 | --- | --- | --- | --- |
-| `ext.debug.log` | `log(value)` | 
-il` | 値を整形してデバッグログへ追記します。 |
+| `ext.debug.log` | `log(value)` | `nil` | 値を整形してデバッグログへ追記します。 |
 | `ext.debug.inspect` | `inspect(value)` | `string` | 値の文字列表現を返します。 |
 
 ### 3.3 `ext.net`
@@ -258,8 +254,7 @@ il` | 値を整形してデバッグログへ追記します。 |
 | `state.save` | `save(slot: int)` | `bool` | 現在の永続キー値状態をスロットに保存します。 |
 | `state.load` | `load(slot: int)` | `bool` | スロットから永続キー値状態を復元します。 |
 | `state.has` | `has(key: string)` | `bool` | 現在の状態にキーが存在するか確認します。 |
-| `state.get` | `get(key: string)` | `value` | 現在のキー値を返します。存在しない場合は 
-il` です。 |
+| `state.get` | `get(key: string)` | `value` | 現在のキー値を返します。存在しない場合は `nil` です。 |
 | `state.set` | `set(key: string, value)` | `bool` | 現在の状態に値を書き込みます。 |
 | `state.erase` | `erase(key: string)` | `bool` | 現在の状態からキーを削除します。 |
 
@@ -276,15 +271,15 @@ il` です。 |
 ## 5. 実用上の補足
 
 - `wmtoolchain` は現在のサブセットを archive にまとめます。
-- `wmfrontend` は 
-ative` / `wasm` / `egui` で同じプロジェクトを実行できます。
+- `wmfrontend` は `native` / `wasm` / `egui` で同じプロジェクトを実行できます。
 - `egui` フロントエンドの既定フォントは、日本語向けに Noto Sans 系です。
 - 既読フラグは `state` で管理するのが素直です。たとえば
   `read:chapter_1:0001` のようなキーを `state.set(...)` で保存し、
   既読判定では `state.has(...)` を見る、というルールにすると
   エンジン側で制御しやすくなります。
 - エンジン主導のメッセージ窓では、`ext.message.choices_named(...)` を出し、
-  `recv()` で応答を待って、その返り値をそのまま分岐に使う形が扱いやすいです。
+  `recv()` で応答を待って、`state.get("ui.last_choice")` /
+  `state.get("ui.last_input")` を読む形が扱いやすいです。
 - メッセージ窓の色や文字サイズも、`ext.message.box_style(...)`、
   `text_color(...)`、`speaker_color(...)`、`accent_color(...)`、
   `font_size(...)`、`reset_style()` で script 側から決められます。

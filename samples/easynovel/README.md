@@ -5,6 +5,7 @@ message-window API.
 
 - `main()` opens a chapter menu with `ext.message.choices_named(...)`
 - the selected chapter is read from `state.get("ui.last_choice")` after `recv()`
+- the script records save/load layering by writing persistent state with `state.save(1)` and runtime checkpoint with `ext.vm.save(1)`
 - each chapter pages through multiple screens with `ext.message.show(...)` and `recv()`
 - read flags live in `state.*`
 - the script swaps in a framed message window through `ext.message.frame(100)` and `ext.message.content_inset(...)`
@@ -40,6 +41,12 @@ export func main() {
     recv();
     let chapter = state.get("ui.last_choice");
 
+    if chapter != nil {
+        state.set("save.last_chapter", chapter);
+        state.save(1);
+        ext.vm.save(1);
+    }
+
     ext.message.choices_named();
     ext.message.prompt();
 
@@ -70,6 +77,7 @@ Runtime behavior:
 
 - The chapter menu is script-driven and rendered by the frontend.
 - The selected chapter id is mirrored into `ui.last_choice` and read by the script after `recv()`.
+- The sample demonstrates layering: `state.save(1)` for persistent chapter markers and `ext.vm.save(1)` for runtime checkpoint resume.
 - Re-running a chapter toggles skip mode from the engine script.
 - Skip mode auto-advances plain pages until the chapter reaches a choice or input.
 

@@ -6,6 +6,7 @@ This sample is a focused engine-side message window example.
 - it advances those pages with `recv()`
 - it uses `ext.message.choices_named(...)` for stable engine-defined choice ids
 - it uses `ext.message.prompt(...)` for follow-up input
+- it reads standardized input ABI keys (`ui.last_choice`, `ui.last_input`) after `recv()`
 - it uses `ext.message.log_clear()` to reset the text log at scene start
 - it clears prompt and choice state explicitly from the script
 
@@ -34,7 +35,8 @@ export func main() {
         "south", "Go South"
     );
     ext.message.prompt("Choose a route");
-    let route = recv();
+    recv();
+    let route = state.get("ui.last_choice");
 
     ext.message.choices_named();
     ext.message.prompt();
@@ -42,7 +44,8 @@ export func main() {
     if route == "north" {
         ext.message.show("Guide", "North road selected.\nEnter the companion name.");
         ext.message.prompt("Companion name");
-        let name = recv();
+        recv();
+        let name = state.get("ui.last_input");
         ext.message.prompt();
         if name == "Mika" {
             ext.message.show("Narrator", "North road selected.\nMika joins the trip.");
@@ -74,8 +77,8 @@ export func main() {
 Runtime behavior:
 
 - Plain text pages wait on `recv()`, so the engine script controls when the next page starts.
-- `choices_named(...)` returns stable ids like `north` and `south` directly from `recv()`.
-- Input also comes back directly from `recv()`.
+- `choices_named(...)` result is read from `state.get("ui.last_choice")` after `recv()`.
+- Input is read from `state.get("ui.last_input")` after `recv()`.
 - The sample uses `choices_named()` and `prompt()` with no args to clear those UI states explicitly.
 
 Run examples:

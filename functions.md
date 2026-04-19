@@ -54,8 +54,7 @@ The current expression grammar is intentionally small:
   - `if expr { ... } else { ... }`
   - `if expr { ... } else if expr { ... } else { ... }`
 - literals:
-  - 
-il`
+  - `nil`
   - `true`
   - `false`
   - integer literals
@@ -119,8 +118,7 @@ Current default profiles:
 
 | Profile | File system | Async I/O | GUI | Network | Web compat |
 | --- | --- | --- | --- | --- | --- |
-| 
-ative` | yes | yes | yes | yes | no |
+| `native` | yes | yes | yes | yes | no |
 | `egui` | yes | yes | yes | yes | no |
 | `wasm` | no | yes | no | no | yes |
 
@@ -134,8 +132,7 @@ Requires: `CAP_FILE_SYSTEM`
 | Function | Signature | Returns | Notes |
 | --- | --- | --- | --- |
 | `ext.fs.read` | `read(path: string)` | `string` | Reads a text file from the host file system. |
-| `ext.fs.write` | `write(path: string, contents: string)` | 
-il` | Writes a text file to the host file system. |
+| `ext.fs.write` | `write(path: string, contents: string)` | `nil` | Writes a text file to the host file system. |
 | `ext.fs.exists` | `exists(path: string)` | `bool` | Checks whether a path exists. |
 
 ### 3.2 `ext.debug`
@@ -144,8 +141,7 @@ Requires: no capability
 
 | Function | Signature | Returns | Notes |
 | --- | --- | --- | --- |
-| `ext.debug.log` | `log(value)` | 
-il` | Appends a rendered value to the runtime debug log. |
+| `ext.debug.log` | `log(value)` | `nil` | Appends a rendered value to the runtime debug log. |
 | `ext.debug.inspect` | `inspect(value)` | `string` | Returns a rendered textual representation. |
 
 ### 3.3 `ext.net`
@@ -257,8 +253,7 @@ Requires: no capability
 | `state.save` | `save(slot: int)` | `bool` | Stores the current persistent key/value state into a slot. |
 | `state.load` | `load(slot: int)` | `bool` | Restores the persistent key/value state from a slot. |
 | `state.has` | `has(key: string)` | `bool` | Checks whether a key exists in the current state. |
-| `state.get` | `get(key: string)` | `value` | Returns the current value for a key or 
-il`. |
+| `state.get` | `get(key: string)` | `value` | Returns the current value for a key or `nil`. |
 | `state.set` | `set(key: string, value)` | `bool` | Writes a value into the current state. |
 | `state.erase` | `erase(key: string)` | `bool` | Removes a key from the current state. |
 
@@ -282,8 +277,8 @@ current execution model and are useful to know when reading the runtime code.
   `read:chapter_1:0001` with `state.set(...)` and check them with
   `state.has(...)` when you decide whether to skip already-read content.
 - For engine-driven message windows, a practical pattern is to call
-  `ext.message.choices_named(...)`, wait with `recv()`, and branch on the value
-  returned by `recv()` directly.
+  `ext.message.choices_named(...)`, wait with `recv()`, then read
+  `state.get("ui.last_choice")` / `state.get("ui.last_input")`.
 - Message window colors and font sizes can also be authored from script with
   `ext.message.box_style(...)`, `text_color(...)`, `speaker_color(...)`,
   `accent_color(...)`, `font_size(...)`, and `reset_style()`.
