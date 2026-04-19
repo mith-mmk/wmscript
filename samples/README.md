@@ -27,6 +27,22 @@ cargo run -p wmtoolchain -- samples/helloworld/main.wms --out releases/helloworl
 cargo run -p wmfrontend -- releases/helloworld-cycle.warc --platform native
 ```
 
+## Auto CLI UI Test (B12)
+
+AI などの自動実行環境で `recv()` 待ちを進めるために、`wmfrontend` には
+headless の自動応答 CLI が追加されています。
+
+```bash
+# input を自動投入して戻り値を検証
+cargo run -p wmfrontend --bin wmautoui -- samples/inputlink/main.wms --input AI-INPUT --expect AI-INPUT
+
+# choice + input を自動応答
+cargo run -p wmfrontend --bin wmautoui -- samples/messagewindow/main.wms --choice north --input Mika
+
+# chapter choice の自動進行
+cargo run -p wmfrontend --bin wmautoui -- samples/easynovel/main.wms --choice prologue --max-rounds 1024
+```
+
 ## Notes
 
 - `wmfrontend` は `<script.wms>` と `<archive.warc>` の両方を受け付けます。

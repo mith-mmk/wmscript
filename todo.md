@@ -494,13 +494,16 @@ Toolchain
     - [+] B6. back log
     - [+] B7. save/load
     - [+] B8. 画像表示 / 音楽
-    - [ ] B9. back log effect
-    - [ ] B10. opening/ending
-    - [ ] B11. 言語切り替え
+    - [+] B9. back log effect
+    - [+] B10. opening/ending
+    - [+] B11. 言語切り替え
+    - [+] B12. 全自動テスト用CLI UI (AIによる動作確認のため)
   - [+] C. Toolchain 実証（script + assets -> demo 実行）
     - [+] C1. スクリプト分割コンパイルと import 運用を固定
     - [+] C2. archive/package を通した起動手順を固定
     - [+] C3. samples で end-to-end 実証（messagewindow/easynovel）
+    - [+] C4-1. wmsruntime <packeddata> で直接起動可能に（script + assets を .warc にまとめて起動）
+    - [ ] C4-2. WEB配信最適化 （assets の 分割配信 + manifest + ロード最適化）
   - [ ] D. next phase へ分離
     - [ ] D1. 音声(lip sync)
     - [ ] D2. text 2 script(toolchain) (md -> wms script toolchain)

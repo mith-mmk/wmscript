@@ -12,7 +12,10 @@
 ## すぐ試すコマンド
 
 ```bash
-# script を直接実行
+# script を headless 自動実行（AI検証向け）
+cargo run -p wmfrontend --bin wmautoui -- samples/inputlink/main.wms --input AI-INPUT --expect AI-INPUT
+
+# GUI で確認（描画環境がある場合）
 cargo run -p wmfrontend -- samples/messagewindow/main.wms --platform egui --font noto
 
 # package を作る

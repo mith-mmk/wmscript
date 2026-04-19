@@ -63,6 +63,7 @@ struct ReportApp {
     message_signature: Option<String>,
     auto_advance_sent: bool,
     auto_advance_elapsed_seconds: f32,
+    backlog_effect_progress: f32,
     font_preset: GuiFontPreset,
     applied_font_preset: Option<GuiFontPreset>,
 }
@@ -78,16 +79,6 @@ enum RuntimeView {
     Title,
     Config,
     SaveLoad,
-}
-
-impl RuntimeView {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Title => "Title",
-            Self::Config => "Config",
-            Self::SaveLoad => "Save / Load",
-        }
-    }
 }
 
 impl ReportApp {
@@ -118,6 +109,7 @@ impl ReportApp {
             message_signature: None,
             auto_advance_sent: false,
             auto_advance_elapsed_seconds: 0.0,
+            backlog_effect_progress: 0.0,
             font_preset,
             applied_font_preset: None,
         }
@@ -128,6 +120,40 @@ impl ReportApp {
             UiTheme::Dark => egui::Visuals::dark(),
             UiTheme::Light => egui::Visuals::light(),
             UiTheme::System => egui::Visuals::dark(),
+        }
+    }
+
+    fn locale_code(&self) -> &str {
+        if self
+            .report
+            .ui_state
+            .scene
+            .message_window
+            .locale
+            .starts_with("ja")
+        {
+            "ja"
+        } else {
+            "en"
+        }
+    }
+
+    fn tr<'a>(&self, ja: &'a str, en: &'a str) -> &'a str {
+        if self.locale_code() == "ja" {
+            ja
+        } else {
+            en
+        }
+    }
+
+    fn runtime_view_label(&self, view: RuntimeView) -> &'static str {
+        match (self.locale_code(), view) {
+            ("ja", RuntimeView::Title) => "タイトル",
+            ("ja", RuntimeView::Config) => "設定",
+            ("ja", RuntimeView::SaveLoad) => "セーブ/ロード",
+            (_, RuntimeView::Title) => "Title",
+            (_, RuntimeView::Config) => "Config",
+            (_, RuntimeView::SaveLoad) => "Save / Load",
         }
     }
 
@@ -406,6 +432,17 @@ impl ReportApp {
         self.message_history_open = !self.message_history_open;
     }
 
+    fn update_backlog_effect(&mut self, ctx: &egui::Context) {
+        let target = if self.message_history_open { 1.0 } else { 0.0 };
+        let dt = ctx.input(|input| input.stable_dt).max(0.0);
+        let speed = 7.5;
+        self.backlog_effect_progress += (target - self.backlog_effect_progress) * (speed * dt);
+        self.backlog_effect_progress = self.backlog_effect_progress.clamp(0.0, 1.0);
+        if (target - self.backlog_effect_progress).abs() > 0.01 {
+            ctx.request_repaint_after(Duration::from_millis(16));
+        }
+    }
+
     fn toggle_auto_mode(&mut self) {
         let enabled = !self.report.ui_state.scene.message_window.auto_mode;
         self.report.runtime.set_message_auto_mode(enabled);
@@ -609,23 +646,35 @@ impl ReportApp {
             return;
         }
 
-        egui::Window::new(self.active_runtime_view.label())
+        egui::Window::new(self.runtime_view_label(self.active_runtime_view))
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
             .collapsible(false)
             .resizable(false)
             .default_width(420.0)
             .order(egui::Order::Debug)
             .show(ctx, |ui| {
+                let title_label = self.runtime_view_label(RuntimeView::Title);
+                let config_label = self.runtime_view_label(RuntimeView::Config);
+                let save_load_label = self.runtime_view_label(RuntimeView::SaveLoad);
                 ui.horizontal_wrapped(|ui| {
                     for view in [
                         RuntimeView::Title,
                         RuntimeView::Config,
                         RuntimeView::SaveLoad,
                     ] {
-                        ui.selectable_value(&mut self.active_runtime_view, view, view.label());
+                        let label = match view {
+                            RuntimeView::Title => title_label,
+                            RuntimeView::Config => config_label,
+                            RuntimeView::SaveLoad => save_load_label,
+                        };
+                        ui.selectable_value(
+                            &mut self.active_runtime_view,
+                            view,
+                            label,
+                        );
                     }
                     ui.separator();
-                    if ui.button("Close").clicked() {
+                    if ui.button(self.tr("閉じる", "Close")).clicked() {
                         self.close_runtime_view();
                     }
                 });
@@ -637,29 +686,29 @@ impl ReportApp {
                         ui.label(format!("worker: {}", self.report.execution.worker_id));
                         ui.label(format!("archive: {} bytes", self.report.build.archive_size));
                         ui.add_space(8.0);
-                        ui.label("Runtime actions");
+                        ui.label(self.tr("ランタイム操作", "Runtime actions"));
                         ui.horizontal_wrapped(|ui| {
-                            if ui.button("Config").clicked() {
+                            if ui.button(self.tr("設定", "Config")).clicked() {
                                 self.active_runtime_view = RuntimeView::Config;
                             }
-                            if ui.button("Save / Load").clicked() {
+                            if ui.button(self.tr("セーブ/ロード", "Save / Load")).clicked() {
                                 self.active_runtime_view = RuntimeView::SaveLoad;
                             }
-                            if ui.button("Restart").clicked() {
+                            if ui.button(self.tr("リスタート", "Restart")).clicked() {
                                 self.restart_from_beginning();
                             }
-                            if ui.button("Toggle Log").clicked() {
+                            if ui.button(self.tr("ログ表示切替", "Toggle Log")).clicked() {
                                 self.message_history_open = !self.message_history_open;
                             }
-                            if ui.button("Toggle Debug").clicked() {
+                            if ui.button(self.tr("デバッグ表示切替", "Toggle Debug")).clicked() {
                                 self.debug_panel_open = !self.debug_panel_open;
                             }
-                            if ui.button("Close Game").clicked() {
+                            if ui.button(self.tr("ゲームを閉じる", "Close Game")).clicked() {
                                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                             }
                         });
                         ui.add_space(8.0);
-                        ui.label("Current message");
+                        ui.label(self.tr("現在のメッセージ", "Current message"));
                         let message = &self.report.ui_state.scene.message_window;
                         ui.monospace(format!(
                             "visible={} auto={} skip={} choices={} prompt={}",
@@ -675,7 +724,7 @@ impl ReportApp {
                         }
                     }
                     RuntimeView::Config => {
-                        ui.label("Theme");
+                        ui.label(self.tr("テーマ", "Theme"));
                         ui.horizontal(|ui| {
                             for theme in [UiTheme::System, UiTheme::Dark, UiTheme::Light] {
                                 if ui
@@ -690,7 +739,7 @@ impl ReportApp {
                             }
                         });
                         ui.add_space(8.0);
-                        egui::ComboBox::from_label("Font")
+                        egui::ComboBox::from_label(self.tr("フォント", "Font"))
                             .selected_text(self.font_preset.label())
                             .show_ui(ui, |ui| {
                                 for preset in [
@@ -706,23 +755,50 @@ impl ReportApp {
                                 }
                             });
                         ui.add_space(8.0);
+                        ui.label(self.tr("言語", "Language"));
+                        ui.horizontal(|ui| {
+                            if ui
+                                .selectable_label(self.locale_code() == "ja", "日本語")
+                                .clicked()
+                            {
+                                self.report.runtime.set_message_locale("ja");
+                                self.sync_runtime_state();
+                            }
+                            if ui
+                                .selectable_label(self.locale_code() == "en", "English")
+                                .clicked()
+                            {
+                                self.report.runtime.set_message_locale("en");
+                                self.sync_runtime_state();
+                            }
+                        });
+                        ui.add_space(8.0);
                         let mut speed = self.report.ui_state.scene.message_window.text_speed;
                         if ui
-                            .add(egui::Slider::new(&mut speed, 0.0..=120.0).text("Text Speed"))
+                            .add(
+                                egui::Slider::new(&mut speed, 0.0..=120.0)
+                                    .text(self.tr("文字送り速度", "Text Speed")),
+                            )
                             .changed()
                         {
                             self.report.runtime.set_message_speed(speed);
                             self.report.ui_state.scene.message_window.text_speed = speed;
                         }
                         let mut auto_mode = self.report.ui_state.scene.message_window.auto_mode;
-                        if ui.checkbox(&mut auto_mode, "Auto Mode").changed() {
+                        if ui
+                            .checkbox(&mut auto_mode, self.tr("オート進行", "Auto Mode"))
+                            .changed()
+                        {
                             self.report.runtime.set_message_auto_mode(auto_mode);
                             self.report.ui_state.scene.message_window.auto_mode = auto_mode;
                             self.auto_advance_sent = false;
                             self.auto_advance_elapsed_seconds = 0.0;
                         }
                         let mut skip_mode = self.report.ui_state.scene.message_window.skip_mode;
-                        if ui.checkbox(&mut skip_mode, "Skip Mode").changed() {
+                        if ui
+                            .checkbox(&mut skip_mode, self.tr("スキップ", "Skip Mode"))
+                            .changed()
+                        {
                             self.report.runtime.set_message_skip_mode(skip_mode);
                             self.report.ui_state.scene.message_window.skip_mode = skip_mode;
                             if skip_mode {
@@ -744,26 +820,32 @@ impl ReportApp {
                         }
                     }
                     RuntimeView::SaveLoad => {
-                        ui.label("Checkpoint Slot");
+                        ui.label(self.tr("チェックポイントスロット", "Checkpoint Slot"));
                         ui.add(
                             egui::DragValue::new(&mut self.selected_checkpoint_slot).range(1..=99),
                         );
                         ui.add_space(8.0);
                         ui.horizontal(|ui| {
-                            if ui.button("Save").clicked() {
+                            if ui.button(self.tr("保存", "Save")).clicked() {
                                 self.save_runtime_slot();
                             }
-                            if ui.button("Load").clicked() {
+                            if ui.button(self.tr("読み込み", "Load")).clicked() {
                                 self.load_runtime_slot();
                             }
-                            if ui.button("Restart").clicked() {
+                            if ui.button(self.tr("リスタート", "Restart")).clicked() {
                                 self.restart_from_beginning();
                             }
                         });
                         ui.add_space(8.0);
-                        ui.label("Save stores an in-memory runtime checkpoint.");
+                        ui.label(self.tr(
+                            "Save はランタイムのメモリ内チェックポイントを保存します。",
+                            "Save stores an in-memory runtime checkpoint.",
+                        ));
                         ui.label(
-                            "Load restores VM, scene, resource, and audio state from that slot.",
+                            self.tr(
+                                "Load はそのスロットから VM / scene / resource / audio を復元します。",
+                                "Load restores VM, scene, resource, and audio state from that slot.",
+                            ),
                         );
                         if let Some(status) = &self.runtime_status_line {
                             ui.separator();
@@ -777,22 +859,22 @@ impl ReportApp {
     fn draw_runtime_hud(&mut self, ctx: &egui::Context) {
         let mut chips = Vec::new();
         if self.report.ui_state.scene.message_window.auto_mode {
-            chips.push("AUTO".to_owned());
+            chips.push(self.tr("オート", "AUTO").to_owned());
         }
         if self.report.ui_state.scene.message_window.skip_mode {
-            chips.push("SKIP".to_owned());
+            chips.push(self.tr("スキップ", "SKIP").to_owned());
         }
         if self.message_history_open {
-            chips.push("LOG".to_owned());
+            chips.push(self.tr("ログ", "LOG").to_owned());
         }
         if self.debug_panel_open {
-            chips.push("DEBUG".to_owned());
+            chips.push(self.tr("デバッグ", "DEBUG").to_owned());
         }
         if let Some(status) = &self.runtime_status_line {
             chips.push(status.clone());
         }
         if chips.is_empty() {
-            chips.push("M MENU".to_owned());
+            chips.push(self.tr("M メニュー", "M MENU").to_owned());
         }
 
         egui::Area::new(egui::Id::new("runtime_hud"))
@@ -837,11 +919,12 @@ impl ReportApp {
         let choices = message.choices.clone();
         let input_prompt = message.input_prompt.clone();
         let visible = message.visible;
+        let locale_is_ja = message.locale.starts_with("ja");
         let speaker = message
             .speaker
             .as_deref()
             .filter(|speaker| !speaker.is_empty())
-            .unwrap_or("Narrator")
+            .unwrap_or(if locale_is_ja { "語り手" } else { "Narrator" })
             .to_owned();
         let revealed_text = self.revealed_message_text(&message.text);
         let text_lines = revealed_text
@@ -851,6 +934,7 @@ impl ReportApp {
         let backlog = message.backlog.clone();
         let can_advance = choices.is_empty() && input_prompt.is_none();
         let reveal_complete = self.message_reveal_chars >= message.text.chars().count();
+        let backlog_effect = self.backlog_effect_progress.clamp(0.0, 1.0);
         let style = message.style.clone();
         let panel_stroke = Self::egui_color(style.panel_stroke);
         let text_color = Self::egui_color(style.text_color);
@@ -918,7 +1002,11 @@ impl ReportApp {
                         panel_rect.left_top()
                             + egui::vec2(26.0 * scale.max(0.75), 18.0 * scale.max(0.75)),
                         egui::Align2::LEFT_TOP,
-                        "SELECTION",
+                        if locale_is_ja {
+                            "選択肢"
+                        } else {
+                            "SELECTION"
+                        },
                         egui::FontId::proportional((14.0 * scale).max(11.0)),
                         choice_accent_color,
                     );
@@ -1037,7 +1125,11 @@ impl ReportApp {
                                     [content_rect.width().max(1.0), 32.0 * scale.max(0.75)],
                                     egui::TextEdit::singleline(&mut self.player_input)
                                         .hint_text(
-                                            egui::RichText::new("Enter to send")
+                                            egui::RichText::new(if locale_is_ja {
+                                                "Enter で送信"
+                                            } else {
+                                                "Enter to send"
+                                            })
                                                 .color(input_hint_color),
                                         )
                                         .text_color(input_text_color)
@@ -1174,8 +1266,8 @@ impl ReportApp {
                         );
                         ui.add_space(10.0 * scale);
 
-                        let text_area_height = if self.message_history_open && !backlog.is_empty() {
-                            message_rect.height() * 0.28
+                        let text_area_height = if backlog_effect > 0.01 && !backlog.is_empty() {
+                            message_rect.height() * (0.44 - 0.16 * backlog_effect)
                         } else {
                             message_rect.height() * 0.44
                         };
@@ -1204,20 +1296,35 @@ impl ReportApp {
                         ui.horizontal_wrapped(|ui| {
                             let mut chips = Vec::new();
                             if self.report.ui_state.scene.message_window.skip_mode {
-                                chips.push("SKIP".to_owned());
+                                chips.push(
+                                    if locale_is_ja { "スキップ" } else { "SKIP" }.to_owned(),
+                                );
                             } else if self.report.ui_state.scene.message_window.auto_mode {
-                                chips.push("AUTO".to_owned());
+                                chips.push(
+                                    if locale_is_ja { "オート" } else { "AUTO" }.to_owned(),
+                                );
                             } else {
-                                chips.push("MANUAL".to_owned());
+                                chips.push(
+                                    if locale_is_ja {
+                                        "手動"
+                                    } else {
+                                        "MANUAL"
+                                    }
+                                    .to_owned(),
+                                );
                             }
                             if !choices.is_empty() {
-                                chips.push(format!("CHOICE {}", choices.len()));
+                                chips.push(if locale_is_ja {
+                                    format!("選択肢 {}", choices.len())
+                                } else {
+                                    format!("CHOICE {}", choices.len())
+                                });
                             }
                             if input_prompt.is_some() {
-                                chips.push("INPUT".to_owned());
+                                chips.push(if locale_is_ja { "入力" } else { "INPUT" }.to_owned());
                             }
                             if self.message_history_open {
-                                chips.push("LOG".to_owned());
+                                chips.push(if locale_is_ja { "ログ" } else { "LOG" }.to_owned());
                             }
                             for chip in chips {
                                 ui.label(
@@ -1228,13 +1335,15 @@ impl ReportApp {
                             }
                         });
 
-                        if self.message_history_open && !backlog.is_empty() {
+                        if backlog_effect > 0.01 && !backlog.is_empty() {
                             ui.add_space(8.0 * scale);
                             egui::ScrollArea::vertical()
                                 .id_salt("message_window_backlog")
-                                .max_height(message_rect.height() * 0.18)
+                                .max_height(message_rect.height() * (0.08 + 0.12 * backlog_effect))
                                 .show(ui, |ui| {
                                     for (index, line) in backlog.iter().enumerate() {
+                                        let depth = (backlog.len().saturating_sub(index)) as f32;
+                                        let depth_alpha = (1.0 - depth * 0.012).clamp(0.62, 1.0);
                                         ui.label(
                                             egui::RichText::new(format!(
                                                 "{:02}. {}",
@@ -1242,7 +1351,11 @@ impl ReportApp {
                                                 line
                                             ))
                                             .size(14.0 * scale.max(0.75))
-                                            .color(text_color.gamma_multiply(0.92)),
+                                            .color(
+                                                text_color.gamma_multiply(
+                                                    (0.45 + 0.55 * backlog_effect) * depth_alpha,
+                                                ),
+                                            ),
                                         );
                                     }
                                 });
@@ -1336,6 +1449,7 @@ impl eframe::App for ReportApp {
             self.restart_from_beginning();
         }
         self.update_message_reveal(ctx);
+        self.update_backlog_effect(ctx);
 
         if self.debug_panel_open {
             egui::SidePanel::right("debug")

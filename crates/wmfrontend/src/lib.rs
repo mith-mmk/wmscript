@@ -530,6 +530,7 @@ fn to_ui_message_window_state(state: RuntimeMessageWindowState) -> wmui::UiMessa
         visible: state.visible,
         speaker: state.speaker,
         text: state.text,
+        locale: state.locale,
         backlog: state.backlog,
         choices: state.choices.into_iter().map(to_ui_choice).collect(),
         input_prompt: state.input_prompt,

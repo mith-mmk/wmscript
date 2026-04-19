@@ -1,0 +1,269 @@
+use std::env;
+use std::fs;
+use std::path::PathBuf;
+
+use wmplatform::PlatformProfile;
+use wmruntime::{Runtime, RuntimeConfig};
+use wmtoolchain::{GameProject, Toolchain, ToolchainConfig};
+use wmvm::{Message, RunOutcome, Value, WorkerState};
+
+fn main() {
+    if let Err(error) = run() {
+        eprintln!("{error}");
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<(), Box<dyn std::error::Error>> {
+    let args = CliArgs::parse(env::args().skip(1))?;
+
+    let toolchain = Toolchain::new(ToolchainConfig::new(args.platform).with_step_limit(args.step_limit));
+    let mut runtime = Runtime::new(RuntimeConfig::new(args.platform).with_step_limit(args.step_limit));
+    toolchain.bootstrap_runtime(&mut runtime)?;
+
+    let (build, worker_id) = if let Some(archive_path) = &args.archive_path {
+        let archive_bytes = fs::read(archive_path)?;
+        let build = toolchain.load_archive(&archive_bytes)?;
+        runtime.load_archive(&archive_bytes)?;
+        let worker_id = runtime.spawn_program(build.program.clone())?;
+        (build, worker_id)
+    } else {
+        let script_path = args.script_path.clone().ok_or("missing script path")?;
+        let source = fs::read_to_string(&script_path)?;
+        let package_name = args.package_name.clone().unwrap_or_else(|| {
+            script_path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or("wml-game")
+                .to_owned()
+        });
+        let project = GameProject::new(package_name, script_path.to_string_lossy().to_string(), source);
+        let build = toolchain.build_project(&project)?;
+        runtime.load_archive(&build.archive)?;
+        let worker_id = runtime.spawn_program(build.program.clone())?;
+        (build, worker_id)
+    };
+
+    let mut all_outcomes = Vec::new();
+    let mut sent_messages = 0usize;
+    let mut sent_choices = 0usize;
+    let mut sent_inputs = 0usize;
+
+    for _round in 0..args.max_rounds {
+        let outcomes = runtime.tick();
+        all_outcomes.extend(outcomes);
+
+        let worker_state = runtime.worker_state(worker_id);
+        if matches!(worker_state, Some(WorkerState::Halted) | Some(WorkerState::Error(_))) {
+            break;
+        }
+
+        let waiting_workers = runtime.waiting_workers();
+        if waiting_workers.is_empty() {
+            continue;
+        }
+
+        let message_state = runtime.message_window_state();
+        let payload = if let Some(prompt) = message_state.input_prompt.as_deref() {
+            let input = args.input.clone().unwrap_or_else(|| "auto-input".to_owned());
+            if !args.quiet {
+                println!("[auto-ui] input prompt={prompt:?} -> {input:?}");
+            }
+            runtime.set_state_value("ui.last_input", Value::String(input.clone()));
+            runtime.set_state_value("ui.last_reply", Value::String(input.clone()));
+            sent_inputs += 1;
+            Value::String(input)
+        } else if sent_inputs == 0 && args.input.is_some() {
+            let input = args.input.clone().unwrap_or_else(|| "auto-input".to_owned());
+            if !args.quiet {
+                println!("[auto-ui] fallback input -> {input:?}");
+            }
+            runtime.set_state_value("ui.last_input", Value::String(input.clone()));
+            runtime.set_state_value("ui.last_reply", Value::String(input.clone()));
+            sent_inputs += 1;
+            Value::String(input)
+        } else if !message_state.choices.is_empty() {
+            let choice = select_choice(&args, &message_state.choices)
+                .ok_or("no enabled choice available for auto-ui")?;
+            if !args.quiet {
+                println!(
+                    "[auto-ui] choice id={:?} label={:?}",
+                    choice.id,
+                    choice.label
+                );
+            }
+            runtime.set_state_value("ui.last_choice", Value::String(choice.id.clone()));
+            runtime.set_state_value("ui.last_reply", Value::String(choice.id.clone()));
+            sent_choices += 1;
+            Value::String(choice.id)
+        } else {
+            if !args.quiet {
+                println!("[auto-ui] advance (nil)");
+            }
+            Value::Nil
+        };
+
+        for waiting_worker in waiting_workers {
+            runtime.send_message(Message::new(0, waiting_worker, 0, payload.clone()));
+            sent_messages += 1;
+        }
+    }
+
+    let worker_state = runtime.worker_state(worker_id);
+    if !matches!(worker_state, Some(WorkerState::Halted) | Some(WorkerState::Error(_))) {
+        return Err(format!(
+            "auto-ui run did not finish within max rounds (state={worker_state:?})"
+        )
+        .into());
+    }
+
+    if let Some(expected) = &args.expect_string {
+        let actual = all_outcomes.iter().rev().find_map(|(_, outcome)| match outcome {
+            RunOutcome::Halted {
+                value: Some(Value::String(text)),
+                ..
+            } => Some(text.clone()),
+            _ => None,
+        });
+        if actual.as_deref() != Some(expected.as_str()) {
+            return Err(format!(
+                "expected final string {:?}, got {:?}",
+                expected, actual
+            )
+            .into());
+        }
+    }
+
+    println!("=== auto-ui summary ===");
+    println!("package: {}", build.manifest.package_name);
+    println!("archive bytes: {}", build.archive_size);
+    println!("worker: {}", worker_id);
+    println!("messages sent: {}", sent_messages);
+    println!("choice replies: {}", sent_choices);
+    println!("input replies: {}", sent_inputs);
+    if let Some((_, outcome)) = all_outcomes.last() {
+        println!("final outcome: {outcome:?}");
+    }
+
+    Ok(())
+}
+
+fn select_choice(
+    args: &CliArgs,
+    choices: &[wmruntime::MessageChoiceState],
+) -> Option<wmruntime::MessageChoiceState> {
+    let mut enabled = choices.iter().filter(|choice| choice.enabled);
+    if let Some(wanted) = args.choice.as_deref() {
+        if let Some(choice) = enabled.clone().find(|choice| choice.id == wanted) {
+            return Some(choice.clone());
+        }
+        if let Some(choice) = enabled.clone().find(|choice| choice.label == wanted) {
+            return Some(choice.clone());
+        }
+    }
+    enabled.next().cloned()
+}
+
+#[derive(Debug)]
+struct CliArgs {
+    script_path: Option<PathBuf>,
+    archive_path: Option<PathBuf>,
+    package_name: Option<String>,
+    step_limit: usize,
+    max_rounds: usize,
+    platform: PlatformProfile,
+    input: Option<String>,
+    choice: Option<String>,
+    expect_string: Option<String>,
+    quiet: bool,
+}
+
+impl CliArgs {
+    fn parse(mut args: impl Iterator<Item = String>) -> Result<Self, Box<dyn std::error::Error>> {
+        let mut script_path = None;
+        let mut archive_path = None;
+        let mut package_name = None;
+        let mut step_limit = 128usize;
+        let mut max_rounds = 512usize;
+        let mut platform = PlatformProfile::native();
+        let mut input = None;
+        let mut choice = None;
+        let mut expect_string = None;
+        let mut quiet = false;
+
+        while let Some(arg) = args.next() {
+            match arg.as_str() {
+                "--archive" => archive_path = Some(PathBuf::from(next_value(&mut args, "--archive")?)),
+                "--package" => package_name = Some(next_value(&mut args, "--package")?),
+                "--platform" => platform = parse_platform(&next_value(&mut args, "--platform")?)?,
+                "--step-limit" => step_limit = next_value(&mut args, "--step-limit")?.parse()?,
+                "--max-rounds" => max_rounds = next_value(&mut args, "--max-rounds")?.parse()?,
+                "--input" => input = Some(next_value(&mut args, "--input")?),
+                "--choice" => choice = Some(next_value(&mut args, "--choice")?),
+                "--expect" => expect_string = Some(next_value(&mut args, "--expect")?),
+                "--quiet" => quiet = true,
+                "--help" | "-h" => {
+                    print_usage();
+                    std::process::exit(0);
+                }
+                value if value.starts_with('-') => {
+                    return Err(format!("unknown option: {value}").into());
+                }
+                value => {
+                    if script_path.is_some() || archive_path.is_some() {
+                        return Err(format!("unexpected extra positional argument: {value}").into());
+                    }
+                    let path = PathBuf::from(value);
+                    if path.extension().and_then(|ext| ext.to_str()) == Some("warc") {
+                        archive_path = Some(path);
+                    } else {
+                        script_path = Some(path);
+                    }
+                }
+            }
+        }
+
+        if script_path.is_none() && archive_path.is_none() {
+            return Err("missing script path or --archive path".into());
+        }
+        if script_path.is_some() && archive_path.is_some() {
+            return Err("script path and --archive cannot be combined".into());
+        }
+
+        Ok(Self {
+            script_path,
+            archive_path,
+            package_name,
+            step_limit,
+            max_rounds,
+            platform,
+            input,
+            choice,
+            expect_string,
+            quiet,
+        })
+    }
+}
+
+fn next_value(
+    args: &mut impl Iterator<Item = String>,
+    flag: &'static str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    args.next()
+        .ok_or_else(|| format!("{flag} requires a value").into())
+}
+
+fn parse_platform(value: &str) -> Result<PlatformProfile, Box<dyn std::error::Error>> {
+    match value {
+        "native" => Ok(PlatformProfile::native()),
+        "wasm" => Ok(PlatformProfile::wasm()),
+        "egui" => Ok(PlatformProfile::egui()),
+        other => Err(format!("unknown platform: {other}").into()),
+    }
+}
+
+fn print_usage() {
+    eprintln!(
+        "usage: wmautoui <script.wms|archive.warc> [--archive FILE] [--package NAME] [--platform native|wasm|egui] [--step-limit N] [--max-rounds N] [--choice ID_OR_LABEL] [--input TEXT] [--expect TEXT] [--quiet]"
+    );
+}

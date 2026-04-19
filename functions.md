@@ -169,6 +169,8 @@ Requires: `CAP_GUI`
 | --- | --- | --- | --- |
 | `ext.scene.layout` | `layout(choice_x, choice_y, choice_w, choice_h, message_x, message_y, message_w, message_h)` | `bool` | Sets the frontend scene layout used for choice and message panels. |
 | `ext.scene.reset` | `reset()` | `bool` | Restores the default scene layout and clears the active message window and recorded image draws. |
+| `ext.scene.opening` | `opening(title: string)` | `bool` | Shows an opening title card through the message window. |
+| `ext.scene.ending` | `ending(title: string)` | `bool` | Shows an ending title card through the message window. |
 
 ### 3.6 `ext.message`
 
@@ -203,6 +205,7 @@ Requires: `CAP_GUI`
 | `ext.message.choice_text_color` | `choice_text_color(r, g, b, a)` | `bool` | Sets the choice label color. |
 | `ext.message.choice_accent_color` | `choice_accent_color(r, g, b, a)` | `bool` | Sets the choice-panel heading and cursor accent color. |
 | `ext.message.choice_selected_style` | `choice_selected_style(fill_r, fill_g, fill_b, fill_a, stroke_r, stroke_g, stroke_b, stroke_a)` | `bool` | Sets the selected-choice row fill and stroke colors. |
+| `ext.message.locale` | `locale()` or `locale(code: string)` | `string` | Gets or sets the message UI locale (`ja` or `en`). |
 ### 3.7 `ext.image`
 
 Requires: `CAP_GUI`

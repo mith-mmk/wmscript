@@ -35,7 +35,21 @@ cargo run -p wmtoolchain -- samples/easynovel/main.wms --image ui/background=ass
 
 # split scripts with nested imports
 cargo run -p wmtoolchain -- samples/splitimport/main.wms --platform native
+
+# run a packed archive directly
+cargo run -p wmtoolchain --bin wmsruntime -- releases/helloworld-cycle.warc --platform native
 ```
+
+## Direct Runtime Entry (`wmsruntime`)
+
+```bash
+cargo run -p wmtoolchain --bin wmsruntime -- <packed.warc> \
+  [--platform native|wasm|egui] \
+  [--step-limit N]
+```
+
+`wmsruntime` loads a packaged `.warc` archive and executes it immediately,
+printing a runtime summary (package, worker, archive bytes, and last outcome).
 
 ## Output
 

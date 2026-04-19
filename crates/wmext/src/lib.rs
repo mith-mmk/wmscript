@@ -361,6 +361,10 @@ pub fn standard_extension_registry() -> Result<ExtensionRegistry> {
                 .with_return_type(ExtValueType::Bool),
             ExtensionFunctionSpec::new("z_index", 182, 3, 3, CAP_GUI)
                 .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("opening", 183, 1, 1, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("ending", 184, 1, 1, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
         ],
     )?;
     registry.register_extension(
@@ -420,6 +424,8 @@ pub fn standard_extension_registry() -> Result<ExtensionRegistry> {
                 .with_return_type(ExtValueType::Bool),
             ExtensionFunctionSpec::new("choice_selected_style", 227, 8, 8, CAP_GUI)
                 .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("locale", 228, 0, 1, CAP_GUI)
+                .with_return_type(ExtValueType::String),
         ],
     )?;
     registry.register_extension(

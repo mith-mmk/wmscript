@@ -169,6 +169,8 @@ export func main() {
 | --- | --- | --- | --- |
 | `ext.scene.layout` | `layout(choice_x, choice_y, choice_w, choice_h, message_x, message_y, message_w, message_h)` | `bool` | choice 窓と message 窓の配置を frontend 側に指示します。 |
 | `ext.scene.reset` | `reset()` | `bool` | 既定の scene layout に戻し、現在の message window と記録済みの画像描画状態も消去します。 |
+| `ext.scene.opening` | `opening(title: string)` | `bool` | メッセージ窓を使って opening タイトルカードを表示します。 |
+| `ext.scene.ending` | `ending(title: string)` | `bool` | メッセージ窓を使って ending タイトルカードを表示します。 |
 
 ### 3.6 `ext.message`
 
@@ -203,6 +205,7 @@ export func main() {
 | `ext.message.choice_text_color` | `choice_text_color(r, g, b, a)` | `bool` | 選択肢ラベルの文字色を設定します。 |
 | `ext.message.choice_accent_color` | `choice_accent_color(r, g, b, a)` | `bool` | 選択肢パネルの見出しやカーソルのアクセント色を設定します。 |
 | `ext.message.choice_selected_style` | `choice_selected_style(fill_r, fill_g, fill_b, fill_a, stroke_r, stroke_g, stroke_b, stroke_a)` | `bool` | 選択中の行の塗りと枠線の色を設定します。 |
+| `ext.message.locale` | `locale()` または `locale(code: string)` | `string` | メッセージ UI の言語 (`ja` / `en`) を取得または設定します。 |
 
 ### 3.7 `ext.image`
 

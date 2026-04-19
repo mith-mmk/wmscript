@@ -9,7 +9,7 @@ first target は「サンプル script + assets から toolchain で package し
 ### 1) サンプルを直接実行（egui）
 
 ```bash
-cargo run -p wmfrontend -- samples/messagewindow/main.wms --platform egui --font noto
+cargo run -p wmfrontend --bin wmfrontend -- samples/messagewindow/main.wms --platform egui --font noto
 ```
 
 ### 2) toolchain で .warc を作る
@@ -21,7 +21,7 @@ cargo run -p wmtoolchain -- samples/helloworld/main.wms --out releases/helloworl
 ### 3) 生成した .warc を実行する
 
 ```bash
-cargo run -p wmfrontend -- releases/helloworld-cycle.warc --platform native
+cargo run -p wmfrontend --bin wmfrontend -- releases/helloworld-cycle.warc --platform native
 ```
 
 ## Main Entry Documents

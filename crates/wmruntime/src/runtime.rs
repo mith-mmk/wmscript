@@ -164,6 +164,7 @@ pub struct MessageWindowState {
     pub visible: bool,
     pub speaker: Option<String>,
     pub text: String,
+    pub locale: String,
     pub backlog: Vec<String>,
     pub choices: Vec<MessageChoiceState>,
     pub input_prompt: Option<String>,
@@ -179,6 +180,7 @@ impl Default for MessageWindowState {
             visible: false,
             speaker: None,
             text: String::new(),
+            locale: "ja".to_owned(),
             backlog: Vec::new(),
             choices: Vec::new(),
             input_prompt: None,
@@ -777,6 +779,7 @@ impl Runtime {
         let choice_text_color_host_id = 225;
         let choice_accent_color_host_id = 226;
         let choice_selected_style_host_id = 227;
+        let locale_host_id = 228;
         let message_window = self.message_window.clone();
 
         let _ = self.register_host_function(
@@ -1129,6 +1132,25 @@ impl Runtime {
             },
         );
 
+        let message_window = self.message_window.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(locale_host_id, 0, 1, CAP_GUI),
+            move |args| {
+                let mut window = message_window.borrow_mut();
+                if args.is_empty() {
+                    return Ok(Value::String(window.locale.clone()));
+                }
+                let locale = expect_string_arg(args, 0, "locale")?;
+                let normalized = locale.trim().to_ascii_lowercase();
+                window.locale = if normalized.starts_with("ja") {
+                    "ja".to_owned()
+                } else {
+                    "en".to_owned()
+                };
+                Ok(Value::String(window.locale.clone()))
+            },
+        );
+
         let ids = self.extensions.register_extension(
             "ext.message",
             &[
@@ -1234,6 +1256,8 @@ impl Runtime {
                     CAP_GUI,
                 )
                 .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("locale", locale_host_id, 0, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::String),
             ],
         )?;
 
@@ -1265,6 +1289,7 @@ impl Runtime {
             choice_text_color_ext_id: ids[24],
             choice_accent_color_ext_id: ids[25],
             choice_selected_style_ext_id: ids[26],
+            locale_ext_id: ids[27],
             show_host_id,
             append_host_id,
             choices_host_id,
@@ -1292,12 +1317,15 @@ impl Runtime {
             choice_text_color_host_id,
             choice_accent_color_host_id,
             choice_selected_style_host_id,
+            locale_host_id,
         })
     }
     pub fn install_scene_extension(&mut self) -> Result<SceneExtension, RuntimeError> {
         let layout_host_id = 180;
         let reset_host_id = 181;
         let z_index_host_id = 182;
+        let opening_host_id = 183;
+        let ending_host_id = 184;
         let scene_layout = self.scene_layout.clone();
         let _ = self.register_host_function(
             HostFunction::new(layout_host_id, 8, 8, CAP_GUI),
@@ -1343,6 +1371,46 @@ impl Runtime {
                 Ok(Value::Bool(true))
             },
         );
+        let message_window = self.message_window.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(opening_host_id, 1, 1, CAP_GUI),
+            move |args| {
+                let title = expect_string_arg(args, 0, "title")?;
+                let mut window = message_window.borrow_mut();
+                let speaker = if window.locale.starts_with("ja") {
+                    "オープニング"
+                } else {
+                    "Opening"
+                };
+                window.visible = true;
+                window.speaker = Some(speaker.to_owned());
+                window.text = title.clone();
+                window.backlog.extend(title.lines().map(|line| line.to_owned()));
+                window.input_prompt = None;
+                window.choices.clear();
+                Ok(Value::Bool(true))
+            },
+        );
+        let message_window = self.message_window.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(ending_host_id, 1, 1, CAP_GUI),
+            move |args| {
+                let title = expect_string_arg(args, 0, "title")?;
+                let mut window = message_window.borrow_mut();
+                let speaker = if window.locale.starts_with("ja") {
+                    "エンディング"
+                } else {
+                    "Ending"
+                };
+                window.visible = true;
+                window.speaker = Some(speaker.to_owned());
+                window.text = title.clone();
+                window.backlog.extend(title.lines().map(|line| line.to_owned()));
+                window.input_prompt = None;
+                window.choices.clear();
+                Ok(Value::Bool(true))
+            },
+        );
         let ids = self.extensions.register_extension(
             "ext.scene",
             &[
@@ -1352,15 +1420,23 @@ impl Runtime {
                     .with_return_type(ExtValueType::Bool),
                 ExtensionFunctionSpec::new("z_index", z_index_host_id, 3, 3, CAP_GUI)
                     .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("opening", opening_host_id, 1, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("ending", ending_host_id, 1, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
             ],
         )?;
         Ok(SceneExtension {
             layout_ext_id: ids[0],
             reset_ext_id: ids[1],
             z_index_ext_id: ids[2],
+            opening_ext_id: ids[3],
+            ending_ext_id: ids[4],
             layout_host_id,
             reset_host_id,
             z_index_host_id,
+            opening_host_id,
+            ending_host_id,
         })
     }
 
@@ -2125,6 +2201,15 @@ impl Runtime {
         self.message_window.borrow_mut().skip_mode = enabled;
     }
 
+    pub fn set_message_locale(&self, locale: &str) {
+        let normalized = locale.trim().to_ascii_lowercase();
+        self.message_window.borrow_mut().locale = if normalized.starts_with("ja") {
+            "ja".to_owned()
+        } else {
+            "en".to_owned()
+        };
+    }
+
     pub fn set_state_value(&self, key: impl Into<String>, value: Value) {
         self.state_manager.borrow_mut().set(key.into(), value);
     }
@@ -2331,6 +2416,7 @@ pub struct MessageExtension {
     pub choice_text_color_ext_id: u32,
     pub choice_accent_color_ext_id: u32,
     pub choice_selected_style_ext_id: u32,
+    pub locale_ext_id: u32,
     pub show_host_id: HostId,
     pub append_host_id: HostId,
     pub choices_host_id: HostId,
@@ -2358,6 +2444,7 @@ pub struct MessageExtension {
     pub choice_text_color_host_id: HostId,
     pub choice_accent_color_host_id: HostId,
     pub choice_selected_style_host_id: HostId,
+    pub locale_host_id: HostId,
 }
 
 /// Stable ids assigned to the built-in scene extension.
@@ -2366,9 +2453,13 @@ pub struct SceneExtension {
     pub layout_ext_id: u32,
     pub reset_ext_id: u32,
     pub z_index_ext_id: u32,
+    pub opening_ext_id: u32,
+    pub ending_ext_id: u32,
     pub layout_host_id: HostId,
     pub reset_host_id: HostId,
     pub z_index_host_id: HostId,
+    pub opening_host_id: HostId,
+    pub ending_host_id: HostId,
 }
 
 /// Stable ids assigned to the built-in image extension.
@@ -3208,6 +3299,10 @@ mod tests {
             Ok(extension.reset_style_ext_id)
         );
         assert_eq!(
+            runtime.extension_registry().resolve_id("ext.message.locale"),
+            Ok(extension.locale_ext_id)
+        );
+        assert_eq!(
             runtime
                 .host
                 .borrow_mut()
@@ -3298,6 +3393,22 @@ mod tests {
                 )
                 .expect("message accent color"),
             Value::Bool(true)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(extension.locale_host_id, &[Value::String("en".to_owned())])
+                .expect("message locale"),
+            Value::String("en".to_owned())
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(extension.locale_host_id, &[])
+                .expect("message locale get"),
+            Value::String("en".to_owned())
         );
         assert_eq!(
             runtime
@@ -3427,6 +3538,32 @@ mod tests {
         assert_eq!(layout.choice_panel.y, 92.0);
         assert_eq!(layout.message_window.x, 18.0);
         assert_eq!(layout.message_window.height, 130.0);
+        assert_eq!(
+            runtime.extension_registry().resolve_id("ext.scene.opening"),
+            Ok(extension.opening_ext_id)
+        );
+        assert_eq!(
+            runtime.extension_registry().resolve_id("ext.scene.ending"),
+            Ok(extension.ending_ext_id)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(extension.opening_host_id, &[Value::String("Prologue".to_owned())])
+                .expect("scene opening"),
+            Value::Bool(true)
+        );
+        assert_eq!(runtime.message_window_state().text, "Prologue");
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(extension.ending_host_id, &[Value::String("Fin".to_owned())])
+                .expect("scene ending"),
+            Value::Bool(true)
+        );
+        assert_eq!(runtime.message_window_state().text, "Fin");
 
         runtime
             .message_window

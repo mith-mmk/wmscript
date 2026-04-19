@@ -12,14 +12,17 @@
 ## Quick Commands
 
 ```bash
-# script run
-cargo run -p wmfrontend -- samples/messagewindow/main.wms --platform egui --font noto
+# headless script run for AI/CI verification
+cargo run -p wmfrontend --bin wmautoui -- samples/inputlink/main.wms --input AI-INPUT --expect AI-INPUT
+
+# GUI run (when display environment is available)
+cargo run -p wmfrontend --bin wmfrontend -- samples/messagewindow/main.wms --platform egui --font noto
 
 # build package
 cargo run -p wmtoolchain -- samples/helloworld/main.wms --out releases/helloworld-cycle.warc
 
 # run package
-cargo run -p wmfrontend -- releases/helloworld-cycle.warc --platform native
+cargo run -p wmfrontend --bin wmfrontend -- releases/helloworld-cycle.warc --platform native
 ```
 
 
