@@ -666,4 +666,35 @@ mod tests {
             )) if text == "archive-ok"
         ));
     }
+
+    #[test]
+    fn build_toolchainnovel_sample_with_asset() {
+        let toolchain = Toolchain::new(ToolchainConfig::new(PlatformProfile::egui()));
+        let project = GameProject::new(
+            "toolchainnovel",
+            "samples/toolchainnovel/main.wms",
+            include_str!("../../../samples/toolchainnovel/main.wms"),
+        )
+        .push_asset(GameAsset::new(
+            "story/guide",
+            10,
+            100,
+            ResourceType::ScriptData,
+            include_bytes!("../../../samples/toolchainnovel/guide.txt").to_vec(),
+        ))
+        .push_asset(GameAsset::image(
+            "ui/background",
+            11,
+            101,
+            include_bytes!("../../../samples/uiimage.png").to_vec(),
+        ));
+
+        let build = toolchain.build_project(&project).expect("build sample");
+
+        assert!(build.archive_size > 64);
+        assert_eq!(build.manifest.package_name, "toolchainnovel");
+        assert_eq!(build.manifest.resource_map.len(), 2);
+        assert_eq!(build.manifest.resource_map[0].resource_id, 100);
+        assert_eq!(build.manifest.resource_map[1].resource_id, 101);
+    }
 }

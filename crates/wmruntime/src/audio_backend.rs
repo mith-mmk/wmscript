@@ -1,11 +1,16 @@
 #![forbid(unsafe_code)]
 
 use std::cell::RefCell;
+#[cfg(target_os = "windows")]
 use std::collections::BTreeMap;
 use std::fmt;
+#[cfg(target_os = "windows")]
 use std::fs;
+#[cfg(target_os = "windows")]
 use std::io::Write;
+#[cfg(target_os = "windows")]
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "windows")]
 use std::process::{Child, ChildStdin, Command, Stdio};
 
 use wmvm::HostError;
@@ -468,6 +473,7 @@ try {
     )
 }
 
+#[cfg(target_os = "windows")]
 fn encode_powershell_command(script: &str) -> String {
     let utf16 = script
         .encode_utf16()
@@ -500,6 +506,7 @@ fn terminate_process_tree(pid: u32) -> Result<(), HostError> {
     }
 }
 
+#[cfg(target_os = "windows")]
 fn base64_encode(bytes: &[u8]) -> String {
     const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut encoded = String::with_capacity(bytes.len().div_ceil(3) * 4);

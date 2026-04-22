@@ -34,12 +34,10 @@ export func main() {
         "north", "Go North",
         "south", "Go South"
     );
-    ext.message.prompt("Choose a route");
     recv();
     let route = state.get("ui.last_choice");
 
     ext.message.choices_named();
-    ext.message.prompt();
 
     if route == "north" {
         ext.message.show("Guide", "North road selected.\nEnter the companion name.");
@@ -57,7 +55,8 @@ export func main() {
     } else if route == "south" {
         ext.message.show("Guide", "South road selected.\nEnter the weather.");
         ext.message.prompt("Weather");
-        let weather = recv();
+        recv();
+        let weather = state.get("ui.last_input");
         ext.message.prompt();
         if weather == "rain" {
             ext.message.show("Narrator", "South road selected.\nRain starts over the bridge.");
@@ -79,7 +78,7 @@ Runtime behavior:
 - Plain text pages wait on `recv()`, so the engine script controls when the next page starts.
 - `choices_named(...)` result is read from `state.get("ui.last_choice")` after `recv()`.
 - Input is read from `state.get("ui.last_input")` after `recv()`.
-- The sample uses `choices_named()` and `prompt()` with no args to clear those UI states explicitly.
+- The sample uses `choices_named()` with no args to clear choice state, and `prompt()` only for text input.
 
 Run examples:
 

@@ -1,11 +1,12 @@
 #![forbid(unsafe_code)]
+#![cfg_attr(target_arch = "wasm32", allow(dead_code, deprecated))]
 
 use core::fmt;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use eframe::{egui, egui::Vec2};
+use eframe::egui;
 
 use crate::{FrontendError, FrontendReport, GuiFontPreset};
 use wmui::{
@@ -15,6 +16,7 @@ use wmui::{
 use wmvm::{Message, Value};
 
 /// Runs the GUI window for a finished frontend report.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn run_gui(
     report: FrontendReport,
     font_preset: GuiFontPreset,
@@ -28,7 +30,7 @@ pub fn run_gui(
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title(title.clone())
-            .with_inner_size(Vec2::new(size.width.max(640.0), size.height.max(480.0))),
+            .with_inner_size(egui::Vec2::new(size.width.max(640.0), size.height.max(480.0))),
         ..Default::default()
     };
 
@@ -40,6 +42,17 @@ pub fn run_gui(
         .borrow_mut()
         .take()
         .ok_or_else(|| FrontendError::Gui("GUI exited without a report".to_owned()))
+}
+
+/// Reports that the native eframe window path is unavailable on wasm32.
+#[cfg(target_arch = "wasm32")]
+pub fn run_gui(
+    _report: FrontendReport,
+    _font_preset: GuiFontPreset,
+) -> Result<FrontendReport, FrontendError> {
+    Err(FrontendError::Gui(
+        "native GUI launch is unavailable on wasm32; use the browser bootstrap path".to_owned(),
+    ))
 }
 
 struct ReportApp {

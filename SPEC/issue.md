@@ -23,3 +23,19 @@
 - Missing design: checkpoint layering between `state.save/load` and `ext.vm.save/load`. `SPEC/hostapi.md` covers generic save/load restoration, but the script-facing distinction is still unclear: what is persistent game state, what is transient runtime checkpoint state, and which pending requests, UI states, audio states, and resource handles are required to restore.
 - Missing design: time control API and scheduler clock contract. `todo.md` still has an open time control item (`wait`/key wait/time wait/tick/sleep). `SPEC/scheduler.md` mentions `sleep`, but there is no language- or host-level definition for frame ticks, input wait, wall-clock versus simulation time, or how `auto` progression should consume the same clock.
 - Missing design: wasm/WebGL frontend contract. `todo.md` still leaves `10.3 WebGL` open, and `SPEC` does not currently fix the JS bridge boundary, asset upload ownership, or how the `gui` capability maps to browser-backed rendering versus native `egui`.
+
+## 2026-04-23 C4-2 WEB配信最適化の未決事項
+
+- Current state:
+	- `wmarchive::ArchiveStreamReader<R: Read + Seek>` は header / section table / section payload を section 単位で読める。
+	- `wmtoolchain` は script module と asset section を 1 本の `.warc` にまとめ、manifest の `resource_map` と `section_digests` を生成できる。
+	- `wmfrontend` は `wasm32-unknown-unknown` の compile smoke が通る。ただし native `eframe::run_native` は wasm では stub error にしており、browser bootstrap / WebGL rendering は未実装。
+- Missing design:
+	- Web 配信時に `.warc` 単体を range request で読むのか、manifest + section blob 群へ分割するのかを決める必要がある。
+	- 分割配信する場合、外部 section URL、cache key、digest 検証、preload / lazy load hints を manifest にどう持たせるか未定義。
+	- asset section をブラウザへ渡す所有権境界が未定義。特に image/audio の decode / GPU upload / release を JS 側・Rust 側・renderer 側のどこが担当するかを決める必要がある。
+	- `gui` capability と `web_compat` capability の関係が未確定。egui-native の GUI と browser-backed UI を同じ `gui` と見なすか、追加 capability を分けるかを決める必要がある。
+- Proposed first implementation:
+	- まずは single `.warc` + HTTP range / section fetch を前提にする。
+	- manifest には既存 `resource_map` / `section_digests` を維持し、外部 URL は追加フィールドで拡張する。
+	- `samples/toolchainnovel` を C4-2 の smoke corpus にし、script + text asset + image asset が browser 配信経路でも同じ resource id で解決できることを完了条件にする。

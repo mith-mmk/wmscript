@@ -364,6 +364,7 @@ pub struct Runtime {
     audio_states: Rc<RefCell<BTreeMap<u64, AudioPlaybackState>>>,
     state_manager: Rc<RefCell<StateManager>>,
     checkpoints: Rc<RefCell<BTreeMap<u32, RuntimeCheckpoint>>>,
+    pending_vm_saves: Rc<RefCell<Vec<u32>>>,
 }
 
 impl Runtime {
@@ -388,6 +389,7 @@ impl Runtime {
             audio_states: Rc::new(RefCell::new(BTreeMap::new())),
             state_manager: Rc::new(RefCell::new(StateManager::default())),
             checkpoints: Rc::new(RefCell::new(BTreeMap::new())),
+            pending_vm_saves: Rc::new(RefCell::new(Vec::new())),
             config,
         }
     }
@@ -2015,26 +2017,31 @@ impl Runtime {
         let audio_states = self.audio_states.clone();
         let state_manager = self.state_manager.clone();
         let checkpoints = self.checkpoints.clone();
+        let pending_vm_saves = self.pending_vm_saves.clone();
         let host = self.host.clone();
 
         let _ =
             self.register_host_function(HostFunction::new(save_host_id, 1, 1, 0), move |args| {
                 let slot = expect_integer_arg(args, 0, "slot")? as u32;
-                checkpoints.borrow_mut().insert(
-                    slot,
-                    RuntimeCheckpoint {
-                        scheduler: scheduler.borrow().snapshot(),
-                        resources: resources.borrow().clone(),
-                        loaded_archives: loaded_archives.borrow().clone(),
-                        image_draws: image_draws.borrow().clone(),
-                        icon_sheets: icon_sheets.borrow().clone(),
-                        scene_layout: scene_layout.borrow().clone(),
-                        message_window: message_window.borrow().clone(),
-                        debug_log: debug_log.borrow().clone(),
-                        audio_states: audio_states.borrow().clone(),
-                        state_manager: state_manager.borrow().clone(),
-                    },
-                );
+                if let Ok(scheduler) = scheduler.try_borrow() {
+                    checkpoints.borrow_mut().insert(
+                        slot,
+                        RuntimeCheckpoint {
+                            scheduler: scheduler.snapshot(),
+                            resources: resources.borrow().clone(),
+                            loaded_archives: loaded_archives.borrow().clone(),
+                            image_draws: image_draws.borrow().clone(),
+                            icon_sheets: icon_sheets.borrow().clone(),
+                            scene_layout: scene_layout.borrow().clone(),
+                            message_window: message_window.borrow().clone(),
+                            debug_log: debug_log.borrow().clone(),
+                            audio_states: audio_states.borrow().clone(),
+                            state_manager: state_manager.borrow().clone(),
+                        },
+                    );
+                } else {
+                    pending_vm_saves.borrow_mut().push(slot);
+                }
                 Ok(Value::Bool(true))
             });
 
@@ -2149,9 +2156,12 @@ impl Runtime {
     }
 
     pub fn tick(&mut self) -> Vec<(WorkerId, RunOutcome)> {
-        self.scheduler
+        let outcomes = self
+            .scheduler
             .borrow_mut()
-            .run_round(self.config.step_limit)
+            .run_round(self.config.step_limit);
+        self.flush_pending_vm_saves();
+        outcomes
     }
 
     pub fn run_until_idle(&mut self, max_rounds: usize) -> Vec<(WorkerId, RunOutcome)> {
@@ -2230,6 +2240,17 @@ impl Runtime {
                 state_manager: self.state_manager.borrow().clone(),
             },
         );
+    }
+
+    fn flush_pending_vm_saves(&self) {
+        let slots = self
+            .pending_vm_saves
+            .borrow_mut()
+            .drain(..)
+            .collect::<Vec<_>>();
+        for slot in slots {
+            self.save_checkpoint(slot);
+        }
     }
 
     pub fn load_checkpoint(&self, slot: u32) -> Result<bool, RuntimeError> {

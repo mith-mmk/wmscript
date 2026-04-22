@@ -9,18 +9,20 @@
 　- 問題点や曖昧な仕様はissue.mdで管理
 
 # カレント
-- [*] first target: Writer-First 仕様固定 + Toolchain 実証
+- [+] ツールチェーン用のサンプルノベルゲームの作成
+- [+] first target: Writer-First 仕様固定 + Toolchain 実証（egui/native 導線）
   - [+] 必須契約5点を SPEC に反映
     - recv()/message progression 契約
     - ui.last_choice / ui.last_input / ui.last_reply の標準化
     - state.save/load と ext.vm.save/load の責務分離
     - worker 間 input routing 契約
     - platform capability matrix（egui/wasm/native）
-  - [ ] script + assets -> compile -> archive/package -> runtime/frontend 実行の導線を一本化
-  - [ ] samples/easynovel と samples/messagewindow を契約準拠で再検証
-- [ ] next phase 準備
-  - core engine 切り出し
-  - DSL 風高レベル API 設計
+  - [+] script + assets -> compile -> archive/package -> runtime/frontend 実行の導線を一本化
+  - [+] samples/easynovel と samples/messagewindow を契約準拠で再検証
+- [*] next phase 準備
+  - [+] B3. wasm ui smoke（wmfrontend wasm32 check）
+  - [*] C4-2. WEB配信最適化（assets の分割配信 + manifest + ロード最適化）
+  - [ ] D3. core engine 切り出し + DSL 風高レベル API
 
 # 実装
 0. Crate分割
@@ -326,6 +328,7 @@ Toolchain
  [+] assetロード例
 
  [+] easynovel
+ [+] toolchainnovel
 
 6. スクリプトコンパイラ
 6.1 フロントエンド
@@ -488,7 +491,10 @@ Toolchain
   - [*] B. 実装基盤（既存実装の整理）
     - [+] B1. UI Customize API
     - [+] B2. egui ui
-    - [ ] B3. wasm ui（first target は smoke レベル）
+    - [+] B3. wasm ui（first target は smoke レベル）
+      - [+] wmfrontend を wasm32-unknown-unknown で cargo check
+      - [+] native eframe window 起動を wasm target から分離
+      - [ ] browser bootstrap / WebGL rendering は C4-2 / D3 側で継続
     - [+] B4. message / choice / input
     - [+] B5. message speed / auto / skip
     - [+] B6. back log
@@ -498,12 +504,21 @@ Toolchain
     - [+] B10. opening/ending
     - [+] B11. 言語切り替え
     - [+] B12. 全自動テスト用CLI UI (AIによる動作確認のため)
+      - [+] choice/input routing 回帰テスト
   - [+] C. Toolchain 実証（script + assets -> demo 実行）
     - [+] C1. スクリプト分割コンパイルと import 運用を固定
     - [+] C2. archive/package を通した起動手順を固定
     - [+] C3. samples で end-to-end 実証（messagewindow/easynovel）
     - [+] C4-1. wmsruntime <packeddata> で直接起動可能に（script + assets を .warc にまとめて起動）
-    - [ ] C4-2. WEB配信最適化 （assets の 分割配信 + manifest + ロード最適化）
+    - [+] C4-1a. samples/toolchainnovel で script + asset の .warc 化と archive 直接起動の導線を追加
+      - [+] 日本語本文 + choice/input/save 契約
+      - [+] text asset + image asset 同梱
+      - [+] wmautoui archive 直接実行で確認
+    - [*] C4-2. WEB配信最適化 （assets の 分割配信 + manifest + ロード最適化）
+      - [+] 未決事項を SPEC/issue.md に切り出し
+      - [ ] single .warc + HTTP range / section fetch 方針の仕様化
+      - [ ] manifest の外部 section URL / cache key / digest 検証設計
+      - [ ] samples/toolchainnovel を Web 配信 smoke corpus 化
   - [ ] D. next phase へ分離
     - [ ] D1. 音声(lip sync)
     - [ ] D2. text 2 script(toolchain) (md -> wms script toolchain)

@@ -64,43 +64,35 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         let message_state = runtime.message_window_state();
-        let payload = if let Some(prompt) = message_state.input_prompt.as_deref() {
-            let input = args.input.clone().unwrap_or_else(|| "auto-input".to_owned());
-            if !args.quiet {
-                println!("[auto-ui] input prompt={prompt:?} -> {input:?}");
+        let payload = match select_auto_reply(&args, &message_state)? {
+            AutoReply::Choice(choice) => {
+                if !args.quiet {
+                    println!(
+                        "[auto-ui] choice id={:?} label={:?}",
+                        choice.id,
+                        choice.label
+                    );
+                }
+                runtime.set_state_value("ui.last_choice", Value::String(choice.id.clone()));
+                runtime.set_state_value("ui.last_reply", Value::String(choice.id.clone()));
+                sent_choices += 1;
+                Value::String(choice.id)
             }
-            runtime.set_state_value("ui.last_input", Value::String(input.clone()));
-            runtime.set_state_value("ui.last_reply", Value::String(input.clone()));
-            sent_inputs += 1;
-            Value::String(input)
-        } else if sent_inputs == 0 && args.input.is_some() {
-            let input = args.input.clone().unwrap_or_else(|| "auto-input".to_owned());
-            if !args.quiet {
-                println!("[auto-ui] fallback input -> {input:?}");
+            AutoReply::Input { prompt, value } => {
+                if !args.quiet {
+                    println!("[auto-ui] input prompt={prompt:?} -> {value:?}");
+                }
+                runtime.set_state_value("ui.last_input", Value::String(value.clone()));
+                runtime.set_state_value("ui.last_reply", Value::String(value.clone()));
+                sent_inputs += 1;
+                Value::String(value)
             }
-            runtime.set_state_value("ui.last_input", Value::String(input.clone()));
-            runtime.set_state_value("ui.last_reply", Value::String(input.clone()));
-            sent_inputs += 1;
-            Value::String(input)
-        } else if !message_state.choices.is_empty() {
-            let choice = select_choice(&args, &message_state.choices)
-                .ok_or("no enabled choice available for auto-ui")?;
-            if !args.quiet {
-                println!(
-                    "[auto-ui] choice id={:?} label={:?}",
-                    choice.id,
-                    choice.label
-                );
+            AutoReply::Advance => {
+                if !args.quiet {
+                    println!("[auto-ui] advance (nil)");
+                }
+                Value::Nil
             }
-            runtime.set_state_value("ui.last_choice", Value::String(choice.id.clone()));
-            runtime.set_state_value("ui.last_reply", Value::String(choice.id.clone()));
-            sent_choices += 1;
-            Value::String(choice.id)
-        } else {
-            if !args.quiet {
-                println!("[auto-ui] advance (nil)");
-            }
-            Value::Nil
         };
 
         for waiting_worker in waiting_workers {
@@ -146,6 +138,34 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum AutoReply {
+    Choice(wmruntime::MessageChoiceState),
+    Input { prompt: String, value: String },
+    Advance,
+}
+
+fn select_auto_reply(
+    args: &CliArgs,
+    message_state: &wmruntime::MessageWindowState,
+) -> Result<AutoReply, Box<dyn std::error::Error>> {
+    if !message_state.choices.is_empty() {
+        let choice = select_choice(args, &message_state.choices)
+            .ok_or("no enabled choice available for auto-ui")?;
+        return Ok(AutoReply::Choice(choice));
+    }
+
+    if let Some(prompt) = message_state.input_prompt.as_deref() {
+        let value = args.input.clone().unwrap_or_else(|| "auto-input".to_owned());
+        return Ok(AutoReply::Input {
+            prompt: prompt.to_owned(),
+            value,
+        });
+    }
+
+    Ok(AutoReply::Advance)
 }
 
 fn select_choice(
@@ -266,4 +286,70 @@ fn print_usage() {
     eprintln!(
         "usage: wmautoui <script.wms|archive.warc> [--archive FILE] [--package NAME] [--platform native|wasm|egui] [--step-limit N] [--max-rounds N] [--choice ID_OR_LABEL] [--input TEXT] [--expect TEXT] [--quiet]"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args_with_input_and_choice() -> CliArgs {
+        CliArgs {
+            script_path: Some(PathBuf::from("sample.wms")),
+            archive_path: None,
+            package_name: None,
+            step_limit: 128,
+            max_rounds: 512,
+            platform: PlatformProfile::native(),
+            input: Some("lumen".to_owned()),
+            choice: Some("repair".to_owned()),
+            expect_string: None,
+            quiet: false,
+        }
+    }
+
+    #[test]
+    fn auto_reply_prefers_choice_over_input_argument() {
+        let args = args_with_input_and_choice();
+        let mut state = wmruntime::MessageWindowState::default();
+        state.input_prompt = Some("合言葉".to_owned());
+        state.choices = vec![wmruntime::MessageChoiceState {
+            id: "repair".to_owned(),
+            label: "継電器を直す".to_owned(),
+            enabled: true,
+        }];
+
+        let reply = select_auto_reply(&args, &state).expect("auto reply");
+
+        assert!(matches!(
+            reply,
+            AutoReply::Choice(wmruntime::MessageChoiceState { id, .. }) if id == "repair"
+        ));
+    }
+
+    #[test]
+    fn auto_reply_uses_input_only_when_prompt_has_no_choices() {
+        let args = args_with_input_and_choice();
+        let mut state = wmruntime::MessageWindowState::default();
+        state.input_prompt = Some("合言葉".to_owned());
+
+        let reply = select_auto_reply(&args, &state).expect("auto reply");
+
+        assert_eq!(
+            reply,
+            AutoReply::Input {
+                prompt: "合言葉".to_owned(),
+                value: "lumen".to_owned()
+            }
+        );
+    }
+
+    #[test]
+    fn auto_reply_advances_plain_message() {
+        let args = args_with_input_and_choice();
+        let state = wmruntime::MessageWindowState::default();
+
+        let reply = select_auto_reply(&args, &state).expect("auto reply");
+
+        assert_eq!(reply, AutoReply::Advance);
+    }
 }

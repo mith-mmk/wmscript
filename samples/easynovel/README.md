@@ -28,15 +28,14 @@ export func main() {
     ext.message.font_size(20, 24);
     ext.message.speed(26);
     ext.message.auto(false);
+    ext.message.show(
+        "Narrator",
+        "The station is quiet tonight.\nChoose a chapter to open the next page."
+    );
     ext.message.choices_named(
         "prologue", "Prologue",
         "chapter_1", "Chapter 1",
         "chapter_2", "Chapter 2"
-    );
-    ext.message.prompt("Select a chapter");
-    ext.message.show(
-        "Narrator",
-        "The station is quiet tonight.\nChoose a chapter to open the next page."
     );
     recv();
     let chapter = state.get("ui.last_choice");
@@ -48,7 +47,6 @@ export func main() {
     }
 
     ext.message.choices_named();
-    ext.message.prompt();
 
     if chapter == "prologue" {
         if state.has("read:easynovel:prologue") {

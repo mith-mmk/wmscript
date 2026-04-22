@@ -19,12 +19,10 @@ export func main() {
         "north", "Go North",
         "south", "Go South"
     );
-    ext.message.prompt("Choose a route");
     recv();
     let route = state.get("ui.last_choice");
 
     ext.message.choices_named();
-    ext.message.prompt();
 
     if route == "north" {
         ext.message.show("Guide", "North road selected.\nEnter the companion name.");
