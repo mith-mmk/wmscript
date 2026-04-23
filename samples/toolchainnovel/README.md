@@ -15,6 +15,13 @@ Writer-First 契約と toolchain 導線を確認するための、日本語ノ�
 そのため、テキスト asset の同梱は toolchain/package 側の契約として確認します。
 画像 asset は `ext.image.load(101)` で読み込み、script 側からも描画契約を確認します。
 
+## Web Distribution Smoke
+
+`ui/background` は Web 配信最適化用の smoke corpus でもあります。
+toolchain のテストでは、この画像 section が `.warc` 内に互換用 payload として残りつつ、
+manifest に外部 location `assets/uiimage.png` / cache key `sha256:toolchainnovel-bg` を持つこと、
+および section digest で payload 検証できることを確認します。
+
 ## Pipeline
 
 ```powershell

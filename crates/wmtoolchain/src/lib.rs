@@ -630,6 +630,34 @@ mod tests {
     use wmruntime::{Runtime, RuntimeConfig};
     use wmvm::Value;
 
+    fn toolchainnovel_project() -> GameProject {
+        GameProject::new(
+            "toolchainnovel",
+            "samples/toolchainnovel/main.wms",
+            include_str!("../../../samples/toolchainnovel/main.wms"),
+        )
+        .push_asset(GameAsset::new(
+            "story/guide",
+            10,
+            100,
+            ResourceType::ScriptData,
+            include_bytes!("../../../samples/toolchainnovel/guide.txt").to_vec(),
+        ))
+        .push_asset(
+            GameAsset::image(
+                "ui/background",
+                11,
+                101,
+                include_bytes!("../../../samples/uiimage.png").to_vec(),
+            )
+            .with_external_location(
+                "assets/uiimage.png",
+                "sha256:toolchainnovel-bg",
+                1,
+            ),
+        )
+    }
+
     #[test]
     fn build_project_creates_archive_and_program() {
         let toolchain = Toolchain::new(ToolchainConfig::new(PlatformProfile::native()));
@@ -708,31 +736,7 @@ mod tests {
     #[test]
     fn build_toolchainnovel_sample_with_asset() {
         let toolchain = Toolchain::new(ToolchainConfig::new(PlatformProfile::egui()));
-        let project = GameProject::new(
-            "toolchainnovel",
-            "samples/toolchainnovel/main.wms",
-            include_str!("../../../samples/toolchainnovel/main.wms"),
-        )
-        .push_asset(GameAsset::new(
-            "story/guide",
-            10,
-            100,
-            ResourceType::ScriptData,
-            include_bytes!("../../../samples/toolchainnovel/guide.txt").to_vec(),
-        ))
-        .push_asset(
-            GameAsset::image(
-                "ui/background",
-                11,
-                101,
-                include_bytes!("../../../samples/uiimage.png").to_vec(),
-            )
-            .with_external_location(
-                "assets/uiimage.png",
-                "sha256:toolchainnovel-bg",
-                1,
-            ),
-        );
+        let project = toolchainnovel_project();
 
         let build = toolchain.build_project(&project).expect("build sample");
 
@@ -749,6 +753,57 @@ mod tests {
                 "sha256:toolchainnovel-bg",
                 1
             )]
+        );
+    }
+
+    #[test]
+    fn toolchainnovel_archive_exposes_web_distribution_smoke_manifest() {
+        let toolchain = Toolchain::new(ToolchainConfig::new(PlatformProfile::egui()));
+        let project = toolchainnovel_project();
+
+        let build = toolchain.build_project(&project).expect("build sample");
+        let archive = Archive::decode(&build.archive).expect("archive decode");
+        archive.verify_layout().expect("layout");
+        archive.verify_manifest_digests().expect("manifest digests");
+        let manifest = archive
+            .manifest()
+            .expect("manifest decode")
+            .expect("manifest present");
+
+        assert_eq!(
+            manifest.resource_id_by_name_hash(stable_hash64(b"ui/background")),
+            Some(101)
+        );
+        assert_eq!(
+            manifest.external_section_locations,
+            vec![ManifestSectionLocation::new(
+                11,
+                "assets/uiimage.png",
+                "sha256:toolchainnovel-bg",
+                1
+            )]
+        );
+
+        let section = archive.section(11).expect("background section");
+        assert_eq!(section.kind, SectionKind::Asset);
+        let payload = archive.section_bytes(11).expect("background payload");
+        let digest = manifest
+            .section_digests
+            .iter()
+            .find(|digest| digest.section_id == 11)
+            .expect("background digest");
+        assert_eq!(digest.section_kind, SectionKind::Asset);
+        assert_eq!(digest.flags_canonical, section.flags);
+        assert_eq!(digest.unpacked_size, section.unpacked_size);
+        assert_eq!(
+            digest.digest,
+            digest_section(
+                section.id,
+                section.kind,
+                digest.flags_canonical,
+                section.unpacked_size,
+                payload,
+            )
         );
     }
 }

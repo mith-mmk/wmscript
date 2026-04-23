@@ -520,7 +520,7 @@ Toolchain
       - [+] manifest の外部 section URL / cache key / digest 検証設計
       - [+] wmarchive manifest に external section location を追加
       - [+] wmtoolchain asset から external section location を生成
-      - [ ] samples/toolchainnovel を Web 配信 smoke corpus 化
+      - [+] samples/toolchainnovel を Web 配信 smoke corpus 化
   - [ ] D. next phase へ分離
     - [ ] D1. 音声(lip sync)
     - [ ] D2. text 2 script(toolchain) (md -> wms script toolchain)
