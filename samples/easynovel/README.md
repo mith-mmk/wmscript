@@ -81,8 +81,8 @@ Runtime behavior:
 
 Run examples:
 
-- `cargo run -p wmfrontend -- samples/easynovel/main.wms --platform egui --font noto --image ui/message_frame=samples/easynovel/message_frame.png`
-- `cargo run -p wmfrontend -- samples/easynovel/main.wms --platform native --image ui/message_frame=samples/easynovel/message_frame.png`
+- `cargo run -p wmfrontend --bin wmfrontend -- samples/easynovel/main.wms --platform egui --font noto --image ui/message_frame=samples/easynovel/message_frame.png`
+- `cargo run -p wmfrontend --bin wmfrontend -- samples/easynovel/main.wms --platform native --image ui/message_frame=samples/easynovel/message_frame.png`
 - `cargo run -p wmruntime --example easynovel`
 
 

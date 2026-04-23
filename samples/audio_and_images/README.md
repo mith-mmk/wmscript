@@ -8,11 +8,11 @@
 実行は次を使ってください。
 
 ```bash
-cargo run -p wmfrontend -- --demo image-audio --platform egui --font noto
+cargo run -p wmfrontend --bin wmfrontend -- --demo image-audio --platform egui --font noto
 ```
 
 または script サンプルを使う場合:
 
 ```bash
-cargo run -p wmfrontend -- samples/imageaudio/main.wms --platform egui --font noto
+cargo run -p wmfrontend --bin wmfrontend -- samples/imageaudio/main.wms --platform egui --font noto
 ```

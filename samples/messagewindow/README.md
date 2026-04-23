@@ -82,5 +82,5 @@ Runtime behavior:
 
 Run examples:
 
-- `cargo run -p wmfrontend -- samples/messagewindow/main.wms --platform egui --font noto`
-- `cargo run -p wmfrontend -- --demo messagewindow --platform egui --font noto`
+- `cargo run -p wmfrontend --bin wmfrontend -- samples/messagewindow/main.wms --platform egui --font noto`
+- `cargo run -p wmfrontend --bin wmfrontend -- --demo messagewindow --platform egui --font noto`

@@ -9,8 +9,8 @@ Run examples:
 
 ```bash
 # compile/package (C1 target)
-cargo run -p wmtoolchain -- samples/splitimport/main.wms --platform native
+cargo run -p wmtoolchain --bin wmtoolchain -- samples/splitimport/main.wms --platform native
 
 # run script directly
-cargo run -p wmfrontend -- samples/splitimport/main.wms --platform native
+cargo run -p wmfrontend --bin wmfrontend -- samples/splitimport/main.wms --platform native
 ```

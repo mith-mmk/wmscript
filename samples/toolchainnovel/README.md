@@ -40,7 +40,7 @@ cargo run -p wmfrontend --bin wmautoui -- .test-toolchainnovel/toolchainnovel.wa
   --input lumen `
   --expect signal-restored
 
-cargo run -p wmfrontend -- .test-toolchainnovel/toolchainnovel.warc --platform egui --font noto
+cargo run -p wmfrontend --bin wmfrontend -- .test-toolchainnovel/toolchainnovel.warc --platform egui --font noto
 ```
 
 `.test-toolchainnovel` は repo-wide の `.test*` ルールで `.gitignore` 対象です。

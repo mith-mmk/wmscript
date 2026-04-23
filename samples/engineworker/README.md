@@ -110,5 +110,5 @@ Runtime behavior:
 
 Run examples:
 
-- `cargo run -p wmfrontend -- samples/engineworker/main.wms --platform egui --font noto`
-- `cargo run -p wmfrontend -- --demo engineworker --platform egui --font noto`
+- `cargo run -p wmfrontend --bin wmfrontend -- samples/engineworker/main.wms --platform egui --font noto`
+- `cargo run -p wmfrontend --bin wmfrontend -- --demo engineworker --platform egui --font noto`

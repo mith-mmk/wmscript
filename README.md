@@ -12,10 +12,29 @@ first target は「サンプル script + assets から toolchain で package し
 cargo run -p wmfrontend --bin wmfrontend -- samples/messagewindow/main.wms --platform egui --font noto
 ```
 
+`wmfrontend` は拡張子なしの project path も受け付けます。path がディレクトリなら同じフォルダの
+`wmfrontend.toml` / `wmfrontend.yaml` / `wmfrontend.yml` などを読みます。path がファイル名なら
+同じフォルダの `<name>.toml` / `<name>.yaml` / `<name>.yml` を探します。
+
+```toml
+package = "my-game"
+script = "main.wms"
+platform = "egui"
+font = "noto"
+
+[[image]]
+name = "ui/background"
+path = "background.png"
+```
+
+```bash
+cargo run -p wmfrontend --bin wmfrontend -- samples/my-game
+```
+
 ### 2) toolchain で .warc を作る
 
 ```bash
-cargo run -p wmtoolchain -- samples/helloworld/main.wms --out releases/helloworld-cycle.warc
+cargo run -p wmtoolchain --bin wmtoolchain -- samples/helloworld/main.wms --out releases/helloworld-cycle.warc
 ```
 
 ### 3) 生成した .warc を実行する

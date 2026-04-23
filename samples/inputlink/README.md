@@ -26,5 +26,5 @@ Runtime behavior:
 
 Run examples:
 
-- `cargo run -p wmfrontend -- samples/inputlink/main.wms --platform native`
+- `cargo run -p wmfrontend --bin wmfrontend -- samples/inputlink/main.wms --platform native`
 - `cargo run -p wmruntime --example input_link`

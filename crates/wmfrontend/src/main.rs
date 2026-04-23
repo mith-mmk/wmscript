@@ -1,6 +1,6 @@
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use wmfrontend::{
     FrontendConfig, GuiFontPreset, demo::build_engine_worker_demo_project,
@@ -21,12 +21,16 @@ fn main() {
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args = CliArgs::parse(env::args().skip(1))?;
-    let egui_mode = matches!(args.platform.kind, PlatformKind::Egui);
-    if let Some(archive_path) = &args.archive_path {
-        let mut report =
-            run_frontend_archive_path(args.platform, archive_path, args.step_limit.unwrap_or(128))?;
+    let launch = LaunchArgs::resolve(args)?;
+    let egui_mode = matches!(launch.platform.kind, PlatformKind::Egui);
+    if let Some(archive_path) = &launch.archive_path {
+        let mut report = run_frontend_archive_path(
+            launch.platform,
+            archive_path,
+            launch.step_limit.unwrap_or(128),
+        )?;
         if egui_mode {
-            report = launch_frontend_gui(report, args.font)?;
+            report = launch_frontend_gui(report, launch.font)?;
         }
         println!("=== frontend summary ===");
         println!("package: {}", report.build.manifest.package_name);
@@ -45,7 +49,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    let mut project = if let Some(demo) = &args.demo {
+    let mut project = if let Some(demo) = &launch.demo {
         match demo.as_str() {
             "uiimage" => build_ui_image_demo_project(),
             "image-audio" => build_image_audio_demo_project(),
@@ -54,9 +58,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             other => return Err(format!("unknown demo: {other}").into()),
         }
     } else {
-        let script_path = args.script_path.clone().ok_or("missing script path")?;
+        let script_path = launch.script_path.clone().ok_or("missing script path")?;
         let source = fs::read_to_string(&script_path)?;
-        let package_name = args.package_name.clone().unwrap_or_else(|| {
+        let package_name = launch.package_name.clone().unwrap_or_else(|| {
             script_path
                 .file_stem()
                 .and_then(|stem| stem.to_str())
@@ -68,7 +72,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             script_path.to_string_lossy().to_string(),
             source,
         );
-        for asset in &args.assets {
+        for asset in &launch.assets {
             let payload = fs::read(&asset.path)?;
             let section_id = 10 + project.assets.len() as u32;
             let resource_id = 100 + project.assets.len() as u32;
@@ -81,15 +85,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         project
     };
-    if let Some(package_name) = &args.package_name {
+    if let Some(package_name) = &launch.package_name {
         project.package_name = package_name.clone();
     }
-    let mut config = FrontendConfig::new(args.platform, project);
-    config.step_limit = args.step_limit.unwrap_or(config.step_limit);
+    let mut config = FrontendConfig::new(launch.platform, project);
+    config.step_limit = launch.step_limit.unwrap_or(config.step_limit);
     config.auto_run = true;
     let mut report = run_frontend(config)?;
     if egui_mode {
-        report = launch_frontend_gui(report, args.font)?;
+        report = launch_frontend_gui(report, launch.font)?;
     }
 
     println!("=== frontend summary ===");
@@ -118,6 +122,8 @@ struct CliArgs {
     platform: PlatformProfile,
     assets: Vec<CliAsset>,
     font: GuiFontPreset,
+    platform_from_cli: bool,
+    font_from_cli: bool,
 }
 
 impl CliArgs {
@@ -130,6 +136,8 @@ impl CliArgs {
         let mut platform = PlatformProfile::native();
         let mut assets = Vec::new();
         let mut font = GuiFontPreset::default_preset();
+        let mut platform_from_cli = false;
+        let mut font_from_cli = false;
 
         while let Some(arg) = args.next() {
             match arg.as_str() {
@@ -144,6 +152,7 @@ impl CliArgs {
                 "--platform" => {
                     let value = args.next().ok_or("--platform requires a value")?;
                     platform = parse_platform(&value)?;
+                    platform_from_cli = true;
                 }
                 "--demo" => {
                     let value = args.next().ok_or("--demo requires a value")?;
@@ -164,6 +173,7 @@ impl CliArgs {
                 "--font" => {
                     let value = args.next().ok_or("--font requires a value")?;
                     font = parse_font(&value)?;
+                    font_from_cli = true;
                 }
                 "--help" | "-h" => {
                     print_usage();
@@ -204,12 +214,134 @@ impl CliArgs {
             platform,
             assets,
             font,
+            platform_from_cli,
+            font_from_cli,
+        })
+    }
+}
+
+#[derive(Debug)]
+struct LaunchArgs {
+    demo: Option<String>,
+    script_path: Option<PathBuf>,
+    archive_path: Option<PathBuf>,
+    package_name: Option<String>,
+    step_limit: Option<usize>,
+    platform: PlatformProfile,
+    assets: Vec<CliAsset>,
+    font: GuiFontPreset,
+}
+
+impl LaunchArgs {
+    fn resolve(args: CliArgs) -> Result<Self, Box<dyn std::error::Error>> {
+        let mut config = None;
+        let mut script_path = args.script_path.clone();
+        let mut archive_path = args.archive_path.clone();
+
+        if args.demo.is_none()
+            && archive_path.is_none()
+            && let Some(path) = script_path.as_deref()
+            && should_resolve_project_config(path)
+        {
+            if let Some(config_path) = find_project_config(path) {
+                let loaded = ProjectConfig::load(&config_path)?;
+                let base_dir = config_path.parent().unwrap_or_else(|| Path::new("."));
+                script_path = loaded.script.as_ref().map(|path| base_dir.join(path));
+                archive_path = loaded.archive.as_ref().map(|path| base_dir.join(path));
+                config = Some((loaded, base_dir.to_path_buf()));
+            } else if let Some(resolved_path) = resolve_extensionless_path(path) {
+                if resolved_path.extension().and_then(|ext| ext.to_str()) == Some("warc") {
+                    archive_path = Some(resolved_path);
+                    script_path = None;
+                } else {
+                    script_path = Some(resolved_path);
+                }
+            }
+        }
+
+        let mut package_name = args.package_name.clone();
+        let mut step_limit = args.step_limit;
+        let mut platform = args.platform;
+        let mut font = args.font;
+        let mut assets = Vec::new();
+
+        if let Some((loaded, base_dir)) = config {
+            if package_name.is_none() {
+                package_name = loaded.package_name;
+            }
+            if step_limit.is_none() {
+                step_limit = loaded.step_limit;
+            }
+            if !args.platform_from_cli
+                && let Some(value) = loaded.platform
+            {
+                platform = parse_platform(&value)?;
+            }
+            if !args.font_from_cli
+                && let Some(value) = loaded.font
+            {
+                font = parse_font(&value)?;
+            }
+            assets.extend(loaded.assets.into_iter().map(|asset| CliAsset {
+                name: asset.name,
+                path: base_dir.join(asset.path),
+                resource_type: asset.resource_type,
+            }));
+        }
+
+        assets.extend(args.assets);
+
+        if args.demo.is_none() && script_path.is_none() && archive_path.is_none() {
+            return Err("missing script path, archive path, or demo".into());
+        }
+        if archive_path.is_some() && script_path.is_some() {
+            return Err("archive mode does not accept a script path".into());
+        }
+
+        Ok(Self {
+            demo: args.demo,
+            script_path,
+            archive_path,
+            package_name,
+            step_limit,
+            platform,
+            assets,
+            font,
         })
     }
 }
 
 #[derive(Debug)]
 struct CliAsset {
+    name: String,
+    path: PathBuf,
+    resource_type: ResourceType,
+}
+
+#[derive(Debug, Default)]
+struct ProjectConfig {
+    script: Option<PathBuf>,
+    archive: Option<PathBuf>,
+    package_name: Option<String>,
+    platform: Option<String>,
+    font: Option<String>,
+    step_limit: Option<usize>,
+    assets: Vec<ProjectConfigAsset>,
+}
+
+impl ProjectConfig {
+    fn load(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
+        let source = fs::read_to_string(path)?;
+        match path.extension().and_then(|ext| ext.to_str()) {
+            Some("toml") => parse_project_toml(&source),
+            Some("yaml") | Some("yml") => parse_project_yaml(&source),
+            _ => Err(format!("unsupported project config: {}", path.display()).into()),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct ProjectConfigAsset {
     name: String,
     path: PathBuf,
     resource_type: ResourceType,
@@ -227,6 +359,257 @@ fn parse_asset_spec(
         path: PathBuf::from(path),
         resource_type,
     })
+}
+
+fn should_resolve_project_config(path: &Path) -> bool {
+    path.extension().is_none()
+}
+
+fn find_project_config(path: &Path) -> Option<PathBuf> {
+    let candidates = project_config_candidates(path);
+    candidates.into_iter().find(|candidate| candidate.is_file())
+}
+
+fn resolve_extensionless_path(path: &Path) -> Option<PathBuf> {
+    for ext in ["warc", "wms"] {
+        let candidate = path.with_extension(ext);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+fn project_config_candidates(path: &Path) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if path.is_dir() {
+        let dir_name = path.file_name().and_then(|name| name.to_str());
+        push_named_config_candidates(&mut candidates, path, "wmfrontend");
+        push_named_config_candidates(&mut candidates, path, "wmscript");
+        push_named_config_candidates(&mut candidates, path, "game");
+        push_named_config_candidates(&mut candidates, path, "project");
+        push_named_config_candidates(&mut candidates, path, "main");
+        if let Some(dir_name) = dir_name {
+            push_named_config_candidates(&mut candidates, path, dir_name);
+        }
+    } else if let Some(stem) = path.file_name().and_then(|name| name.to_str()) {
+        let dir = path.parent().unwrap_or_else(|| Path::new("."));
+        push_named_config_candidates(&mut candidates, dir, stem);
+    }
+    candidates
+}
+
+fn push_named_config_candidates(candidates: &mut Vec<PathBuf>, dir: &Path, stem: &str) {
+    for ext in ["toml", "yaml", "yml"] {
+        candidates.push(dir.join(format!("{stem}.{ext}")));
+    }
+}
+
+fn parse_project_toml(source: &str) -> Result<ProjectConfig, Box<dyn std::error::Error>> {
+    let mut config = ProjectConfig::default();
+    let mut section = ConfigSection::Root;
+    let mut pending_asset: Option<ProjectConfigAssetBuilder> = None;
+
+    for raw_line in source.lines() {
+        let line = strip_comment(raw_line, '#').trim();
+        if line.is_empty() {
+            continue;
+        }
+        match line {
+            "[[asset]]" | "[[assets]]" => {
+                finish_config_asset(&mut config, pending_asset.take())?;
+                pending_asset = Some(ProjectConfigAssetBuilder::new(ResourceType::ScriptData));
+                section = ConfigSection::Asset;
+                continue;
+            }
+            "[[image]]" | "[[images]]" => {
+                finish_config_asset(&mut config, pending_asset.take())?;
+                pending_asset = Some(ProjectConfigAssetBuilder::new(ResourceType::Image));
+                section = ConfigSection::Image;
+                continue;
+            }
+            "[[script_data]]" | "[[script_datas]]" => {
+                finish_config_asset(&mut config, pending_asset.take())?;
+                pending_asset = Some(ProjectConfigAssetBuilder::new(ResourceType::ScriptData));
+                section = ConfigSection::Asset;
+                continue;
+            }
+            _ if line.starts_with('[') => {
+                return Err(format!("unsupported config section: {line}").into());
+            }
+            _ => {}
+        }
+
+        let (key, value) = line
+            .split_once('=')
+            .ok_or_else(|| format!("invalid toml config line: {line}"))?;
+        let key = key.trim();
+        let value = parse_config_string(value.trim())?;
+        match section {
+            ConfigSection::Root => apply_root_config_value(&mut config, key, value)?,
+            ConfigSection::Asset | ConfigSection::Image => {
+                let asset = pending_asset
+                    .as_mut()
+                    .ok_or("internal config parser error: missing asset section")?;
+                apply_asset_config_value(asset, key, value)?;
+            }
+        }
+    }
+    finish_config_asset(&mut config, pending_asset)?;
+    Ok(config)
+}
+
+fn parse_project_yaml(source: &str) -> Result<ProjectConfig, Box<dyn std::error::Error>> {
+    let mut config = ProjectConfig::default();
+    let mut section = ConfigSection::Root;
+    let mut pending_asset: Option<ProjectConfigAssetBuilder> = None;
+
+    for raw_line in source.lines() {
+        let line_without_comment = strip_comment(raw_line, '#');
+        let line = line_without_comment.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if line == "assets:" || line == "asset:" {
+            finish_config_asset(&mut config, pending_asset.take())?;
+            section = ConfigSection::Asset;
+            continue;
+        }
+        if line == "images:" || line == "image:" {
+            finish_config_asset(&mut config, pending_asset.take())?;
+            section = ConfigSection::Image;
+            continue;
+        }
+
+        let line = if let Some(rest) = line.strip_prefix("- ") {
+            finish_config_asset(&mut config, pending_asset.take())?;
+            pending_asset = Some(ProjectConfigAssetBuilder::new(match section {
+                ConfigSection::Image => ResourceType::Image,
+                _ => ResourceType::ScriptData,
+            }));
+            rest.trim()
+        } else {
+            line
+        };
+
+        let (key, value) = line
+            .split_once(':')
+            .ok_or_else(|| format!("invalid yaml config line: {line}"))?;
+        let key = key.trim();
+        let value = parse_config_string(value.trim())?;
+        match section {
+            ConfigSection::Root => apply_root_config_value(&mut config, key, value)?,
+            ConfigSection::Asset | ConfigSection::Image => {
+                let asset = pending_asset
+                    .as_mut()
+                    .ok_or("asset entry must start with '-' in yaml config")?;
+                apply_asset_config_value(asset, key, value)?;
+            }
+        }
+    }
+    finish_config_asset(&mut config, pending_asset)?;
+    Ok(config)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ConfigSection {
+    Root,
+    Asset,
+    Image,
+}
+
+#[derive(Debug)]
+struct ProjectConfigAssetBuilder {
+    name: Option<String>,
+    path: Option<PathBuf>,
+    resource_type: ResourceType,
+}
+
+impl ProjectConfigAssetBuilder {
+    const fn new(resource_type: ResourceType) -> Self {
+        Self {
+            name: None,
+            path: None,
+            resource_type,
+        }
+    }
+}
+
+fn apply_root_config_value(
+    config: &mut ProjectConfig,
+    key: &str,
+    value: String,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match key {
+        "script" | "script_path" | "main" => config.script = Some(PathBuf::from(value)),
+        "archive" | "archive_path" => config.archive = Some(PathBuf::from(value)),
+        "package" | "package_name" | "name" => config.package_name = Some(value),
+        "platform" => config.platform = Some(value),
+        "font" => config.font = Some(value),
+        "step_limit" | "step-limit" => config.step_limit = Some(value.parse()?),
+        other => return Err(format!("unknown config key: {other}").into()),
+    }
+    Ok(())
+}
+
+fn apply_asset_config_value(
+    asset: &mut ProjectConfigAssetBuilder,
+    key: &str,
+    value: String,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match key {
+        "name" => asset.name = Some(value),
+        "path" | "file" => asset.path = Some(PathBuf::from(value)),
+        other => return Err(format!("unknown asset config key: {other}").into()),
+    }
+    Ok(())
+}
+
+fn finish_config_asset(
+    config: &mut ProjectConfig,
+    asset: Option<ProjectConfigAssetBuilder>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let Some(asset) = asset else {
+        return Ok(());
+    };
+    let name = asset.name.ok_or("asset entry is missing name")?;
+    let path = asset.path.ok_or("asset entry is missing path")?;
+    config.assets.push(ProjectConfigAsset {
+        name,
+        path,
+        resource_type: asset.resource_type,
+    });
+    Ok(())
+}
+
+fn parse_config_string(value: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Err("config value is empty".into());
+    }
+    if (value.starts_with('"') && value.ends_with('"'))
+        || (value.starts_with('\'') && value.ends_with('\''))
+    {
+        if value.len() < 2 {
+            return Err("invalid quoted config value".into());
+        }
+        return Ok(value[1..value.len() - 1].to_owned());
+    }
+    Ok(value.to_owned())
+}
+
+fn strip_comment(line: &str, marker: char) -> &str {
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    for (index, ch) in line.char_indices() {
+        match ch {
+            '\'' if !in_double_quote => in_single_quote = !in_single_quote,
+            '"' if !in_single_quote => in_double_quote = !in_double_quote,
+            _ if ch == marker && !in_single_quote && !in_double_quote => return &line[..index],
+            _ => {}
+        }
+    }
+    line
 }
 
 fn parse_platform(value: &str) -> Result<PlatformProfile, Box<dyn std::error::Error>> {
@@ -249,6 +632,111 @@ fn parse_font(value: &str) -> Result<GuiFontPreset, Box<dyn std::error::Error>> 
 
 fn print_usage() {
     eprintln!(
-        "usage: wmfrontend [--demo uiimage|image-audio|engineworker|messagewindow | <script.wms> | <archive.warc> | --archive FILE] [--package NAME] [--step-limit N] [--platform native|wasm|egui] [--font noto|default|mono] [--asset NAME=PATH] [--image NAME=PATH]"
+        "usage: wmfrontend [--demo uiimage|image-audio|engineworker|messagewindow | <script.wms> | <archive.warc> | <project-without-extension> | --archive FILE] [--package NAME] [--step-limit N] [--platform native|wasm|egui] [--font noto|default|mono] [--asset NAME=PATH] [--image NAME=PATH]"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_toml_project_config() {
+        let config = parse_project_toml(
+            r#"
+package = "sample-game"
+script = "main.wms"
+platform = "egui"
+font = "noto"
+step_limit = 64
+
+[[asset]]
+name = "story/guide"
+path = "guide.txt"
+
+[[image]]
+name = "ui/background"
+path = "background.png"
+"#,
+        )
+        .expect("parse toml config");
+
+        assert_eq!(config.package_name.as_deref(), Some("sample-game"));
+        assert_eq!(config.script.as_deref(), Some(Path::new("main.wms")));
+        assert_eq!(config.platform.as_deref(), Some("egui"));
+        assert_eq!(config.font.as_deref(), Some("noto"));
+        assert_eq!(config.step_limit, Some(64));
+        assert_eq!(config.assets.len(), 2);
+        assert_eq!(config.assets[0].resource_type, ResourceType::ScriptData);
+        assert_eq!(config.assets[1].resource_type, ResourceType::Image);
+    }
+
+    #[test]
+    fn parse_yaml_project_config() {
+        let config = parse_project_yaml(
+            r#"
+package: sample-game
+script: main.wms
+platform: native
+assets:
+  - name: story/guide
+    path: guide.txt
+images:
+  - name: ui/background
+    path: background.png
+"#,
+        )
+        .expect("parse yaml config");
+
+        assert_eq!(config.package_name.as_deref(), Some("sample-game"));
+        assert_eq!(config.script.as_deref(), Some(Path::new("main.wms")));
+        assert_eq!(config.platform.as_deref(), Some("native"));
+        assert_eq!(config.assets.len(), 2);
+        assert_eq!(config.assets[0].resource_type, ResourceType::ScriptData);
+        assert_eq!(config.assets[1].resource_type, ResourceType::Image);
+    }
+
+    #[test]
+    fn resolve_extensionless_directory_config() {
+        let root = PathBuf::from(format!(".test-wmfrontend-config-{}", std::process::id()));
+        let project_dir = root.join("novel");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&project_dir).expect("create project dir");
+        fs::write(
+            project_dir.join("wmfrontend.toml"),
+            r#"
+package = "novel"
+script = "main.wms"
+platform = "egui"
+
+[[image]]
+name = "ui/background"
+path = "background.png"
+"#,
+        )
+        .expect("write config");
+
+        let args = CliArgs::parse(
+            [
+                project_dir.to_string_lossy().to_string(),
+                "--font".to_owned(),
+                "mono".to_owned(),
+            ]
+            .into_iter(),
+        )
+        .expect("parse args");
+        let launch = LaunchArgs::resolve(args).expect("resolve launch args");
+
+        assert_eq!(launch.package_name.as_deref(), Some("novel"));
+        assert_eq!(
+            launch.script_path.as_deref(),
+            Some(project_dir.join("main.wms").as_path())
+        );
+        assert!(matches!(launch.platform.kind, PlatformKind::Egui));
+        assert_eq!(launch.font, GuiFontPreset::Monospace);
+        assert_eq!(launch.assets.len(), 1);
+        assert_eq!(launch.assets[0].path, project_dir.join("background.png"));
+
+        fs::remove_dir_all(&root).expect("cleanup project dir");
+    }
 }
