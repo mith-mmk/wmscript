@@ -2,7 +2,8 @@
 
 use crate::{
     ArchiveError, ArchiveId, Digest, ManifestArchiveDepEntry, ManifestExtEntry,
-    ManifestPolicyBlock, ManifestResourceEntry, Result, SectionDigest, SectionKind, Version,
+    ManifestPolicyBlock, ManifestResourceEntry, ManifestSectionLocation, Result, SectionDigest,
+    SectionKind, Version,
 };
 
 fn write_u16(dst: &mut Vec<u8>, value: u16) {
@@ -105,6 +106,7 @@ pub struct Manifest {
     pub archives: Vec<ManifestArchiveDepEntry>,
     pub section_digests: Vec<SectionDigest>,
     pub resource_map: Vec<ManifestResourceEntry>,
+    pub external_section_locations: Vec<ManifestSectionLocation>,
     pub policy: ManifestPolicyBlock,
 }
 
@@ -128,6 +130,7 @@ impl Manifest {
             archives: Vec::new(),
             section_digests: Vec::new(),
             resource_map: Vec::new(),
+            external_section_locations: Vec::new(),
             policy: ManifestPolicyBlock::default(),
         }
     }
@@ -214,6 +217,16 @@ impl Manifest {
         for entry in &self.resource_map {
             write_u64(&mut bytes, entry.name_hash);
             write_u32(&mut bytes, entry.resource_id);
+        }
+
+        write_u32(&mut bytes, self.external_section_locations.len() as u32);
+        for location in &self.external_section_locations {
+            write_u32(&mut bytes, location.section_id);
+            write_u32(&mut bytes, location.url.len() as u32);
+            bytes.extend_from_slice(location.url.as_bytes());
+            write_u32(&mut bytes, location.cache_key.len() as u32);
+            bytes.extend_from_slice(location.cache_key.as_bytes());
+            write_u32(&mut bytes, location.flags);
         }
 
         bytes
@@ -351,6 +364,35 @@ impl Manifest {
             });
         }
 
+        let mut external_section_locations = Vec::new();
+        if offset < bytes.len() {
+            let location_count = read_u32(bytes, &mut offset)? as usize;
+            external_section_locations = Vec::with_capacity(location_count);
+            for _ in 0..location_count {
+                let section_id = read_u32(bytes, &mut offset)?;
+                let url_len = read_u32(bytes, &mut offset)? as usize;
+                let url = String::from_utf8(read_bytes(bytes, &mut offset, url_len)?.to_vec())
+                    .map_err(|_| {
+                        ArchiveError::InvalidManifest("invalid section location url".to_owned())
+                    })?;
+                let cache_key_len = read_u32(bytes, &mut offset)? as usize;
+                let cache_key =
+                    String::from_utf8(read_bytes(bytes, &mut offset, cache_key_len)?.to_vec())
+                        .map_err(|_| {
+                            ArchiveError::InvalidManifest(
+                                "invalid section location cache key".to_owned(),
+                            )
+                        })?;
+                let flags = read_u32(bytes, &mut offset)?;
+                external_section_locations.push(ManifestSectionLocation {
+                    section_id,
+                    url,
+                    cache_key,
+                    flags,
+                });
+            }
+        }
+
         Ok(Self {
             package_name,
             package_version,
@@ -369,6 +411,7 @@ impl Manifest {
             archives,
             section_digests,
             resource_map,
+            external_section_locations,
             policy,
         })
     }
@@ -457,6 +500,11 @@ impl ManifestBuilder {
         self
     }
 
+    pub fn push_external_section_location(mut self, entry: ManifestSectionLocation) -> Self {
+        self.manifest.external_section_locations.push(entry);
+        self
+    }
+
     pub fn build(self) -> Manifest {
         self.manifest
     }
@@ -476,4 +524,49 @@ pub fn digest_section(
         &unpacked_size.to_le_bytes(),
         payload,
     ])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn manifest_roundtrips_external_section_locations() {
+        let manifest = ManifestBuilder::new("web-dist", 10, 20)
+            .push_resource_mapping(ManifestResourceEntry::new(0x1234, 100))
+            .push_external_section_location(ManifestSectionLocation::new(
+                10,
+                "assets/section-10.bin",
+                "sha256:section-10",
+                1,
+            ))
+            .build();
+
+        let decoded = Manifest::decode(&manifest.encode()).expect("decode manifest");
+
+        assert_eq!(decoded.resource_map, manifest.resource_map);
+        assert_eq!(
+            decoded.external_section_locations,
+            vec![ManifestSectionLocation::new(
+                10,
+                "assets/section-10.bin",
+                "sha256:section-10",
+                1
+            )]
+        );
+    }
+
+    #[test]
+    fn manifest_decodes_without_external_section_locations() {
+        let manifest = ManifestBuilder::new("legacy", 10, 20)
+            .push_resource_mapping(ManifestResourceEntry::new(0x1234, 100))
+            .build();
+        let mut bytes = manifest.encode();
+        bytes.truncate(bytes.len() - 4);
+
+        let decoded = Manifest::decode(&bytes).expect("decode legacy manifest");
+
+        assert!(decoded.external_section_locations.is_empty());
+        assert_eq!(decoded.resource_id_by_name_hash(0x1234), Some(100));
+    }
 }

@@ -558,6 +558,35 @@ manifest 中心管理
 - 署名検証や digest 検証は section payload を丸ごと読む必要はあるが、archive 全体の常駐は必須にしない
 - `Read + Seek` が使える実装では、巨大 archive でも header + active section だけを保持する
 
+18.2 Web 配信用 external section location
+
+Web 配信では、単一 `.warc` を HTTP range で読む方式と、
+manifest + section payload 群へ分割する方式の両方を許容する。
+
+初期実装では、manifest 末尾に optional table として
+external section location を持てるようにする。
+既存 manifest payload はこの table が存在しないものとして decode する。
+
+論理表現:
+
+```
+external_section_location {
+  section_id
+  url
+  cache_key
+  flags
+}
+```
+
+契約:
+
+- `section_id` は archive section table の id と一致する。
+- `url` は section payload を取得する相対 URL または絶対 URL。
+- `cache_key` は browser cache / service worker cache 用の安定キー。
+- digest 検証は既存 `section_digests` を使い、URL 側の payload も同じ section digest と照合する。
+- `flags` は preload / lazy / range preferred などの配信ヒント用で、意味内容の検証は digest 側で行う。
+- external location が存在しても、単一 `.warc` 内の section payload は互換性のため維持できる。
+
 セキュリティ
 
 秘密鍵で署名

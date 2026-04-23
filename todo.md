@@ -516,8 +516,10 @@ Toolchain
       - [+] wmautoui archive 直接実行で確認
     - [*] C4-2. WEB配信最適化 （assets の 分割配信 + manifest + ロード最適化）
       - [+] 未決事項を SPEC/issue.md に切り出し
-      - [ ] single .warc + HTTP range / section fetch 方針の仕様化
-      - [ ] manifest の外部 section URL / cache key / digest 検証設計
+      - [+] single .warc + HTTP range / section fetch 方針の仕様化
+      - [+] manifest の外部 section URL / cache key / digest 検証設計
+      - [+] wmarchive manifest に external section location を追加
+      - [+] wmtoolchain asset から external section location を生成
       - [ ] samples/toolchainnovel を Web 配信 smoke corpus 化
   - [ ] D. next phase へ分離
     - [ ] D1. 音声(lip sync)

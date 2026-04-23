@@ -241,6 +241,30 @@ impl ManifestResourceEntry {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ManifestSectionLocation {
+    pub section_id: SectionId,
+    pub url: String,
+    pub cache_key: String,
+    pub flags: u32,
+}
+
+impl ManifestSectionLocation {
+    pub fn new(
+        section_id: SectionId,
+        url: impl Into<String>,
+        cache_key: impl Into<String>,
+        flags: u32,
+    ) -> Self {
+        Self {
+            section_id,
+            url: url.into(),
+            cache_key: cache_key.into(),
+            flags,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ManifestPolicyBlock {
     pub save_compat_version: u16,

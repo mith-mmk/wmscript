@@ -1387,7 +1387,9 @@ impl Runtime {
                 window.visible = true;
                 window.speaker = Some(speaker.to_owned());
                 window.text = title.clone();
-                window.backlog.extend(title.lines().map(|line| line.to_owned()));
+                window
+                    .backlog
+                    .extend(title.lines().map(|line| line.to_owned()));
                 window.input_prompt = None;
                 window.choices.clear();
                 Ok(Value::Bool(true))
@@ -1407,7 +1409,9 @@ impl Runtime {
                 window.visible = true;
                 window.speaker = Some(speaker.to_owned());
                 window.text = title.clone();
-                window.backlog.extend(title.lines().map(|line| line.to_owned()));
+                window
+                    .backlog
+                    .extend(title.lines().map(|line| line.to_owned()));
                 window.input_prompt = None;
                 window.choices.clear();
                 Ok(Value::Bool(true))
@@ -2949,12 +2953,18 @@ mod tests {
 
         let worker_id = runtime.spawn_program(program).expect("spawn");
         let outcomes = runtime.tick();
-        assert!(matches!(outcomes.as_slice(), [(_, RunOutcome::Sleeping { .. })]));
+        assert!(matches!(
+            outcomes.as_slice(),
+            [(_, RunOutcome::Sleeping { .. })]
+        ));
         assert_eq!(runtime.sleeping_workers(), vec![worker_id]);
 
         assert!(runtime.wake_worker(worker_id));
         let outcomes = runtime.tick();
-        assert!(matches!(outcomes.as_slice(), [(_, RunOutcome::Halted { .. })]));
+        assert!(matches!(
+            outcomes.as_slice(),
+            [(_, RunOutcome::Halted { .. })]
+        ));
         assert!(runtime.sleeping_workers().is_empty());
         assert!(!runtime.wake_worker(9999));
     }
@@ -3320,7 +3330,9 @@ mod tests {
             Ok(extension.reset_style_ext_id)
         );
         assert_eq!(
-            runtime.extension_registry().resolve_id("ext.message.locale"),
+            runtime
+                .extension_registry()
+                .resolve_id("ext.message.locale"),
             Ok(extension.locale_ext_id)
         );
         assert_eq!(
@@ -3571,7 +3583,10 @@ mod tests {
             runtime
                 .host
                 .borrow_mut()
-                .call(extension.opening_host_id, &[Value::String("Prologue".to_owned())])
+                .call(
+                    extension.opening_host_id,
+                    &[Value::String("Prologue".to_owned())]
+                )
                 .expect("scene opening"),
             Value::Bool(true)
         );

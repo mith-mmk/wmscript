@@ -17,8 +17,10 @@ fn main() {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args = CliArgs::parse(env::args().skip(1))?;
 
-    let toolchain = Toolchain::new(ToolchainConfig::new(args.platform).with_step_limit(args.step_limit));
-    let mut runtime = Runtime::new(RuntimeConfig::new(args.platform).with_step_limit(args.step_limit));
+    let toolchain =
+        Toolchain::new(ToolchainConfig::new(args.platform).with_step_limit(args.step_limit));
+    let mut runtime =
+        Runtime::new(RuntimeConfig::new(args.platform).with_step_limit(args.step_limit));
     toolchain.bootstrap_runtime(&mut runtime)?;
 
     let (build, worker_id) = if let Some(archive_path) = &args.archive_path {
@@ -37,7 +39,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap_or("wml-game")
                 .to_owned()
         });
-        let project = GameProject::new(package_name, script_path.to_string_lossy().to_string(), source);
+        let project = GameProject::new(
+            package_name,
+            script_path.to_string_lossy().to_string(),
+            source,
+        );
         let build = toolchain.build_project(&project)?;
         runtime.load_archive(&build.archive)?;
         let worker_id = runtime.spawn_program(build.program.clone())?;
@@ -54,7 +60,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         all_outcomes.extend(outcomes);
 
         let worker_state = runtime.worker_state(worker_id);
-        if matches!(worker_state, Some(WorkerState::Halted) | Some(WorkerState::Error(_))) {
+        if matches!(
+            worker_state,
+            Some(WorkerState::Halted) | Some(WorkerState::Error(_))
+        ) {
             break;
         }
 
@@ -69,8 +78,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 if !args.quiet {
                     println!(
                         "[auto-ui] choice id={:?} label={:?}",
-                        choice.id,
-                        choice.label
+                        choice.id, choice.label
                     );
                 }
                 runtime.set_state_value("ui.last_choice", Value::String(choice.id.clone()));
@@ -102,7 +110,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let worker_state = runtime.worker_state(worker_id);
-    if !matches!(worker_state, Some(WorkerState::Halted) | Some(WorkerState::Error(_))) {
+    if !matches!(
+        worker_state,
+        Some(WorkerState::Halted) | Some(WorkerState::Error(_))
+    ) {
         return Err(format!(
             "auto-ui run did not finish within max rounds (state={worker_state:?})"
         )
@@ -110,19 +121,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if let Some(expected) = &args.expect_string {
-        let actual = all_outcomes.iter().rev().find_map(|(_, outcome)| match outcome {
-            RunOutcome::Halted {
-                value: Some(Value::String(text)),
-                ..
-            } => Some(text.clone()),
-            _ => None,
-        });
+        let actual = all_outcomes
+            .iter()
+            .rev()
+            .find_map(|(_, outcome)| match outcome {
+                RunOutcome::Halted {
+                    value: Some(Value::String(text)),
+                    ..
+                } => Some(text.clone()),
+                _ => None,
+            });
         if actual.as_deref() != Some(expected.as_str()) {
-            return Err(format!(
-                "expected final string {:?}, got {:?}",
-                expected, actual
-            )
-            .into());
+            return Err(format!("expected final string {:?}, got {:?}", expected, actual).into());
         }
     }
 
@@ -158,7 +168,10 @@ fn select_auto_reply(
     }
 
     if let Some(prompt) = message_state.input_prompt.as_deref() {
-        let value = args.input.clone().unwrap_or_else(|| "auto-input".to_owned());
+        let value = args
+            .input
+            .clone()
+            .unwrap_or_else(|| "auto-input".to_owned());
         return Ok(AutoReply::Input {
             prompt: prompt.to_owned(),
             value,
@@ -213,7 +226,9 @@ impl CliArgs {
 
         while let Some(arg) = args.next() {
             match arg.as_str() {
-                "--archive" => archive_path = Some(PathBuf::from(next_value(&mut args, "--archive")?)),
+                "--archive" => {
+                    archive_path = Some(PathBuf::from(next_value(&mut args, "--archive")?))
+                }
                 "--package" => package_name = Some(next_value(&mut args, "--package")?),
                 "--platform" => platform = parse_platform(&next_value(&mut args, "--platform")?)?,
                 "--step-limit" => step_limit = next_value(&mut args, "--step-limit")?.parse()?,

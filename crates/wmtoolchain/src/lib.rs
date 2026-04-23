@@ -10,7 +10,8 @@ use std::path::{Path, PathBuf};
 
 use wmarchive::{
     Archive, ArchiveBuilder, ArchiveError, ArchiveSection, ArchiveStreamReader, Manifest,
-    ManifestBuilder, ManifestResourceEntry, SectionDigest, SectionKind, Version, digest_section,
+    ManifestBuilder, ManifestResourceEntry, ManifestSectionLocation, SectionDigest, SectionKind,
+    Version, digest_section,
 };
 use wmcompiler::{CompileError, Compiler, CompilerConfig, ModuleCatalog, ModuleItem};
 use wmext::standard_extension_registry;
@@ -106,6 +107,24 @@ pub struct GameAsset {
     pub payload: Vec<u8>,
     pub flags: u16,
     pub align: u32,
+    pub external_location: Option<GameAssetExternalLocation>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GameAssetExternalLocation {
+    pub url: String,
+    pub cache_key: String,
+    pub flags: u32,
+}
+
+impl GameAssetExternalLocation {
+    pub fn new(url: impl Into<String>, cache_key: impl Into<String>, flags: u32) -> Self {
+        Self {
+            url: url.into(),
+            cache_key: cache_key.into(),
+            flags,
+        }
+    }
 }
 
 impl GameAsset {
@@ -124,6 +143,7 @@ impl GameAsset {
             payload: payload.into(),
             flags: 0,
             align: 16,
+            external_location: None,
         }
     }
 
@@ -162,6 +182,16 @@ impl GameAsset {
 
     pub fn name_hash(&self) -> u64 {
         stable_hash64(self.name.as_bytes())
+    }
+
+    pub fn with_external_location(
+        mut self,
+        url: impl Into<String>,
+        cache_key: impl Into<String>,
+        flags: u32,
+    ) -> Self {
+        self.external_location = Some(GameAssetExternalLocation::new(url, cache_key, flags));
+        self
     }
 }
 
@@ -457,6 +487,14 @@ impl Toolchain {
                     &payload,
                 ),
             });
+            if let Some(location) = &asset.external_location {
+                builder = builder.push_external_section_location(ManifestSectionLocation::new(
+                    asset.section_id,
+                    location.url.clone(),
+                    location.cache_key.clone(),
+                    location.flags,
+                ));
+            }
         }
 
         Ok(builder.build())
@@ -682,12 +720,19 @@ mod tests {
             ResourceType::ScriptData,
             include_bytes!("../../../samples/toolchainnovel/guide.txt").to_vec(),
         ))
-        .push_asset(GameAsset::image(
-            "ui/background",
-            11,
-            101,
-            include_bytes!("../../../samples/uiimage.png").to_vec(),
-        ));
+        .push_asset(
+            GameAsset::image(
+                "ui/background",
+                11,
+                101,
+                include_bytes!("../../../samples/uiimage.png").to_vec(),
+            )
+            .with_external_location(
+                "assets/uiimage.png",
+                "sha256:toolchainnovel-bg",
+                1,
+            ),
+        );
 
         let build = toolchain.build_project(&project).expect("build sample");
 
@@ -696,5 +741,14 @@ mod tests {
         assert_eq!(build.manifest.resource_map.len(), 2);
         assert_eq!(build.manifest.resource_map[0].resource_id, 100);
         assert_eq!(build.manifest.resource_map[1].resource_id, 101);
+        assert_eq!(
+            build.manifest.external_section_locations,
+            vec![ManifestSectionLocation::new(
+                11,
+                "assets/uiimage.png",
+                "sha256:toolchainnovel-bg",
+                1
+            )]
+        );
     }
 }
