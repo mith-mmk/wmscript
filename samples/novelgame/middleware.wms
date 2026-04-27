@@ -1,0 +1,5 @@
+export let role = "middleware";
+
+export func main() {
+    return "middleware-ready";
+}

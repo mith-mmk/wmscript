@@ -10,7 +10,7 @@ use wmfrontend::{
 };
 use wmplatform::{PlatformKind, PlatformProfile};
 use wmresource::ResourceType;
-use wmtoolchain::{GameAsset, GameProject};
+use wmtoolchain::{GameAsset, GameProject, GameScript, GameWorkerRole};
 
 fn main() {
     if let Err(error) = run() {
@@ -72,6 +72,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             script_path.to_string_lossy().to_string(),
             source,
         );
+        for script in &launch.extra_scripts {
+            project = project.push_script(GameScript::new(
+                script.role,
+                script.path.to_string_lossy().to_string(),
+                fs::read_to_string(&script.path)?,
+            ));
+        }
         for asset in &launch.assets {
             let payload = fs::read(&asset.path)?;
             let section_id = 10 + project.assets.len() as u32;
@@ -121,6 +128,7 @@ struct CliArgs {
     step_limit: Option<usize>,
     platform: PlatformProfile,
     assets: Vec<CliAsset>,
+    extra_scripts: Vec<CliScript>,
     font: GuiFontPreset,
     platform_from_cli: bool,
     font_from_cli: bool,
@@ -135,6 +143,7 @@ impl CliArgs {
         let mut step_limit = None;
         let mut platform = PlatformProfile::native();
         let mut assets = Vec::new();
+        let mut extra_scripts = Vec::new();
         let mut font = GuiFontPreset::default_preset();
         let mut platform_from_cli = false;
         let mut font_from_cli = false;
@@ -161,6 +170,24 @@ impl CliArgs {
                 "--archive" => {
                     let value = args.next().ok_or("--archive requires a value")?;
                     archive_path = Some(PathBuf::from(value));
+                }
+                "--frontend" => {
+                    let value = args.next().ok_or("--frontend requires a value")?;
+                    script_path = Some(PathBuf::from(value));
+                }
+                "--middleware" => {
+                    let value = args.next().ok_or("--middleware requires a value")?;
+                    extra_scripts.push(CliScript {
+                        role: GameWorkerRole::Middleware,
+                        path: PathBuf::from(value),
+                    });
+                }
+                "--background" => {
+                    let value = args.next().ok_or("--background requires a value")?;
+                    extra_scripts.push(CliScript {
+                        role: GameWorkerRole::Background,
+                        path: PathBuf::from(value),
+                    });
                 }
                 "--asset" => {
                     let value = args.next().ok_or("--asset requires a value")?;
@@ -213,6 +240,7 @@ impl CliArgs {
             step_limit,
             platform,
             assets,
+            extra_scripts,
             font,
             platform_from_cli,
             font_from_cli,
@@ -229,6 +257,7 @@ struct LaunchArgs {
     step_limit: Option<usize>,
     platform: PlatformProfile,
     assets: Vec<CliAsset>,
+    extra_scripts: Vec<CliScript>,
     font: GuiFontPreset,
 }
 
@@ -264,6 +293,7 @@ impl LaunchArgs {
         let mut platform = args.platform;
         let mut font = args.font;
         let mut assets = Vec::new();
+        let mut extra_scripts = args.extra_scripts;
 
         if let Some((loaded, base_dir)) = config {
             if package_name.is_none() {
@@ -287,6 +317,18 @@ impl LaunchArgs {
                 path: base_dir.join(asset.path),
                 resource_type: asset.resource_type,
             }));
+            if let Some(path) = loaded.middleware {
+                extra_scripts.push(CliScript {
+                    role: GameWorkerRole::Middleware,
+                    path: base_dir.join(path),
+                });
+            }
+            if let Some(path) = loaded.background {
+                extra_scripts.push(CliScript {
+                    role: GameWorkerRole::Background,
+                    path: base_dir.join(path),
+                });
+            }
         }
 
         assets.extend(args.assets);
@@ -306,6 +348,7 @@ impl LaunchArgs {
             step_limit,
             platform,
             assets,
+            extra_scripts,
             font,
         })
     }
@@ -318,9 +361,17 @@ struct CliAsset {
     resource_type: ResourceType,
 }
 
+#[derive(Debug)]
+struct CliScript {
+    role: GameWorkerRole,
+    path: PathBuf,
+}
+
 #[derive(Debug, Default)]
 struct ProjectConfig {
     script: Option<PathBuf>,
+    middleware: Option<PathBuf>,
+    background: Option<PathBuf>,
     archive: Option<PathBuf>,
     package_name: Option<String>,
     platform: Option<String>,
@@ -541,7 +592,11 @@ fn apply_root_config_value(
     value: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match key {
-        "script" | "script_path" | "main" => config.script = Some(PathBuf::from(value)),
+        "script" | "script_path" | "main" | "frontend" => {
+            config.script = Some(PathBuf::from(value))
+        }
+        "middleware" => config.middleware = Some(PathBuf::from(value)),
+        "background" => config.background = Some(PathBuf::from(value)),
         "archive" | "archive_path" => config.archive = Some(PathBuf::from(value)),
         "package" | "package_name" | "name" => config.package_name = Some(value),
         "platform" => config.platform = Some(value),
@@ -632,7 +687,7 @@ fn parse_font(value: &str) -> Result<GuiFontPreset, Box<dyn std::error::Error>> 
 
 fn print_usage() {
     eprintln!(
-        "usage: wmfrontend [--demo uiimage|image-audio|engineworker|messagewindow | <script.wms> | <archive.warc> | <project-without-extension> | --archive FILE] [--package NAME] [--step-limit N] [--platform native|wasm|egui] [--font noto|default|mono] [--asset NAME=PATH] [--image NAME=PATH]"
+        "usage: wmfrontend [--demo uiimage|image-audio|engineworker|messagewindow | <script.wms> | <archive.warc> | <project-without-extension> | --archive FILE] [--frontend FILE] [--middleware FILE] [--background FILE] [--package NAME] [--step-limit N] [--platform native|wasm|egui] [--font noto|default|mono] [--asset NAME=PATH] [--image NAME=PATH]"
     );
 }
 
@@ -645,7 +700,9 @@ mod tests {
         let config = parse_project_toml(
             r#"
 package = "sample-game"
-script = "main.wms"
+frontend = "main.wms"
+middleware = "middleware.wms"
+background = "background.wms"
 platform = "egui"
 font = "noto"
 step_limit = 64
@@ -663,6 +720,14 @@ path = "background.png"
 
         assert_eq!(config.package_name.as_deref(), Some("sample-game"));
         assert_eq!(config.script.as_deref(), Some(Path::new("main.wms")));
+        assert_eq!(
+            config.middleware.as_deref(),
+            Some(Path::new("middleware.wms"))
+        );
+        assert_eq!(
+            config.background.as_deref(),
+            Some(Path::new("background.wms"))
+        );
         assert_eq!(config.platform.as_deref(), Some("egui"));
         assert_eq!(config.font.as_deref(), Some("noto"));
         assert_eq!(config.step_limit, Some(64));
@@ -676,7 +741,9 @@ path = "background.png"
         let config = parse_project_yaml(
             r#"
 package: sample-game
-script: main.wms
+frontend: main.wms
+middleware: middleware.wms
+background: background.wms
 platform: native
 assets:
   - name: story/guide
@@ -690,6 +757,14 @@ images:
 
         assert_eq!(config.package_name.as_deref(), Some("sample-game"));
         assert_eq!(config.script.as_deref(), Some(Path::new("main.wms")));
+        assert_eq!(
+            config.middleware.as_deref(),
+            Some(Path::new("middleware.wms"))
+        );
+        assert_eq!(
+            config.background.as_deref(),
+            Some(Path::new("background.wms"))
+        );
         assert_eq!(config.platform.as_deref(), Some("native"));
         assert_eq!(config.assets.len(), 2);
         assert_eq!(config.assets[0].resource_type, ResourceType::ScriptData);
@@ -707,6 +782,8 @@ images:
             r#"
 package = "novel"
 script = "main.wms"
+middleware = "middleware.wms"
+background = "background.wms"
 platform = "egui"
 
 [[image]]
@@ -736,6 +813,15 @@ path = "background.png"
         assert_eq!(launch.font, GuiFontPreset::Monospace);
         assert_eq!(launch.assets.len(), 1);
         assert_eq!(launch.assets[0].path, project_dir.join("background.png"));
+        assert_eq!(launch.extra_scripts.len(), 2);
+        assert_eq!(
+            launch.extra_scripts[0].path,
+            project_dir.join("middleware.wms")
+        );
+        assert_eq!(
+            launch.extra_scripts[1].path,
+            project_dir.join("background.wms")
+        );
 
         fs::remove_dir_all(&root).expect("cleanup project dir");
     }

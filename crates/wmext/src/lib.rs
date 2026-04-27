@@ -472,6 +472,15 @@ pub fn standard_extension_registry() -> Result<ExtensionRegistry> {
         ],
     )?;
     registry.register_extension(
+        "ext.ui",
+        &[
+            ExtensionFunctionSpec::new("context_menu", 240, 1, 1, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("shift_fast", 241, 1, 1, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+        ],
+    )?;
+    registry.register_extension(
         "ext.vm",
         &[
             ExtensionFunctionSpec::new("save", 160, 1, 1, 0).with_return_type(ExtValueType::Bool),

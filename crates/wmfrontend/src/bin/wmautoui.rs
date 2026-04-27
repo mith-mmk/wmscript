@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use wmplatform::PlatformProfile;
 use wmruntime::{Runtime, RuntimeConfig};
-use wmtoolchain::{GameProject, Toolchain, ToolchainConfig};
+use wmtoolchain::{GameProject, Toolchain, ToolchainConfig, spawn_worker_programs};
 use wmvm::{Message, RunOutcome, Value, WorkerState};
 
 fn main() {
@@ -27,7 +27,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let archive_bytes = fs::read(archive_path)?;
         let build = toolchain.load_archive(&archive_bytes)?;
         runtime.load_archive(&archive_bytes)?;
-        let worker_id = runtime.spawn_program(build.program.clone())?;
+        let worker_id = spawn_worker_programs(&mut runtime, &build.worker_programs)?;
         (build, worker_id)
     } else {
         let script_path = args.script_path.clone().ok_or("missing script path")?;
@@ -46,7 +46,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         );
         let build = toolchain.build_project(&project)?;
         runtime.load_archive(&build.archive)?;
-        let worker_id = runtime.spawn_program(build.program.clone())?;
+        let worker_id = spawn_worker_programs(&mut runtime, &build.worker_programs)?;
         (build, worker_id)
     };
 

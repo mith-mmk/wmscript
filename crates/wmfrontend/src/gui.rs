@@ -30,7 +30,10 @@ pub fn run_gui(
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title(title.clone())
-            .with_inner_size(egui::Vec2::new(size.width.max(640.0), size.height.max(480.0))),
+            .with_inner_size(egui::Vec2::new(
+                size.width.max(640.0),
+                size.height.max(480.0),
+            )),
         ..Default::default()
     };
 
@@ -152,11 +155,7 @@ impl ReportApp {
     }
 
     fn tr<'a>(&self, ja: &'a str, en: &'a str) -> &'a str {
-        if self.locale_code() == "ja" {
-            ja
-        } else {
-            en
-        }
+        if self.locale_code() == "ja" { ja } else { en }
     }
 
     fn runtime_view_label(&self, view: RuntimeView) -> &'static str {
@@ -551,10 +550,18 @@ impl ReportApp {
 
         let dt = ctx.input(|input| input.stable_dt).max(0.0);
 
+        let policy = self.report.runtime.ui_policy_state();
+        let shift_fast = policy.shift_fast_enabled && ctx.input(|input| input.modifiers.shift);
+
         if message.skip_mode || message.text_speed <= 0.0 {
             self.message_reveal_chars = text_len;
         } else {
-            let advance = (message.text_speed * dt).ceil() as usize;
+            let speed = if shift_fast {
+                message.text_speed.max(1.0) * 8.0
+            } else {
+                message.text_speed
+            };
+            let advance = (speed * dt).ceil() as usize;
             self.message_reveal_chars = self
                 .message_reveal_chars
                 .saturating_add(advance)
@@ -680,11 +687,7 @@ impl ReportApp {
                             RuntimeView::Config => config_label,
                             RuntimeView::SaveLoad => save_load_label,
                         };
-                        ui.selectable_value(
-                            &mut self.active_runtime_view,
-                            view,
-                            label,
-                        );
+                        ui.selectable_value(&mut self.active_runtime_view, view, label);
                     }
                     ui.separator();
                     if ui.button(self.tr("閉じる", "Close")).clicked() {
@@ -713,7 +716,10 @@ impl ReportApp {
                             if ui.button(self.tr("ログ表示切替", "Toggle Log")).clicked() {
                                 self.message_history_open = !self.message_history_open;
                             }
-                            if ui.button(self.tr("デバッグ表示切替", "Toggle Debug")).clicked() {
+                            if ui
+                                .button(self.tr("デバッグ表示切替", "Toggle Debug"))
+                                .clicked()
+                            {
                                 self.debug_panel_open = !self.debug_panel_open;
                             }
                             if ui.button(self.tr("ゲームを閉じる", "Close Game")).clicked() {
@@ -854,12 +860,10 @@ impl ReportApp {
                             "Save はランタイムのメモリ内チェックポイントを保存します。",
                             "Save stores an in-memory runtime checkpoint.",
                         ));
-                        ui.label(
-                            self.tr(
-                                "Load はそのスロットから VM / scene / resource / audio を復元します。",
-                                "Load restores VM, scene, resource, and audio state from that slot.",
-                            ),
-                        );
+                        ui.label(self.tr(
+                            "Load はそのスロットから VM / scene / resource / audio を復元します。",
+                            "Load restores VM, scene, resource, and audio state from that slot.",
+                        ));
                         if let Some(status) = &self.runtime_status_line {
                             ui.separator();
                             ui.label(status);
@@ -937,7 +941,11 @@ impl ReportApp {
             .speaker
             .as_deref()
             .filter(|speaker| !speaker.is_empty())
-            .unwrap_or(if locale_is_ja { "語り手" } else { "Narrator" })
+            .unwrap_or(if locale_is_ja {
+                "語り手"
+            } else {
+                "Narrator"
+            })
             .to_owned();
         let revealed_text = self.revealed_message_text(&message.text);
         let text_lines = revealed_text
@@ -1143,7 +1151,7 @@ impl ReportApp {
                                             } else {
                                                 "Enter to send"
                                             })
-                                                .color(input_hint_color),
+                                            .color(input_hint_color),
                                         )
                                         .text_color(input_text_color)
                                         .frame(false),
@@ -1313,18 +1321,9 @@ impl ReportApp {
                                     if locale_is_ja { "スキップ" } else { "SKIP" }.to_owned(),
                                 );
                             } else if self.report.ui_state.scene.message_window.auto_mode {
-                                chips.push(
-                                    if locale_is_ja { "オート" } else { "AUTO" }.to_owned(),
-                                );
+                                chips.push(if locale_is_ja { "オート" } else { "AUTO" }.to_owned());
                             } else {
-                                chips.push(
-                                    if locale_is_ja {
-                                        "手動"
-                                    } else {
-                                        "MANUAL"
-                                    }
-                                    .to_owned(),
-                                );
+                                chips.push(if locale_is_ja { "手動" } else { "MANUAL" }.to_owned());
                             }
                             if !choices.is_empty() {
                                 chips.push(if locale_is_ja {
@@ -1428,6 +1427,11 @@ impl eframe::App for ReportApp {
         }
         if ctx.input(|input| input.key_pressed(egui::Key::Space)) {
             let _ = self.advance_message();
+        }
+        if self.report.runtime.ui_policy_state().context_menu_enabled
+            && ctx.input(|input| input.pointer.secondary_clicked())
+        {
+            self.open_runtime_view(RuntimeView::Title);
         }
         let shortcut_keys_enabled = !ctx.wants_keyboard_input();
         if shortcut_keys_enabled && ctx.input(|input| input.key_pressed(egui::Key::ArrowUp)) {

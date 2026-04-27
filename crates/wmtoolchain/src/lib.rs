@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 
 use wmarchive::{
     Archive, ArchiveBuilder, ArchiveError, ArchiveSection, ArchiveStreamReader, Manifest,
-    ManifestBuilder, ManifestResourceEntry, ManifestSectionLocation, SectionDigest, SectionKind,
-    Version, digest_section,
+    ManifestBuilder, ManifestResourceEntry, ManifestSectionLocation, ManifestWorkerEntry,
+    SectionDigest, SectionKind, Version, digest_section,
 };
 use wmcompiler::{CompileError, Compiler, CompilerConfig, ModuleCatalog, ModuleItem};
 use wmext::standard_extension_registry;
@@ -110,6 +110,69 @@ pub struct GameAsset {
     pub external_location: Option<GameAssetExternalLocation>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum GameWorkerRole {
+    Frontend,
+    Middleware,
+    Background,
+}
+
+impl GameWorkerRole {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Frontend => "frontend",
+            Self::Middleware => "middleware",
+            Self::Background => "background",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "frontend" | "main" | "script" => Some(Self::Frontend),
+            "middleware" => Some(Self::Middleware),
+            "background" => Some(Self::Background),
+            _ => None,
+        }
+    }
+
+    const fn module_section_id(self) -> u32 {
+        match self {
+            Self::Frontend => 2,
+            Self::Middleware => 3,
+            Self::Background => 4,
+        }
+    }
+
+    const fn spawn_rank(self) -> u8 {
+        match self {
+            Self::Background => 0,
+            Self::Middleware => 1,
+            Self::Frontend => 2,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GameScript {
+    pub role: GameWorkerRole,
+    pub script_path: String,
+    pub source: String,
+}
+
+impl GameScript {
+    pub fn new(
+        role: GameWorkerRole,
+        script_path: impl Into<String>,
+        source: impl Into<String>,
+    ) -> Self {
+        Self {
+            role,
+            script_path: script_path.into(),
+            source: source.into(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GameAssetExternalLocation {
     pub url: String,
@@ -201,6 +264,7 @@ pub struct GameProject {
     pub package_name: String,
     pub script_path: String,
     pub source: String,
+    pub scripts: Vec<GameScript>,
     pub assets: Vec<GameAsset>,
 }
 
@@ -214,8 +278,35 @@ impl GameProject {
             package_name: package_name.into(),
             script_path: script_path.into(),
             source: source.into(),
+            scripts: Vec::new(),
             assets: Vec::new(),
         }
+    }
+
+    pub fn scripts(&self) -> Vec<GameScript> {
+        if self.scripts.is_empty() {
+            vec![GameScript::new(
+                GameWorkerRole::Frontend,
+                self.script_path.clone(),
+                self.source.clone(),
+            )]
+        } else {
+            self.scripts.clone()
+        }
+    }
+
+    pub fn push_script(mut self, script: GameScript) -> Self {
+        if self.scripts.is_empty() {
+            self.scripts.push(GameScript::new(
+                GameWorkerRole::Frontend,
+                self.script_path.clone(),
+                self.source.clone(),
+            ));
+        }
+        self.scripts.retain(|existing| existing.role != script.role);
+        self.scripts.push(script);
+        self.scripts.sort_by_key(|script| script.role);
+        self
     }
 
     pub fn push_asset(mut self, asset: GameAsset) -> Self {
@@ -233,9 +324,17 @@ impl GameProject {
 #[derive(Clone, Debug, PartialEq)]
 pub struct BuildArtifact {
     pub program: VmProgram,
+    pub worker_programs: Vec<WorkerProgram>,
     pub manifest: Manifest,
     pub archive: Vec<u8>,
     pub archive_size: usize,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct WorkerProgram {
+    pub role: GameWorkerRole,
+    pub section_id: u32,
+    pub program: VmProgram,
 }
 
 /// Result produced by a full build and run cycle.
@@ -270,22 +369,45 @@ impl Toolchain {
     }
 
     pub fn build_project(&self, project: &GameProject) -> Result<BuildArtifact> {
-        let mut catalog = ModuleCatalog::new();
-        self.seed_catalog_with_imports(&mut catalog, &project.script_path, &project.source)?;
-        let program = self.compiler.compile_program(
-            project.script_path.clone(),
-            project.source.clone(),
-            &mut catalog,
-        )?;
-        let manifest = self.build_manifest(project, &program)?;
-        let archive = self.build_archive(project, &program, &manifest)?;
+        let worker_programs = self.compile_worker_programs(project)?;
+        let program = worker_programs
+            .iter()
+            .find(|worker| worker.role == GameWorkerRole::Frontend)
+            .or_else(|| worker_programs.first())
+            .expect("project must have at least one worker")
+            .program
+            .clone();
+        let manifest = self.build_manifest(project, &worker_programs)?;
+        let archive = self.build_archive(project, &worker_programs, &manifest)?;
         let archive_size = archive.len();
         Ok(BuildArtifact {
             program,
+            worker_programs,
             manifest,
             archive,
             archive_size,
         })
+    }
+
+    fn compile_worker_programs(&self, project: &GameProject) -> Result<Vec<WorkerProgram>> {
+        let mut scripts = project.scripts();
+        scripts.sort_by_key(|script| script.role.module_section_id());
+        let mut programs = Vec::new();
+        for script in scripts {
+            let mut catalog = ModuleCatalog::new();
+            self.seed_catalog_with_imports(&mut catalog, &script.script_path, &script.source)?;
+            let program = self.compiler.compile_program(
+                script.script_path.clone(),
+                script.source.clone(),
+                &mut catalog,
+            )?;
+            programs.push(WorkerProgram {
+                role: script.role,
+                section_id: script.role.module_section_id(),
+                program,
+            });
+        }
+        Ok(programs)
     }
 
     fn seed_catalog_with_imports(
@@ -338,7 +460,8 @@ impl Toolchain {
         })?;
         let program = decode_program_from_manifest_module(&archive, &manifest)?;
         Ok(BuildArtifact {
-            program,
+            program: program.clone(),
+            worker_programs: decode_worker_programs_from_archive(&archive, &manifest, program)?,
             manifest,
             archive: bytes.to_vec(),
             archive_size: bytes.len(),
@@ -354,7 +477,8 @@ impl Toolchain {
         })?;
         let program = decode_program_from_stream_manifest_module(&mut archive, &manifest)?;
         Ok(BuildArtifact {
-            program,
+            program: program.clone(),
+            worker_programs: decode_worker_programs_from_stream(&mut archive, &manifest, program)?,
             manifest,
             archive: Vec::new(),
             archive_size: archive.data_len() as usize,
@@ -368,7 +492,7 @@ impl Toolchain {
     ) -> Result<ExecutionReport> {
         let build = self.build_project(project)?;
         let loaded_archive = runtime.load_archive(&build.archive)?;
-        let worker_id = runtime.spawn_program(build.program.clone())?;
+        let worker_id = spawn_worker_programs(runtime, &build.worker_programs)?;
         runtime.save_checkpoint(0);
         let outcomes = runtime.run_until_idle(self.config.step_limit);
         Ok(ExecutionReport {
@@ -382,7 +506,7 @@ impl Toolchain {
     pub fn run_archive(&self, runtime: &mut Runtime, bytes: &[u8]) -> Result<ExecutionReport> {
         let build = self.load_archive(bytes)?;
         let loaded_archive = runtime.load_archive(bytes)?;
-        let worker_id = runtime.spawn_program(build.program.clone())?;
+        let worker_id = spawn_worker_programs(runtime, &build.worker_programs)?;
         runtime.save_checkpoint(0);
         let outcomes = runtime.run_until_idle(self.config.step_limit);
         Ok(ExecutionReport {
@@ -407,12 +531,15 @@ impl Toolchain {
         let program = decode_program_from_stream_manifest_module(&mut archive, &manifest)?;
         let archive_size = archive.data_len() as usize;
         let loaded_archive = runtime.load_archive_reader(&mut archive)?;
-        let worker_id = runtime.spawn_program(program.clone())?;
+        let worker_programs =
+            decode_worker_programs_from_stream(&mut archive, &manifest, program.clone())?;
+        let worker_id = spawn_worker_programs(runtime, &worker_programs)?;
         runtime.save_checkpoint(0);
         let outcomes = runtime.run_until_idle(self.config.step_limit);
         Ok(ExecutionReport {
             build: BuildArtifact {
                 program,
+                worker_programs,
                 manifest,
                 archive: Vec::new(),
                 archive_size,
@@ -430,7 +557,11 @@ impl Toolchain {
         Ok(runtime.install_standard_extensions()?)
     }
 
-    fn build_manifest(&self, project: &GameProject, program: &VmProgram) -> Result<Manifest> {
+    fn build_manifest(
+        &self,
+        project: &GameProject,
+        worker_programs: &[WorkerProgram],
+    ) -> Result<Manifest> {
         let archive_id = stable_hash128(&[
             project.package_name.as_bytes(),
             project.script_path.as_bytes(),
@@ -450,23 +581,39 @@ impl Toolchain {
             .target_platform_mask(platform_mask(self.config.platform))
             .capability_mask(u64::MAX)
             .policy_flags(if self.config.release { 1 } else { 0 })
-            .entry(2, program.entry().unwrap_or(1) as u32);
+            .entry(
+                2,
+                worker_programs
+                    .iter()
+                    .find(|worker| worker.role == GameWorkerRole::Frontend)
+                    .or_else(|| worker_programs.first())
+                    .and_then(|worker| worker.program.entry())
+                    .unwrap_or(1) as u32,
+            );
 
-        let module_bytes = program.encode_binary();
-        let module_digest = digest_section(
-            2,
-            SectionKind::Module,
-            0,
-            module_bytes.len() as u64,
-            &module_bytes,
-        );
-        builder = builder.push_section_digest(SectionDigest {
-            section_id: 2,
-            section_kind: SectionKind::Module,
-            flags_canonical: 0,
-            unpacked_size: module_bytes.len() as u64,
-            digest: module_digest,
-        });
+        for worker in worker_programs {
+            let module_bytes = worker.program.encode_binary();
+            builder = builder
+                .push_section_digest(SectionDigest {
+                    section_id: worker.section_id,
+                    section_kind: SectionKind::Module,
+                    flags_canonical: 0,
+                    unpacked_size: module_bytes.len() as u64,
+                    digest: digest_section(
+                        worker.section_id,
+                        SectionKind::Module,
+                        0,
+                        module_bytes.len() as u64,
+                        &module_bytes,
+                    ),
+                })
+                .push_worker_entry(ManifestWorkerEntry::new(
+                    worker.role.as_str(),
+                    worker.section_id,
+                    worker.program.entry().unwrap_or(1) as u32,
+                    u64::MAX,
+                ));
+        }
 
         for asset in &project.assets {
             let payload = encode_resource_payload(asset);
@@ -503,16 +650,26 @@ impl Toolchain {
     fn build_archive(
         &self,
         project: &GameProject,
-        program: &VmProgram,
+        worker_programs: &[WorkerProgram],
         manifest: &Manifest,
     ) -> Result<Vec<u8>> {
         let mut builder = ArchiveBuilder::new().push_manifest(1, manifest);
-        let module_bytes = program.encode_binary();
-
-        let mut module = ArchiveSection::new(2, SectionKind::Module, module_bytes);
-        module.align = 16;
-        module.name_hash = stable_hash64(project.script_path.as_bytes());
-        builder = builder.push_section(module);
+        for worker in worker_programs {
+            let mut module = ArchiveSection::new(
+                worker.section_id,
+                SectionKind::Module,
+                worker.program.encode_binary(),
+            );
+            module.align = 16;
+            let script_path = project
+                .scripts()
+                .into_iter()
+                .find(|script| script.role == worker.role)
+                .map(|script| script.script_path)
+                .unwrap_or_else(|| project.script_path.clone());
+            module.name_hash = stable_hash64(script_path.as_bytes());
+            builder = builder.push_section(module);
+        }
 
         for asset in &project.assets {
             let mut section = ArchiveSection::new(
@@ -548,6 +705,85 @@ fn decode_program_from_stream_manifest_module<R: Read + Seek>(
     let section_id = module_section_id(archive.sections(), manifest);
     let bytes = archive.read_section(section_id)?;
     Ok(VmProgram::decode_binary(&bytes)?)
+}
+
+fn decode_worker_programs_from_archive(
+    archive: &Archive<'_>,
+    manifest: &Manifest,
+    fallback: VmProgram,
+) -> Result<Vec<WorkerProgram>> {
+    if manifest.worker_entries.is_empty() {
+        return Ok(vec![WorkerProgram {
+            role: GameWorkerRole::Frontend,
+            section_id: module_section_id(archive.sections(), manifest),
+            program: fallback,
+        }]);
+    }
+    let mut programs = Vec::new();
+    for entry in &manifest.worker_entries {
+        let role = GameWorkerRole::parse(&entry.role).unwrap_or(GameWorkerRole::Frontend);
+        let bytes = archive
+            .section_bytes(entry.module_section_id)
+            .ok_or_else(|| {
+                ArchiveError::InvalidManifest(format!(
+                    "missing worker module section {}",
+                    entry.module_section_id
+                ))
+            })?;
+        programs.push(WorkerProgram {
+            role,
+            section_id: entry.module_section_id,
+            program: VmProgram::decode_binary(bytes)?,
+        });
+    }
+    Ok(programs)
+}
+
+fn decode_worker_programs_from_stream<R: Read + Seek>(
+    archive: &mut ArchiveStreamReader<R>,
+    manifest: &Manifest,
+    fallback: VmProgram,
+) -> Result<Vec<WorkerProgram>> {
+    if manifest.worker_entries.is_empty() {
+        return Ok(vec![WorkerProgram {
+            role: GameWorkerRole::Frontend,
+            section_id: module_section_id(archive.sections(), manifest),
+            program: fallback,
+        }]);
+    }
+    let mut programs = Vec::new();
+    for entry in &manifest.worker_entries {
+        let role = GameWorkerRole::parse(&entry.role).unwrap_or(GameWorkerRole::Frontend);
+        let bytes = archive.read_section(entry.module_section_id)?;
+        programs.push(WorkerProgram {
+            role,
+            section_id: entry.module_section_id,
+            program: VmProgram::decode_binary(&bytes)?,
+        });
+    }
+    Ok(programs)
+}
+
+pub fn spawn_worker_programs(
+    runtime: &mut Runtime,
+    programs: &[WorkerProgram],
+) -> Result<WorkerId> {
+    let mut ordered = programs.to_vec();
+    ordered.sort_by_key(|worker| worker.role.spawn_rank());
+    let mut frontend_worker_id = None;
+    let mut first_worker_id = None;
+    for worker in ordered {
+        let worker_id = runtime.spawn_program(worker.program)?;
+        if first_worker_id.is_none() {
+            first_worker_id = Some(worker_id);
+        }
+        if worker.role == GameWorkerRole::Frontend {
+            frontend_worker_id = Some(worker_id);
+        }
+    }
+    frontend_worker_id.or(first_worker_id).ok_or_else(|| {
+        ArchiveError::InvalidManifest("project has no worker programs".to_owned()).into()
+    })
 }
 
 fn module_section_id(sections: &[wmarchive::SectionEntry], manifest: &Manifest) -> u32 {
@@ -730,6 +966,71 @@ mod tests {
                     ..
                 }
             )) if text == "archive-ok"
+        ));
+    }
+
+    #[test]
+    fn build_project_records_worker_role_entries() {
+        let toolchain = Toolchain::new(ToolchainConfig::new(PlatformProfile::egui()));
+        let project = GameProject::new(
+            "workers",
+            "main.wms",
+            r#"export func main() { return "frontend"; }"#,
+        )
+        .push_script(GameScript::new(
+            GameWorkerRole::Middleware,
+            "middleware.wms",
+            r#"export func main() { return "middleware"; }"#,
+        ))
+        .push_script(GameScript::new(
+            GameWorkerRole::Background,
+            "background.wms",
+            r#"export func main() { return "background"; }"#,
+        ));
+
+        let build = toolchain.build_project(&project).expect("build workers");
+
+        assert_eq!(build.worker_programs.len(), 3);
+        assert_eq!(build.manifest.worker_entries.len(), 3);
+        assert_eq!(build.manifest.worker_entries[0].role, "frontend");
+        assert_eq!(build.manifest.worker_entries[1].role, "middleware");
+        assert_eq!(build.manifest.worker_entries[2].role, "background");
+    }
+
+    #[test]
+    fn run_project_spawns_background_middleware_then_frontend() {
+        let toolchain = Toolchain::new(ToolchainConfig::new(PlatformProfile::egui()));
+        let project = GameProject::new(
+            "workers",
+            "main.wms",
+            r#"export func main() { return "frontend"; }"#,
+        )
+        .push_script(GameScript::new(
+            GameWorkerRole::Middleware,
+            "middleware.wms",
+            r#"export func main() { return "middleware"; }"#,
+        ))
+        .push_script(GameScript::new(
+            GameWorkerRole::Background,
+            "background.wms",
+            r#"export func main() { return "background"; }"#,
+        ));
+        let mut runtime = Runtime::new(RuntimeConfig::new(PlatformProfile::egui()));
+
+        let report = toolchain
+            .run_project(&mut runtime, &project)
+            .expect("run workers");
+
+        assert_eq!(report.worker_id, 3);
+        assert!(matches!(
+            report.outcomes.last(),
+            Some((
+                3,
+                RunOutcome::Halted {
+                    value: Some(Value::String(text)),
+                    ..
+                }
+            )) if text == "frontend"
         ));
     }
 

@@ -249,6 +249,30 @@ pub struct ManifestSectionLocation {
     pub flags: u32,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ManifestWorkerEntry {
+    pub role: String,
+    pub module_section_id: SectionId,
+    pub entry_func_id: u32,
+    pub capability_mask: u64,
+}
+
+impl ManifestWorkerEntry {
+    pub fn new(
+        role: impl Into<String>,
+        module_section_id: SectionId,
+        entry_func_id: u32,
+        capability_mask: u64,
+    ) -> Self {
+        Self {
+            role: role.into(),
+            module_section_id,
+            entry_func_id,
+            capability_mask,
+        }
+    }
+}
+
 impl ManifestSectionLocation {
     pub fn new(
         section_id: SectionId,

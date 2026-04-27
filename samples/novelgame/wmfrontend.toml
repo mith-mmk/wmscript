@@ -1,0 +1,10 @@
+package = "novelgame"
+frontend = "main.wms"
+middleware = "middleware.wms"
+background = "background.wms"
+platform = "egui"
+font = "noto"
+
+[[image]]
+name = "ui/background"
+path = "background.png"

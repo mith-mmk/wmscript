@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use wmplatform::PlatformProfile;
 use wmresource::ResourceType;
-use wmtoolchain::{GameAsset, GameProject, Toolchain, ToolchainConfig};
+use wmtoolchain::{GameAsset, GameProject, GameScript, GameWorkerRole, Toolchain, ToolchainConfig};
 
 fn main() {
     if let Err(error) = run() {
@@ -29,6 +29,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         args.script_path.to_string_lossy().to_string(),
         source,
     );
+    for script in &args.extra_scripts {
+        project = project.push_script(GameScript::new(
+            script.role,
+            script.path.to_string_lossy().to_string(),
+            fs::read_to_string(&script.path)?,
+        ));
+    }
 
     for asset in &args.assets {
         let payload = fs::read(&asset.path)?;
@@ -72,6 +79,7 @@ struct CliArgs {
     platform: PlatformProfile,
     release: bool,
     assets: Vec<CliAsset>,
+    extra_scripts: Vec<CliScript>,
 }
 
 impl CliArgs {
@@ -83,6 +91,7 @@ impl CliArgs {
         let mut platform = PlatformProfile::native();
         let mut release = false;
         let mut assets = Vec::new();
+        let mut extra_scripts = Vec::new();
 
         while let Some(arg) = args.next() {
             match arg.as_str() {
@@ -95,6 +104,17 @@ impl CliArgs {
                 "--release" => release = true,
                 "--asset" => assets.push(parse_asset_spec(&next_value(&mut args, "--asset")?)?),
                 "--image" => assets.push(parse_image_spec(&next_value(&mut args, "--image")?)?),
+                "--frontend" => {
+                    script_path = Some(PathBuf::from(next_value(&mut args, "--frontend")?))
+                }
+                "--middleware" => extra_scripts.push(CliScript {
+                    role: GameWorkerRole::Middleware,
+                    path: PathBuf::from(next_value(&mut args, "--middleware")?),
+                }),
+                "--background" => extra_scripts.push(CliScript {
+                    role: GameWorkerRole::Background,
+                    path: PathBuf::from(next_value(&mut args, "--background")?),
+                }),
                 "--help" | "-h" => {
                     print_usage();
                     std::process::exit(0);
@@ -120,6 +140,7 @@ impl CliArgs {
             platform,
             release,
             assets,
+            extra_scripts,
         })
     }
 }
@@ -129,6 +150,12 @@ struct CliAsset {
     name: String,
     path: PathBuf,
     resource_type: ResourceType,
+}
+
+#[derive(Debug)]
+struct CliScript {
+    role: GameWorkerRole,
+    path: PathBuf,
 }
 
 fn parse_asset_spec(spec: &str) -> Result<CliAsset, Box<dyn std::error::Error>> {
@@ -172,6 +199,6 @@ fn parse_platform(value: &str) -> Result<PlatformProfile, Box<dyn std::error::Er
 
 fn print_usage() {
     eprintln!(
-        "usage: wmtoolchain <script.wms> [--package NAME] [--out FILE] [--step-limit N] [--platform native|wasm|egui] [--release] [--asset NAME=PATH] [--image NAME=PATH]"
+        "usage: wmtoolchain <script.wms> [--frontend FILE] [--middleware FILE] [--background FILE] [--package NAME] [--out FILE] [--step-limit N] [--platform native|wasm|egui] [--release] [--asset NAME=PATH] [--image NAME=PATH]"
     );
 }

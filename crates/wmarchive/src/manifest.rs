@@ -2,8 +2,8 @@
 
 use crate::{
     ArchiveError, ArchiveId, Digest, ManifestArchiveDepEntry, ManifestExtEntry,
-    ManifestPolicyBlock, ManifestResourceEntry, ManifestSectionLocation, Result, SectionDigest,
-    SectionKind, Version,
+    ManifestPolicyBlock, ManifestResourceEntry, ManifestSectionLocation, ManifestWorkerEntry,
+    Result, SectionDigest, SectionKind, Version,
 };
 
 fn write_u16(dst: &mut Vec<u8>, value: u16) {
@@ -107,6 +107,7 @@ pub struct Manifest {
     pub section_digests: Vec<SectionDigest>,
     pub resource_map: Vec<ManifestResourceEntry>,
     pub external_section_locations: Vec<ManifestSectionLocation>,
+    pub worker_entries: Vec<ManifestWorkerEntry>,
     pub policy: ManifestPolicyBlock,
 }
 
@@ -131,6 +132,7 @@ impl Manifest {
             section_digests: Vec::new(),
             resource_map: Vec::new(),
             external_section_locations: Vec::new(),
+            worker_entries: Vec::new(),
             policy: ManifestPolicyBlock::default(),
         }
     }
@@ -227,6 +229,15 @@ impl Manifest {
             write_u32(&mut bytes, location.cache_key.len() as u32);
             bytes.extend_from_slice(location.cache_key.as_bytes());
             write_u32(&mut bytes, location.flags);
+        }
+
+        write_u32(&mut bytes, self.worker_entries.len() as u32);
+        for worker in &self.worker_entries {
+            write_u32(&mut bytes, worker.role.len() as u32);
+            bytes.extend_from_slice(worker.role.as_bytes());
+            write_u32(&mut bytes, worker.module_section_id);
+            write_u32(&mut bytes, worker.entry_func_id);
+            write_u64(&mut bytes, worker.capability_mask);
         }
 
         bytes
@@ -393,6 +404,26 @@ impl Manifest {
             }
         }
 
+        let mut worker_entries = Vec::new();
+        if offset < bytes.len() {
+            let worker_count = read_u32(bytes, &mut offset)? as usize;
+            worker_entries = Vec::with_capacity(worker_count);
+            for _ in 0..worker_count {
+                let role_len = read_u32(bytes, &mut offset)? as usize;
+                let role = String::from_utf8(read_bytes(bytes, &mut offset, role_len)?.to_vec())
+                    .map_err(|_| ArchiveError::InvalidManifest("invalid worker role".to_owned()))?;
+                let module_section_id = read_u32(bytes, &mut offset)?;
+                let entry_func_id = read_u32(bytes, &mut offset)?;
+                let capability_mask = read_u64(bytes, &mut offset)?;
+                worker_entries.push(ManifestWorkerEntry {
+                    role,
+                    module_section_id,
+                    entry_func_id,
+                    capability_mask,
+                });
+            }
+        }
+
         Ok(Self {
             package_name,
             package_version,
@@ -412,6 +443,7 @@ impl Manifest {
             section_digests,
             resource_map,
             external_section_locations,
+            worker_entries,
             policy,
         })
     }
@@ -505,6 +537,11 @@ impl ManifestBuilder {
         self
     }
 
+    pub fn push_worker_entry(mut self, entry: ManifestWorkerEntry) -> Self {
+        self.manifest.worker_entries.push(entry);
+        self
+    }
+
     pub fn build(self) -> Manifest {
         self.manifest
     }
@@ -540,6 +577,7 @@ mod tests {
                 "sha256:section-10",
                 1,
             ))
+            .push_worker_entry(ManifestWorkerEntry::new("frontend", 2, 1, u64::MAX))
             .build();
 
         let decoded = Manifest::decode(&manifest.encode()).expect("decode manifest");
@@ -554,6 +592,10 @@ mod tests {
                 1
             )]
         );
+        assert_eq!(
+            decoded.worker_entries,
+            vec![ManifestWorkerEntry::new("frontend", 2, 1, u64::MAX)]
+        );
     }
 
     #[test]
@@ -567,6 +609,7 @@ mod tests {
         let decoded = Manifest::decode(&bytes).expect("decode legacy manifest");
 
         assert!(decoded.external_section_locations.is_empty());
+        assert!(decoded.worker_entries.is_empty());
         assert_eq!(decoded.resource_id_by_name_hash(0x1234), Some(100));
     }
 }

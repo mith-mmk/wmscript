@@ -174,6 +174,12 @@ pub struct MessageWindowState {
     pub style: UiMessageWindowStyle,
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct UiPolicyState {
+    pub context_menu_enabled: bool,
+    pub shift_fast_enabled: bool,
+}
+
 impl Default for MessageWindowState {
     fn default() -> Self {
         Self {
@@ -216,6 +222,7 @@ struct RuntimeCheckpoint {
     icon_sheets: BTreeMap<u64, IconSheetState>,
     scene_layout: UiSceneLayoutState,
     message_window: MessageWindowState,
+    ui_policy: UiPolicyState,
     debug_log: Vec<String>,
     audio_states: BTreeMap<u64, AudioPlaybackState>,
     state_manager: StateManager,
@@ -361,6 +368,7 @@ pub struct Runtime {
     icon_sheets: Rc<RefCell<BTreeMap<u64, IconSheetState>>>,
     scene_layout: Rc<RefCell<UiSceneLayoutState>>,
     message_window: Rc<RefCell<MessageWindowState>>,
+    ui_policy: Rc<RefCell<UiPolicyState>>,
     audio_states: Rc<RefCell<BTreeMap<u64, AudioPlaybackState>>>,
     state_manager: Rc<RefCell<StateManager>>,
     checkpoints: Rc<RefCell<BTreeMap<u32, RuntimeCheckpoint>>>,
@@ -386,6 +394,7 @@ impl Runtime {
             icon_sheets: Rc::new(RefCell::new(BTreeMap::new())),
             scene_layout: Rc::new(RefCell::new(UiSceneLayoutState::default())),
             message_window: Rc::new(RefCell::new(MessageWindowState::default())),
+            ui_policy: Rc::new(RefCell::new(UiPolicyState::default())),
             audio_states: Rc::new(RefCell::new(BTreeMap::new())),
             state_manager: Rc::new(RefCell::new(StateManager::default())),
             checkpoints: Rc::new(RefCell::new(BTreeMap::new())),
@@ -2018,6 +2027,7 @@ impl Runtime {
         let icon_sheets = self.icon_sheets.clone();
         let scene_layout = self.scene_layout.clone();
         let message_window = self.message_window.clone();
+        let ui_policy = self.ui_policy.clone();
         let audio_states = self.audio_states.clone();
         let state_manager = self.state_manager.clone();
         let checkpoints = self.checkpoints.clone();
@@ -2038,6 +2048,7 @@ impl Runtime {
                             icon_sheets: icon_sheets.borrow().clone(),
                             scene_layout: scene_layout.borrow().clone(),
                             message_window: message_window.borrow().clone(),
+                            ui_policy: ui_policy.borrow().clone(),
                             debug_log: debug_log.borrow().clone(),
                             audio_states: audio_states.borrow().clone(),
                             state_manager: state_manager.borrow().clone(),
@@ -2057,6 +2068,7 @@ impl Runtime {
         let icon_sheets = self.icon_sheets.clone();
         let scene_layout = self.scene_layout.clone();
         let message_window = self.message_window.clone();
+        let ui_policy = self.ui_policy.clone();
         let audio_states = self.audio_states.clone();
         let audio_backend = self.audio_backend.clone();
         let state_manager = self.state_manager.clone();
@@ -2077,6 +2089,7 @@ impl Runtime {
                 *icon_sheets.borrow_mut() = checkpoint.icon_sheets;
                 *scene_layout.borrow_mut() = checkpoint.scene_layout;
                 *message_window.borrow_mut() = checkpoint.message_window;
+                *ui_policy.borrow_mut() = checkpoint.ui_policy;
                 *debug_log.borrow_mut() = checkpoint.debug_log;
                 *audio_states.borrow_mut() = checkpoint.audio_states;
                 *state_manager.borrow_mut() = checkpoint.state_manager;
@@ -2132,8 +2145,45 @@ impl Runtime {
             message: self.install_message_extension()?,
             image: self.install_image_extension()?,
             audio: self.install_audio_extension()?,
+            ui: self.install_ui_extension()?,
             vm: self.install_vm_extension()?,
             state: self.install_state_extension()?,
+        })
+    }
+
+    fn install_ui_extension(&mut self) -> Result<UiExtension, RuntimeError> {
+        let context_menu_host_id = 240;
+        let shift_fast_host_id = 241;
+        let policy = self.ui_policy.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(context_menu_host_id, 1, 1, CAP_GUI),
+            move |args| {
+                policy.borrow_mut().context_menu_enabled = expect_bool_arg(args, 0, "enabled")?;
+                Ok(Value::Bool(true))
+            },
+        );
+        let policy = self.ui_policy.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(shift_fast_host_id, 1, 1, CAP_GUI),
+            move |args| {
+                policy.borrow_mut().shift_fast_enabled = expect_bool_arg(args, 0, "enabled")?;
+                Ok(Value::Bool(true))
+            },
+        );
+        let ids = self.extensions.register_extension(
+            "ext.ui",
+            &[
+                ExtensionFunctionSpec::new("context_menu", context_menu_host_id, 1, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("shift_fast", shift_fast_host_id, 1, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+            ],
+        )?;
+        Ok(UiExtension {
+            context_menu_ext_id: ids[0],
+            shift_fast_ext_id: ids[1],
+            context_menu_host_id,
+            shift_fast_host_id,
         })
     }
 
@@ -2203,6 +2253,10 @@ impl Runtime {
         self.message_window.borrow().clone()
     }
 
+    pub fn ui_policy_state(&self) -> UiPolicyState {
+        self.ui_policy.borrow().clone()
+    }
+
     pub fn set_message_speed(&self, speed: f32) {
         self.message_window.borrow_mut().text_speed = speed.max(0.0);
     }
@@ -2239,6 +2293,7 @@ impl Runtime {
                 icon_sheets: self.icon_sheets.borrow().clone(),
                 scene_layout: self.scene_layout.borrow().clone(),
                 message_window: self.message_window.borrow().clone(),
+                ui_policy: self.ui_policy.borrow().clone(),
                 debug_log: self.debug_log.borrow().clone(),
                 audio_states: self.audio_states.borrow().clone(),
                 state_manager: self.state_manager.borrow().clone(),
@@ -2270,6 +2325,7 @@ impl Runtime {
         *self.icon_sheets.borrow_mut() = checkpoint.icon_sheets;
         *self.scene_layout.borrow_mut() = checkpoint.scene_layout;
         *self.message_window.borrow_mut() = checkpoint.message_window;
+        *self.ui_policy.borrow_mut() = checkpoint.ui_policy;
         *self.debug_log.borrow_mut() = checkpoint.debug_log;
         *self.audio_states.borrow_mut() = checkpoint.audio_states;
         *self.state_manager.borrow_mut() = checkpoint.state_manager;
@@ -2559,6 +2615,14 @@ pub struct StateExtension {
     pub erase_host_id: HostId,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UiExtension {
+    pub context_menu_ext_id: u32,
+    pub shift_fast_ext_id: u32,
+    pub context_menu_host_id: HostId,
+    pub shift_fast_host_id: HostId,
+}
+
 /// Stable ids for the runtime's standard extension set.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StandardExtensions {
@@ -2570,6 +2634,7 @@ pub struct StandardExtensions {
     pub message: MessageExtension,
     pub image: ImageExtension,
     pub audio: AudioExtension,
+    pub ui: UiExtension,
     pub vm: VmExtension,
     pub state: StateExtension,
 }
@@ -3534,6 +3599,43 @@ mod tests {
         );
         let message = runtime.message_window_state();
         assert_eq!(message.style, UiMessageWindowStyle::default());
+    }
+
+    #[test]
+    fn runtime_installs_and_executes_ui_policy_extension() {
+        let mut runtime = Runtime::new(RuntimeConfig::new(PlatformProfile::egui()));
+        let extension = runtime.install_ui_extension().expect("install ui");
+
+        assert_eq!(
+            runtime
+                .extension_registry()
+                .resolve_id("ext.ui.context_menu"),
+            Ok(extension.context_menu_ext_id)
+        );
+        assert_eq!(
+            runtime.extension_registry().resolve_id("ext.ui.shift_fast"),
+            Ok(extension.shift_fast_ext_id)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(extension.context_menu_host_id, &[Value::Bool(true)])
+                .expect("context menu"),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(extension.shift_fast_host_id, &[Value::Bool(true)])
+                .expect("shift fast"),
+            Value::Bool(true)
+        );
+
+        let policy = runtime.ui_policy_state();
+        assert!(policy.context_menu_enabled);
+        assert!(policy.shift_fast_enabled);
     }
     #[test]
     fn runtime_installs_and_executes_scene_extension() {

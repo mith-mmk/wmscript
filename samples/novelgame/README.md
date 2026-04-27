@@ -3,7 +3,10 @@
 選択肢でエンディングが変わる、日本語ノベルゲーム本文サンプルです。
 
 - `ext.message.choices_named(...)` で安定した choice id を使います
-- `background.png` を resource `100` として読み込み、背景に描画します
+- `main.wms` は物語と分岐だけを担当します
+- `background.wms` は `background.png` を resource `100` として読み込み、UI配置と操作ポリシーを設定します
+- `middleware.wms` は v1 の素通し middleware worker です
+- `wmfrontend.toml` で `frontend` / `middleware` / `background` の3 workerを明示します
 - 選択結果は `recv()` 後に `state.get("ui.last_choice")` から読みます
 - 各ルートは `state.save(1)` で最後に到達したエンディングを保存します
 - 自動テストや smoke run で確認しやすいよう、戻り値は ASCII の固定文字列です
@@ -19,7 +22,7 @@
 ## Run
 
 ```powershell
-cargo run -p wmfrontend --bin wmfrontend -- samples/novelgame/main.wms --platform egui --font noto --image ui/background=samples/novelgame/background.png
+cargo run -p wmfrontend --bin wmfrontend -- samples/novelgame
 ```
 
 ## Auto UI Smoke
@@ -30,6 +33,8 @@ New-Item -ItemType Directory -Force .test-novelgame
 cargo run -p wmtoolchain --bin wmtoolchain -- samples/novelgame/main.wms `
   --package novelgame `
   --platform egui `
+  --middleware samples/novelgame/middleware.wms `
+  --background samples/novelgame/background.wms `
   --image ui/background=samples/novelgame/background.png `
   --out .test-novelgame/novelgame.warc
 

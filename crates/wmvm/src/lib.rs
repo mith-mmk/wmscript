@@ -1918,7 +1918,10 @@ mod tests {
         let mut scheduler = Scheduler::new();
         let worker_id = scheduler.spawn(vm);
         let outcomes = scheduler.run_round(32);
-        assert!(matches!(outcomes.as_slice(), [(_, RunOutcome::Sleeping { .. })]));
+        assert!(matches!(
+            outcomes.as_slice(),
+            [(_, RunOutcome::Sleeping { .. })]
+        ));
         assert!(matches!(
             scheduler.worker_state(worker_id),
             Some(WorkerState::Sleeping)
@@ -1926,7 +1929,10 @@ mod tests {
 
         assert!(scheduler.wake(worker_id));
         let outcomes = scheduler.run_round(32);
-        assert!(matches!(outcomes.as_slice(), [(_, RunOutcome::Halted { .. })]));
+        assert!(matches!(
+            outcomes.as_slice(),
+            [(_, RunOutcome::Halted { .. })]
+        ));
         assert!(matches!(
             scheduler.worker_state(worker_id),
             Some(WorkerState::Halted)
