@@ -77,13 +77,16 @@ pub async fn run_gui_web(
         .dyn_into::<web_sys::HtmlCanvasElement>()?;
     let report_slot = std::rc::Rc::new(std::cell::RefCell::new(None));
     let app = ReportApp::new(report, false, font_preset, report_slot);
-    eframe::WebRunner::new()
+    let runner = eframe::WebRunner::new();
+    runner
         .start(
             canvas,
             eframe::WebOptions::default(),
             Box::new(move |_| Ok(Box::new(app))),
         )
-        .await
+        .await?;
+    std::mem::forget(runner);
+    Ok(())
 }
 
 struct ReportApp {
