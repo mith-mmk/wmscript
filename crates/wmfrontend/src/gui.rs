@@ -584,15 +584,12 @@ impl ReportApp {
         let policy = self.report.runtime.ui_policy_state();
         let shift_fast = policy.shift_fast_enabled && ctx.input(|input| input.modifiers.shift);
 
-        if message.skip_mode || message.text_speed <= 0.0 {
+        if shift_fast {
+            self.message_reveal_chars = text_len;
+        } else if message.skip_mode || message.text_speed <= 0.0 {
             self.message_reveal_chars = text_len;
         } else {
-            let speed = if shift_fast {
-                message.text_speed.max(1.0) * 8.0
-            } else {
-                message.text_speed
-            };
-            let advance = (speed * dt).ceil() as usize;
+            let advance = (message.text_speed * dt).ceil() as usize;
             self.message_reveal_chars = self
                 .message_reveal_chars
                 .saturating_add(advance)
@@ -605,13 +602,16 @@ impl ReportApp {
             && message.choices.is_empty()
             && message.input_prompt.is_none()
             && !self.report.runtime.waiting_workers().is_empty()
-            && (message.auto_mode || message.skip_mode);
+            && (message.auto_mode || message.skip_mode || shift_fast);
 
         if can_auto_advance {
             self.auto_advance_elapsed_seconds += dt;
-            if self.auto_advance_elapsed_seconds
-                >= Self::message_advance_delay_seconds(message, text_len)
-            {
+            let delay = if shift_fast {
+                0.04
+            } else {
+                Self::message_advance_delay_seconds(message, text_len)
+            };
+            if self.auto_advance_elapsed_seconds >= delay {
                 self.auto_advance_sent = true;
                 self.send_user_reply(Value::Nil);
             }
@@ -922,7 +922,7 @@ impl ReportApp {
             chips.push(status.clone());
         }
         if chips.is_empty() {
-            chips.push(self.tr("M メニュー", "M MENU").to_owned());
+            return;
         }
 
         egui::Area::new(egui::Id::new("runtime_hud"))
@@ -1318,10 +1318,13 @@ impl ReportApp {
                         );
                         ui.add_space(10.0 * scale);
 
+                        let reserved_height = badge_height + (52.0 * scale.max(0.75));
+                        let max_text_height =
+                            (inner_rect.height() - reserved_height).max(48.0 * scale.max(0.75));
                         let text_area_height = if backlog_effect > 0.01 && !backlog.is_empty() {
-                            message_rect.height() * (0.44 - 0.16 * backlog_effect)
+                            (max_text_height * (0.72 - 0.22 * backlog_effect)).max(42.0)
                         } else {
-                            message_rect.height() * 0.44
+                            max_text_height
                         };
                         egui::ScrollArea::vertical()
                             .id_salt("message_window_text")
