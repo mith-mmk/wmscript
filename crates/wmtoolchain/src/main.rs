@@ -107,12 +107,21 @@ impl CliArgs {
                 "--frontend" => {
                     script_path = Some(PathBuf::from(next_value(&mut args, "--frontend")?))
                 }
+                "--engine" => script_path = Some(PathBuf::from(next_value(&mut args, "--engine")?)),
+                "--ui" => extra_scripts.push(CliScript {
+                    role: GameWorkerRole::Ui,
+                    path: PathBuf::from(next_value(&mut args, "--ui")?),
+                }),
+                "--loader" => extra_scripts.push(CliScript {
+                    role: GameWorkerRole::Loader,
+                    path: PathBuf::from(next_value(&mut args, "--loader")?),
+                }),
                 "--middleware" => extra_scripts.push(CliScript {
-                    role: GameWorkerRole::Middleware,
+                    role: GameWorkerRole::Loader,
                     path: PathBuf::from(next_value(&mut args, "--middleware")?),
                 }),
                 "--background" => extra_scripts.push(CliScript {
-                    role: GameWorkerRole::Background,
+                    role: GameWorkerRole::Ui,
                     path: PathBuf::from(next_value(&mut args, "--background")?),
                 }),
                 "--help" | "-h" => {
@@ -199,6 +208,6 @@ fn parse_platform(value: &str) -> Result<PlatformProfile, Box<dyn std::error::Er
 
 fn print_usage() {
     eprintln!(
-        "usage: wmtoolchain <script.wms> [--frontend FILE] [--middleware FILE] [--background FILE] [--package NAME] [--out FILE] [--step-limit N] [--platform native|wasm|egui] [--release] [--asset NAME=PATH] [--image NAME=PATH]"
+        "usage: wmtoolchain <script.wms> [--engine FILE] [--ui FILE] [--loader FILE] [--frontend FILE] [--middleware FILE] [--background FILE] [--package NAME] [--out FILE] [--step-limit N] [--platform native|wasm|egui] [--release] [--asset NAME=PATH] [--image NAME=PATH]"
     );
 }

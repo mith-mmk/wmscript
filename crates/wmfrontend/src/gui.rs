@@ -58,6 +58,34 @@ pub fn run_gui(
     ))
 }
 
+#[cfg(target_arch = "wasm32")]
+pub async fn run_gui_web(
+    report: FrontendReport,
+    font_preset: GuiFontPreset,
+    canvas_id: &str,
+) -> Result<(), wasm_bindgen::JsValue> {
+    use wasm_bindgen::JsCast;
+
+    let window =
+        web_sys::window().ok_or_else(|| wasm_bindgen::JsValue::from_str("missing window"))?;
+    let document = window
+        .document()
+        .ok_or_else(|| wasm_bindgen::JsValue::from_str("missing document"))?;
+    let canvas = document
+        .get_element_by_id(canvas_id)
+        .ok_or_else(|| wasm_bindgen::JsValue::from_str("missing canvas element"))?
+        .dyn_into::<web_sys::HtmlCanvasElement>()?;
+    let report_slot = std::rc::Rc::new(std::cell::RefCell::new(None));
+    let app = ReportApp::new(report, false, font_preset, report_slot);
+    eframe::WebRunner::new()
+        .start(
+            canvas,
+            eframe::WebOptions::default(),
+            Box::new(move |_| Ok(Box::new(app))),
+        )
+        .await
+}
+
 struct ReportApp {
     report: FrontendReport,
     report_slot: std::rc::Rc<std::cell::RefCell<Option<FrontendReport>>>,

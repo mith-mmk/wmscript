@@ -112,42 +112,49 @@ pub struct GameAsset {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum GameWorkerRole {
-    Frontend,
-    Middleware,
-    Background,
+    Ui,
+    Loader,
+    Engine,
 }
 
 impl GameWorkerRole {
+    #[allow(non_upper_case_globals)]
+    pub const Frontend: Self = Self::Engine;
+    #[allow(non_upper_case_globals)]
+    pub const Middleware: Self = Self::Loader;
+    #[allow(non_upper_case_globals)]
+    pub const Background: Self = Self::Ui;
+
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::Frontend => "frontend",
-            Self::Middleware => "middleware",
-            Self::Background => "background",
+            Self::Ui => "ui",
+            Self::Loader => "loader",
+            Self::Engine => "engine",
         }
     }
 
     pub fn parse(value: &str) -> Option<Self> {
         match value {
-            "frontend" | "main" | "script" => Some(Self::Frontend),
-            "middleware" => Some(Self::Middleware),
-            "background" => Some(Self::Background),
+            "ui" | "background" => Some(Self::Ui),
+            "loader" | "middleware" => Some(Self::Loader),
+            "engine" | "frontend" | "main" | "script" => Some(Self::Engine),
             _ => None,
         }
     }
 
     const fn module_section_id(self) -> u32 {
         match self {
-            Self::Frontend => 2,
-            Self::Middleware => 3,
-            Self::Background => 4,
+            Self::Ui => 2,
+            Self::Loader => 3,
+            Self::Engine => 4,
         }
     }
 
     const fn spawn_rank(self) -> u8 {
         match self {
-            Self::Background => 0,
-            Self::Middleware => 1,
-            Self::Frontend => 2,
+            Self::Ui => 0,
+            Self::Loader => 1,
+            Self::Engine => 2,
         }
     }
 }
@@ -286,7 +293,7 @@ impl GameProject {
     pub fn scripts(&self) -> Vec<GameScript> {
         if self.scripts.is_empty() {
             vec![GameScript::new(
-                GameWorkerRole::Frontend,
+                GameWorkerRole::Engine,
                 self.script_path.clone(),
                 self.source.clone(),
             )]
@@ -298,7 +305,7 @@ impl GameProject {
     pub fn push_script(mut self, script: GameScript) -> Self {
         if self.scripts.is_empty() {
             self.scripts.push(GameScript::new(
-                GameWorkerRole::Frontend,
+                GameWorkerRole::Engine,
                 self.script_path.clone(),
                 self.source.clone(),
             ));
@@ -372,7 +379,7 @@ impl Toolchain {
         let worker_programs = self.compile_worker_programs(project)?;
         let program = worker_programs
             .iter()
-            .find(|worker| worker.role == GameWorkerRole::Frontend)
+            .find(|worker| worker.role == GameWorkerRole::Engine)
             .or_else(|| worker_programs.first())
             .expect("project must have at least one worker")
             .program
@@ -582,10 +589,15 @@ impl Toolchain {
             .capability_mask(u64::MAX)
             .policy_flags(if self.config.release { 1 } else { 0 })
             .entry(
-                2,
                 worker_programs
                     .iter()
-                    .find(|worker| worker.role == GameWorkerRole::Frontend)
+                    .find(|worker| worker.role == GameWorkerRole::Engine)
+                    .or_else(|| worker_programs.first())
+                    .map(|worker| worker.section_id)
+                    .unwrap_or(2),
+                worker_programs
+                    .iter()
+                    .find(|worker| worker.role == GameWorkerRole::Engine)
                     .or_else(|| worker_programs.first())
                     .and_then(|worker| worker.program.entry())
                     .unwrap_or(1) as u32,
@@ -714,14 +726,14 @@ fn decode_worker_programs_from_archive(
 ) -> Result<Vec<WorkerProgram>> {
     if manifest.worker_entries.is_empty() {
         return Ok(vec![WorkerProgram {
-            role: GameWorkerRole::Frontend,
+            role: GameWorkerRole::Engine,
             section_id: module_section_id(archive.sections(), manifest),
             program: fallback,
         }]);
     }
     let mut programs = Vec::new();
     for entry in &manifest.worker_entries {
-        let role = GameWorkerRole::parse(&entry.role).unwrap_or(GameWorkerRole::Frontend);
+        let role = GameWorkerRole::parse(&entry.role).unwrap_or(GameWorkerRole::Engine);
         let bytes = archive
             .section_bytes(entry.module_section_id)
             .ok_or_else(|| {
@@ -746,14 +758,14 @@ fn decode_worker_programs_from_stream<R: Read + Seek>(
 ) -> Result<Vec<WorkerProgram>> {
     if manifest.worker_entries.is_empty() {
         return Ok(vec![WorkerProgram {
-            role: GameWorkerRole::Frontend,
+            role: GameWorkerRole::Engine,
             section_id: module_section_id(archive.sections(), manifest),
             program: fallback,
         }]);
     }
     let mut programs = Vec::new();
     for entry in &manifest.worker_entries {
-        let role = GameWorkerRole::parse(&entry.role).unwrap_or(GameWorkerRole::Frontend);
+        let role = GameWorkerRole::parse(&entry.role).unwrap_or(GameWorkerRole::Engine);
         let bytes = archive.read_section(entry.module_section_id)?;
         programs.push(WorkerProgram {
             role,
@@ -770,18 +782,18 @@ pub fn spawn_worker_programs(
 ) -> Result<WorkerId> {
     let mut ordered = programs.to_vec();
     ordered.sort_by_key(|worker| worker.role.spawn_rank());
-    let mut frontend_worker_id = None;
+    let mut engine_worker_id = None;
     let mut first_worker_id = None;
     for worker in ordered {
         let worker_id = runtime.spawn_program(worker.program)?;
         if first_worker_id.is_none() {
             first_worker_id = Some(worker_id);
         }
-        if worker.role == GameWorkerRole::Frontend {
-            frontend_worker_id = Some(worker_id);
+        if worker.role == GameWorkerRole::Engine {
+            engine_worker_id = Some(worker_id);
         }
     }
-    frontend_worker_id.or(first_worker_id).ok_or_else(|| {
+    engine_worker_id.or(first_worker_id).ok_or_else(|| {
         ArchiveError::InvalidManifest("project has no worker programs".to_owned()).into()
     })
 }
@@ -954,7 +966,7 @@ mod tests {
             .expect("run archive reader");
 
         assert_eq!(report.worker_id, 1);
-        assert_eq!(report.build.manifest.entry_module_id, 2);
+        assert_eq!(report.build.manifest.entry_module_id, 4);
         assert_eq!(report.build.archive_size, build.archive_size);
         assert!(report.build.archive.is_empty());
         assert!(matches!(
@@ -970,50 +982,50 @@ mod tests {
     }
 
     #[test]
-    fn build_project_records_worker_role_entries() {
+    fn build_project_records_package_entries() {
         let toolchain = Toolchain::new(ToolchainConfig::new(PlatformProfile::egui()));
         let project = GameProject::new(
             "workers",
-            "main.wms",
-            r#"export func main() { return "frontend"; }"#,
+            "engine/main.wms",
+            r#"export func main() { return "engine"; }"#,
         )
         .push_script(GameScript::new(
-            GameWorkerRole::Middleware,
-            "middleware.wms",
-            r#"export func main() { return "middleware"; }"#,
+            GameWorkerRole::Loader,
+            "loader/main.wms",
+            r#"export func main() { return "loader"; }"#,
         ))
         .push_script(GameScript::new(
-            GameWorkerRole::Background,
-            "background.wms",
-            r#"export func main() { return "background"; }"#,
+            GameWorkerRole::Ui,
+            "ui/main.wms",
+            r#"export func main() { return "ui"; }"#,
         ));
 
         let build = toolchain.build_project(&project).expect("build workers");
 
         assert_eq!(build.worker_programs.len(), 3);
         assert_eq!(build.manifest.worker_entries.len(), 3);
-        assert_eq!(build.manifest.worker_entries[0].role, "frontend");
-        assert_eq!(build.manifest.worker_entries[1].role, "middleware");
-        assert_eq!(build.manifest.worker_entries[2].role, "background");
+        assert_eq!(build.manifest.worker_entries[0].role, "ui");
+        assert_eq!(build.manifest.worker_entries[1].role, "loader");
+        assert_eq!(build.manifest.worker_entries[2].role, "engine");
     }
 
     #[test]
-    fn run_project_spawns_background_middleware_then_frontend() {
+    fn run_project_spawns_ui_loader_then_engine() {
         let toolchain = Toolchain::new(ToolchainConfig::new(PlatformProfile::egui()));
         let project = GameProject::new(
             "workers",
-            "main.wms",
-            r#"export func main() { return "frontend"; }"#,
+            "engine/main.wms",
+            r#"export func main() { return "engine"; }"#,
         )
         .push_script(GameScript::new(
-            GameWorkerRole::Middleware,
-            "middleware.wms",
-            r#"export func main() { return "middleware"; }"#,
+            GameWorkerRole::Loader,
+            "loader/main.wms",
+            r#"export func main() { return "loader"; }"#,
         ))
         .push_script(GameScript::new(
-            GameWorkerRole::Background,
-            "background.wms",
-            r#"export func main() { return "background"; }"#,
+            GameWorkerRole::Ui,
+            "ui/main.wms",
+            r#"export func main() { return "ui"; }"#,
         ));
         let mut runtime = Runtime::new(RuntimeConfig::new(PlatformProfile::egui()));
 
@@ -1030,7 +1042,7 @@ mod tests {
                     value: Some(Value::String(text)),
                     ..
                 }
-            )) if text == "frontend"
+            )) if text == "engine"
         ));
     }
 

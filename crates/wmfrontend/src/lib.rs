@@ -29,6 +29,9 @@ use wmui::{
 };
 use wmvm::{RunOutcome, Value};
 
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::{JsCast, prelude::*};
+
 /// Configuration for the frontend shell.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FrontendConfig {
@@ -478,6 +481,49 @@ pub fn run_frontend_archive_path(
         runtime: runtime.clone(),
         audio_backend: runtime.audio_backend_handle(),
     })
+}
+
+pub fn run_frontend_archive_bytes(
+    platform: PlatformProfile,
+    archive_bytes: &[u8],
+    step_limit: usize,
+) -> Result<FrontendReport, FrontendError> {
+    let toolchain = Toolchain::new(ToolchainConfig::new(platform).with_step_limit(step_limit));
+    let mut runtime =
+        Runtime::new(wmruntime::RuntimeConfig::new(platform).with_step_limit(step_limit));
+    runtime.set_audio_backend(create_default_audio_backend());
+    toolchain
+        .bootstrap_runtime(&mut runtime)
+        .map_err(ToolchainError::from)?;
+    let execution = toolchain.run_archive(&mut runtime, archive_bytes)?;
+    let build = execution.build.clone();
+    let log_lines = collect_lines(&build, &execution);
+    let ui_state = report_ui_state(platform, &build, &execution, &runtime);
+    Ok(FrontendReport {
+        build,
+        execution,
+        log_lines,
+        ui_state,
+        runtime: runtime.clone(),
+        audio_backend: runtime.audio_backend_handle(),
+    })
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub async fn start_wmfrontend_browser(
+    canvas_id: String,
+    archive_url: String,
+) -> Result<(), JsValue> {
+    let window = web_sys::window().ok_or_else(|| JsValue::from_str("missing window"))?;
+    let response_value =
+        wasm_bindgen_futures::JsFuture::from(window.fetch_with_str(&archive_url)).await?;
+    let response: web_sys::Response = response_value.dyn_into()?;
+    let buffer = wasm_bindgen_futures::JsFuture::from(response.array_buffer()?).await?;
+    let bytes = js_sys::Uint8Array::new(&buffer).to_vec();
+    let report = run_frontend_archive_bytes(PlatformProfile::wasm(), &bytes, 128)
+        .map_err(|error| JsValue::from_str(&error.to_string()))?;
+    gui::run_gui_web(report, GuiFontPreset::default_preset(), &canvas_id).await
 }
 
 fn final_story_text(execution: &ExecutionReport) -> Option<String> {

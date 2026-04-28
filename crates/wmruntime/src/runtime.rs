@@ -1271,6 +1271,115 @@ impl Runtime {
                     .with_return_type(ExtValueType::String),
             ],
         )?;
+        let _ = self.extensions.register_extension(
+            "text",
+            &[
+                ExtensionFunctionSpec::new("show", show_host_id, 1, 2, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("append", append_host_id, 1, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("choices", choices_host_id, 0, 16, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("choices_named", choices_named_host_id, 0, 16, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("prompt", prompt_host_id, 0, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("hide", hide_host_id, 0, 0, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("speed", speed_host_id, 1, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("auto", auto_host_id, 1, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("skip", skip_host_id, 1, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("log_clear", log_clear_host_id, 0, 0, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("clear", clear_host_id, 0, 0, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("box_style", box_style_host_id, 8, 8, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("text_color", text_color_host_id, 4, 4, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("speaker_color", speaker_color_host_id, 4, 4, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("accent_color", accent_color_host_id, 4, 4, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("font_size", font_size_host_id, 2, 2, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("reset_style", reset_style_host_id, 0, 0, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("frame", frame_host_id, 0, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("content_inset", content_inset_host_id, 4, 4, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new(
+                    "input_box_style",
+                    input_box_style_host_id,
+                    8,
+                    8,
+                    CAP_GUI,
+                )
+                .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new(
+                    "input_text_color",
+                    input_text_color_host_id,
+                    4,
+                    4,
+                    CAP_GUI,
+                )
+                .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new(
+                    "input_hint_color",
+                    input_hint_color_host_id,
+                    4,
+                    4,
+                    CAP_GUI,
+                )
+                .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new(
+                    "input_prompt_color",
+                    input_prompt_color_host_id,
+                    4,
+                    4,
+                    CAP_GUI,
+                )
+                .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new(
+                    "choice_box_style",
+                    choice_box_style_host_id,
+                    8,
+                    8,
+                    CAP_GUI,
+                )
+                .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new(
+                    "choice_text_color",
+                    choice_text_color_host_id,
+                    4,
+                    4,
+                    CAP_GUI,
+                )
+                .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new(
+                    "choice_accent_color",
+                    choice_accent_color_host_id,
+                    4,
+                    4,
+                    CAP_GUI,
+                )
+                .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new(
+                    "choice_selected_style",
+                    choice_selected_style_host_id,
+                    8,
+                    8,
+                    CAP_GUI,
+                )
+                .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("locale", locale_host_id, 0, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::String),
+            ],
+        )?;
 
         Ok(MessageExtension {
             show_ext_id: ids[0],
@@ -1337,6 +1446,7 @@ impl Runtime {
         let z_index_host_id = 182;
         let opening_host_id = 183;
         let ending_host_id = 184;
+        let background_host_id = 185;
         let scene_layout = self.scene_layout.clone();
         let _ = self.register_host_function(
             HostFunction::new(layout_host_id, 8, 8, CAP_GUI),
@@ -1426,6 +1536,51 @@ impl Runtime {
                 Ok(Value::Bool(true))
             },
         );
+        let resources = self.resources.clone();
+        let image_draws = self.image_draws.clone();
+        let scene_layout = self.scene_layout.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(background_host_id, 1, 1, CAP_GUI),
+            move |args| {
+                let resource_id = expect_integer_arg(args, 0, "resource_id")? as u32;
+                let handle = match resources
+                    .borrow_mut()
+                    .load_resource(resource_id)
+                    .map_err(resource_error_to_host_error)?
+                {
+                    LoadResult::Ready(handle) => handle,
+                    LoadResult::Pending(request_id) => {
+                        return Ok(Value::Integer(request_id as i64));
+                    }
+                };
+                let layout = scene_layout.borrow();
+                let size = layout.reference_size;
+                let mut draws = image_draws.borrow_mut();
+                draws.retain(|draw| {
+                    draw.x != 0.0
+                        || draw.y != 0.0
+                        || draw.width != Some(size.width)
+                        || draw.height != Some(size.height)
+                });
+                draws.insert(
+                    0,
+                    ImageDrawState {
+                        handle: handle.raw(),
+                        resource_id,
+                        x: 0.0,
+                        y: 0.0,
+                        width: Some(size.width),
+                        height: Some(size.height),
+                        source: None,
+                        icon_sheet: None,
+                        icon_index: None,
+                        rotation_degrees: 0.0,
+                        opacity: 1.0,
+                    },
+                );
+                Ok(Value::Bool(true))
+            },
+        );
         let ids = self.extensions.register_extension(
             "ext.scene",
             &[
@@ -1439,6 +1594,25 @@ impl Runtime {
                     .with_return_type(ExtValueType::Bool),
                 ExtensionFunctionSpec::new("ending", ending_host_id, 1, 1, CAP_GUI)
                     .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("background", background_host_id, 1, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+            ],
+        )?;
+        let _ = self.extensions.register_extension(
+            "ui",
+            &[
+                ExtensionFunctionSpec::new("layout", layout_host_id, 8, 8, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("reset", reset_host_id, 0, 0, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("z_index", z_index_host_id, 3, 3, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("opening", opening_host_id, 1, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("ending", ending_host_id, 1, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("background", background_host_id, 1, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
             ],
         )?;
         Ok(SceneExtension {
@@ -1447,11 +1621,13 @@ impl Runtime {
             z_index_ext_id: ids[2],
             opening_ext_id: ids[3],
             ending_ext_id: ids[4],
+            background_ext_id: ids[5],
             layout_host_id,
             reset_host_id,
             z_index_host_id,
             opening_host_id,
             ending_host_id,
+            background_host_id,
         })
     }
 
@@ -1745,6 +1921,39 @@ impl Runtime {
                 ExtensionFunctionSpec::new("set_icon_sheet", set_icon_sheet_host_id, 3, 3, CAP_GUI)
                     .with_return_type(ExtValueType::Bool),
                 ExtensionFunctionSpec::new("draw_icon", draw_icon_host_id, 4, 4, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+            ],
+        )?;
+        let _ = self.extensions.register_extension(
+            "img",
+            &[
+                ExtensionFunctionSpec::new("load", load_host_id, 1, 1, CAP_GUI),
+                ExtensionFunctionSpec::new("info", info_host_id, 1, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::Unknown),
+                ExtensionFunctionSpec::new("status", status_host_id, 1, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::Integer),
+                ExtensionFunctionSpec::new("release", release_host_id, 1, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("draw", draw_host_id, 3, 3, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("draw_part", draw_part_host_id, 7, 7, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("draw_ext", draw_ext_host_id, 11, 11, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("set_icon_sheet", set_icon_sheet_host_id, 3, 3, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("draw_icon", draw_icon_host_id, 4, 4, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+            ],
+        )?;
+        let _ = self.extensions.register_extension(
+            "asset",
+            &[
+                ExtensionFunctionSpec::new("request", load_host_id, 1, 1, CAP_GUI),
+                ExtensionFunctionSpec::new("preload", load_host_id, 1, 1, CAP_GUI),
+                ExtensionFunctionSpec::new("status", status_host_id, 1, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::Integer),
+                ExtensionFunctionSpec::new("release", release_host_id, 1, 1, CAP_GUI)
                     .with_return_type(ExtValueType::Bool),
             ],
         )?;
@@ -2179,6 +2388,15 @@ impl Runtime {
                     .with_return_type(ExtValueType::Bool),
             ],
         )?;
+        let _ = self.extensions.register_extension(
+            "ui",
+            &[
+                ExtensionFunctionSpec::new("context_menu", context_menu_host_id, 1, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("shift_fast", shift_fast_host_id, 1, 1, CAP_GUI)
+                    .with_return_type(ExtValueType::Bool),
+            ],
+        )?;
         Ok(UiExtension {
             context_menu_ext_id: ids[0],
             shift_fast_ext_id: ids[1],
@@ -2536,11 +2754,13 @@ pub struct SceneExtension {
     pub z_index_ext_id: u32,
     pub opening_ext_id: u32,
     pub ending_ext_id: u32,
+    pub background_ext_id: u32,
     pub layout_host_id: HostId,
     pub reset_host_id: HostId,
     pub z_index_host_id: HostId,
     pub opening_host_id: HostId,
     pub ending_host_id: HostId,
+    pub background_host_id: HostId,
 }
 
 /// Stable ids assigned to the built-in image extension.

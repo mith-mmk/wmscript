@@ -175,17 +175,35 @@ impl CliArgs {
                     let value = args.next().ok_or("--frontend requires a value")?;
                     script_path = Some(PathBuf::from(value));
                 }
+                "--engine" => {
+                    let value = args.next().ok_or("--engine requires a value")?;
+                    script_path = Some(PathBuf::from(value));
+                }
+                "--ui" => {
+                    let value = args.next().ok_or("--ui requires a value")?;
+                    extra_scripts.push(CliScript {
+                        role: GameWorkerRole::Ui,
+                        path: PathBuf::from(value),
+                    });
+                }
+                "--loader" => {
+                    let value = args.next().ok_or("--loader requires a value")?;
+                    extra_scripts.push(CliScript {
+                        role: GameWorkerRole::Loader,
+                        path: PathBuf::from(value),
+                    });
+                }
                 "--middleware" => {
                     let value = args.next().ok_or("--middleware requires a value")?;
                     extra_scripts.push(CliScript {
-                        role: GameWorkerRole::Middleware,
+                        role: GameWorkerRole::Loader,
                         path: PathBuf::from(value),
                     });
                 }
                 "--background" => {
                     let value = args.next().ok_or("--background requires a value")?;
                     extra_scripts.push(CliScript {
-                        role: GameWorkerRole::Background,
+                        role: GameWorkerRole::Ui,
                         path: PathBuf::from(value),
                     });
                 }
@@ -319,15 +337,30 @@ impl LaunchArgs {
             }));
             if let Some(path) = loaded.middleware {
                 extra_scripts.push(CliScript {
-                    role: GameWorkerRole::Middleware,
+                    role: GameWorkerRole::Loader,
                     path: base_dir.join(path),
                 });
             }
             if let Some(path) = loaded.background {
                 extra_scripts.push(CliScript {
-                    role: GameWorkerRole::Background,
+                    role: GameWorkerRole::Ui,
                     path: base_dir.join(path),
                 });
+            }
+            for package in loaded.packages {
+                if package.path.as_os_str().is_empty() {
+                    continue;
+                }
+                let path = base_dir.join(package.path);
+                match package.role {
+                    GameWorkerRole::Engine => script_path = Some(path),
+                    GameWorkerRole::Ui | GameWorkerRole::Loader => {
+                        extra_scripts.push(CliScript {
+                            role: package.role,
+                            path,
+                        });
+                    }
+                }
             }
         }
 
@@ -372,6 +405,7 @@ struct ProjectConfig {
     script: Option<PathBuf>,
     middleware: Option<PathBuf>,
     background: Option<PathBuf>,
+    packages: Vec<ProjectConfigPackage>,
     archive: Option<PathBuf>,
     package_name: Option<String>,
     platform: Option<String>,
@@ -396,6 +430,12 @@ struct ProjectConfigAsset {
     name: String,
     path: PathBuf,
     resource_type: ResourceType,
+}
+
+#[derive(Debug)]
+struct ProjectConfigPackage {
+    role: GameWorkerRole,
+    path: PathBuf,
 }
 
 fn parse_asset_spec(
@@ -467,6 +507,11 @@ fn parse_project_toml(source: &str) -> Result<ProjectConfig, Box<dyn std::error:
             continue;
         }
         match line {
+            "[[package]]" | "[[packages]]" => {
+                finish_config_asset(&mut config, pending_asset.take())?;
+                section = ConfigSection::Package;
+                continue;
+            }
             "[[asset]]" | "[[assets]]" => {
                 finish_config_asset(&mut config, pending_asset.take())?;
                 pending_asset = Some(ProjectConfigAssetBuilder::new(ResourceType::ScriptData));
@@ -498,6 +543,7 @@ fn parse_project_toml(source: &str) -> Result<ProjectConfig, Box<dyn std::error:
         let value = parse_config_string(value.trim())?;
         match section {
             ConfigSection::Root => apply_root_config_value(&mut config, key, value)?,
+            ConfigSection::Package => apply_package_config_value(&mut config, key, value)?,
             ConfigSection::Asset | ConfigSection::Image => {
                 let asset = pending_asset
                     .as_mut()
@@ -531,13 +577,20 @@ fn parse_project_yaml(source: &str) -> Result<ProjectConfig, Box<dyn std::error:
             section = ConfigSection::Image;
             continue;
         }
+        if line == "packages:" || line == "package:" {
+            finish_config_asset(&mut config, pending_asset.take())?;
+            section = ConfigSection::Package;
+            continue;
+        }
 
         let line = if let Some(rest) = line.strip_prefix("- ") {
             finish_config_asset(&mut config, pending_asset.take())?;
-            pending_asset = Some(ProjectConfigAssetBuilder::new(match section {
-                ConfigSection::Image => ResourceType::Image,
-                _ => ResourceType::ScriptData,
-            }));
+            if section != ConfigSection::Package {
+                pending_asset = Some(ProjectConfigAssetBuilder::new(match section {
+                    ConfigSection::Image => ResourceType::Image,
+                    _ => ResourceType::ScriptData,
+                }));
+            }
             rest.trim()
         } else {
             line
@@ -550,6 +603,7 @@ fn parse_project_yaml(source: &str) -> Result<ProjectConfig, Box<dyn std::error:
         let value = parse_config_string(value.trim())?;
         match section {
             ConfigSection::Root => apply_root_config_value(&mut config, key, value)?,
+            ConfigSection::Package => apply_package_config_value(&mut config, key, value)?,
             ConfigSection::Asset | ConfigSection::Image => {
                 let asset = pending_asset
                     .as_mut()
@@ -565,6 +619,7 @@ fn parse_project_yaml(source: &str) -> Result<ProjectConfig, Box<dyn std::error:
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ConfigSection {
     Root,
+    Package,
     Asset,
     Image,
 }
@@ -592,17 +647,49 @@ fn apply_root_config_value(
     value: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match key {
-        "script" | "script_path" | "main" | "frontend" => {
+        "script" | "script_path" | "main" | "frontend" | "engine" => {
             config.script = Some(PathBuf::from(value))
         }
         "middleware" => config.middleware = Some(PathBuf::from(value)),
         "background" => config.background = Some(PathBuf::from(value)),
+        "loader" => config.middleware = Some(PathBuf::from(value)),
+        "ui" => config.background = Some(PathBuf::from(value)),
         "archive" | "archive_path" => config.archive = Some(PathBuf::from(value)),
         "package" | "package_name" | "name" => config.package_name = Some(value),
         "platform" => config.platform = Some(value),
         "font" => config.font = Some(value),
         "step_limit" | "step-limit" => config.step_limit = Some(value.parse()?),
         other => return Err(format!("unknown config key: {other}").into()),
+    }
+    Ok(())
+}
+
+fn apply_package_config_value(
+    config: &mut ProjectConfig,
+    key: &str,
+    value: String,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match key {
+        "entry" | "path" | "script" => {
+            let role = config
+                .packages
+                .last()
+                .map(|package| package.role)
+                .unwrap_or(GameWorkerRole::Engine);
+            config.packages.push(ProjectConfigPackage {
+                role,
+                path: PathBuf::from(value),
+            });
+        }
+        "name" => {
+            let role = GameWorkerRole::parse(&value)
+                .ok_or_else(|| format!("unknown package name: {value}"))?;
+            config.packages.push(ProjectConfigPackage {
+                role,
+                path: PathBuf::new(),
+            });
+        }
+        other => return Err(format!("unknown package config key: {other}").into()),
     }
     Ok(())
 }
@@ -687,7 +774,7 @@ fn parse_font(value: &str) -> Result<GuiFontPreset, Box<dyn std::error::Error>> 
 
 fn print_usage() {
     eprintln!(
-        "usage: wmfrontend [--demo uiimage|image-audio|engineworker|messagewindow | <script.wms> | <archive.warc> | <project-without-extension> | --archive FILE] [--frontend FILE] [--middleware FILE] [--background FILE] [--package NAME] [--step-limit N] [--platform native|wasm|egui] [--font noto|default|mono] [--asset NAME=PATH] [--image NAME=PATH]"
+        "usage: wmfrontend [--demo uiimage|image-audio|engineworker|messagewindow | <script.wms> | <archive.warc> | <project-without-extension> | --archive FILE] [--engine FILE] [--ui FILE] [--loader FILE] [--frontend FILE] [--middleware FILE] [--background FILE] [--package NAME] [--step-limit N] [--platform native|wasm|egui] [--font noto|default|mono] [--asset NAME=PATH] [--image NAME=PATH]"
     );
 }
 
@@ -706,6 +793,18 @@ background = "background.wms"
 platform = "egui"
 font = "noto"
 step_limit = 64
+
+[[package]]
+name = "ui"
+entry = "ui/main.wms"
+
+[[package]]
+name = "loader"
+entry = "loader/main.wms"
+
+[[package]]
+name = "engine"
+entry = "engine/main.wms"
 
 [[asset]]
 name = "story/guide"
@@ -731,6 +830,18 @@ path = "background.png"
         assert_eq!(config.platform.as_deref(), Some("egui"));
         assert_eq!(config.font.as_deref(), Some("noto"));
         assert_eq!(config.step_limit, Some(64));
+        let packages = config
+            .packages
+            .iter()
+            .filter(|package| !package.path.as_os_str().is_empty())
+            .collect::<Vec<_>>();
+        assert_eq!(packages.len(), 3);
+        assert_eq!(packages[0].role, GameWorkerRole::Ui);
+        assert_eq!(packages[0].path, Path::new("ui/main.wms"));
+        assert_eq!(packages[1].role, GameWorkerRole::Loader);
+        assert_eq!(packages[1].path, Path::new("loader/main.wms"));
+        assert_eq!(packages[2].role, GameWorkerRole::Engine);
+        assert_eq!(packages[2].path, Path::new("engine/main.wms"));
         assert_eq!(config.assets.len(), 2);
         assert_eq!(config.assets[0].resource_type, ResourceType::ScriptData);
         assert_eq!(config.assets[1].resource_type, ResourceType::Image);

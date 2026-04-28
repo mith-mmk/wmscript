@@ -135,6 +135,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             return Err(format!("expected final string {:?}, got {:?}", expected, actual).into());
         }
     }
+    if let Some(expected) = args.expect_image_resource {
+        let actual = runtime.image_draws().first().map(|draw| draw.resource_id);
+        if actual != Some(expected) {
+            return Err(format!(
+                "expected first image resource {:?}, got {:?}",
+                expected, actual
+            )
+            .into());
+        }
+    }
 
     println!("=== auto-ui summary ===");
     println!("package: {}", build.manifest.package_name);
@@ -208,6 +218,7 @@ struct CliArgs {
     input: Option<String>,
     choice: Option<String>,
     expect_string: Option<String>,
+    expect_image_resource: Option<u32>,
     quiet: bool,
 }
 
@@ -222,6 +233,7 @@ impl CliArgs {
         let mut input = None;
         let mut choice = None;
         let mut expect_string = None;
+        let mut expect_image_resource = None;
         let mut quiet = false;
 
         while let Some(arg) = args.next() {
@@ -236,6 +248,10 @@ impl CliArgs {
                 "--input" => input = Some(next_value(&mut args, "--input")?),
                 "--choice" => choice = Some(next_value(&mut args, "--choice")?),
                 "--expect" => expect_string = Some(next_value(&mut args, "--expect")?),
+                "--expect-image-resource" => {
+                    expect_image_resource =
+                        Some(next_value(&mut args, "--expect-image-resource")?.parse()?)
+                }
                 "--quiet" => quiet = true,
                 "--help" | "-h" => {
                     print_usage();
@@ -275,6 +291,7 @@ impl CliArgs {
             input,
             choice,
             expect_string,
+            expect_image_resource,
             quiet,
         })
     }
@@ -299,7 +316,7 @@ fn parse_platform(value: &str) -> Result<PlatformProfile, Box<dyn std::error::Er
 
 fn print_usage() {
     eprintln!(
-        "usage: wmautoui <script.wms|archive.warc> [--archive FILE] [--package NAME] [--platform native|wasm|egui] [--step-limit N] [--max-rounds N] [--choice ID_OR_LABEL] [--input TEXT] [--expect TEXT] [--quiet]"
+        "usage: wmautoui <script.wms|archive.warc> [--archive FILE] [--package NAME] [--platform native|wasm|egui] [--step-limit N] [--max-rounds N] [--choice ID_OR_LABEL] [--input TEXT] [--expect TEXT] [--expect-image-resource ID] [--quiet]"
     );
 }
 
@@ -318,6 +335,7 @@ mod tests {
             input: Some("lumen".to_owned()),
             choice: Some("repair".to_owned()),
             expect_string: None,
+            expect_image_resource: None,
             quiet: false,
         }
     }

@@ -365,10 +365,94 @@ pub fn standard_extension_registry() -> Result<ExtensionRegistry> {
                 .with_return_type(ExtValueType::Bool),
             ExtensionFunctionSpec::new("ending", 184, 1, 1, CAP_GUI)
                 .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("background", 185, 1, 1, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+        ],
+    )?;
+    registry.register_extension(
+        "ui",
+        &[
+            ExtensionFunctionSpec::new("layout", 180, 8, 8, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("reset", 181, 0, 0, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("z_index", 182, 3, 3, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("opening", 183, 1, 1, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("ending", 184, 1, 1, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("background", 185, 1, 1, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("context_menu", 240, 1, 1, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("shift_fast", 241, 1, 1, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
         ],
     )?;
     registry.register_extension(
         "ext.message",
+        &[
+            ExtensionFunctionSpec::new("show", 135, 1, 2, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("append", 136, 1, 1, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("choices", 137, 0, 16, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("choices_named", 134, 0, 16, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("prompt", 138, 0, 1, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("hide", 139, 0, 0, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("speed", 131, 1, 1, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("auto", 132, 1, 1, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("skip", 133, 1, 1, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("log_clear", 159, 0, 0, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("clear", 149, 0, 0, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("box_style", 162, 8, 8, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("text_color", 163, 4, 4, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("speaker_color", 164, 4, 4, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("accent_color", 165, 4, 4, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("font_size", 166, 2, 2, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("reset_style", 167, 0, 0, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("frame", 168, 0, 1, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("content_inset", 169, 4, 4, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("input_box_style", 220, 8, 8, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("input_text_color", 221, 4, 4, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("input_hint_color", 222, 4, 4, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("input_prompt_color", 223, 4, 4, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("choice_box_style", 224, 8, 8, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("choice_text_color", 225, 4, 4, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("choice_accent_color", 226, 4, 4, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("choice_selected_style", 227, 8, 8, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("locale", 228, 0, 1, CAP_GUI)
+                .with_return_type(ExtValueType::String),
+        ],
+    )?;
+    registry.register_extension(
+        "text",
         &[
             ExtensionFunctionSpec::new("show", 135, 1, 2, CAP_GUI)
                 .with_return_type(ExtValueType::Bool),
@@ -446,6 +530,38 @@ pub fn standard_extension_registry() -> Result<ExtensionRegistry> {
             ExtensionFunctionSpec::new("set_icon_sheet", 147, 3, 3, CAP_GUI)
                 .with_return_type(ExtValueType::Bool),
             ExtensionFunctionSpec::new("draw_icon", 148, 4, 4, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+        ],
+    )?;
+    registry.register_extension(
+        "img",
+        &[
+            ExtensionFunctionSpec::new("load", 140, 1, 1, CAP_GUI),
+            ExtensionFunctionSpec::new("info", 141, 1, 1, CAP_GUI),
+            ExtensionFunctionSpec::new("status", 142, 1, 1, CAP_GUI)
+                .with_return_type(ExtValueType::Integer),
+            ExtensionFunctionSpec::new("release", 143, 1, 1, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("draw", 144, 3, 3, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("draw_part", 145, 7, 7, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("draw_ext", 146, 11, 11, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("set_icon_sheet", 147, 3, 3, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("draw_icon", 148, 4, 4, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+        ],
+    )?;
+    registry.register_extension(
+        "asset",
+        &[
+            ExtensionFunctionSpec::new("request", 140, 1, 1, CAP_GUI),
+            ExtensionFunctionSpec::new("preload", 140, 1, 1, CAP_GUI),
+            ExtensionFunctionSpec::new("status", 142, 1, 1, CAP_GUI)
+                .with_return_type(ExtValueType::Integer),
+            ExtensionFunctionSpec::new("release", 143, 1, 1, CAP_GUI)
                 .with_return_type(ExtValueType::Bool),
         ],
     )?;

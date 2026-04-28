@@ -577,7 +577,7 @@ mod tests {
                 "sha256:section-10",
                 1,
             ))
-            .push_worker_entry(ManifestWorkerEntry::new("frontend", 2, 1, u64::MAX))
+            .push_worker_entry(ManifestWorkerEntry::new("engine", 4, 1, u64::MAX))
             .build();
 
         let decoded = Manifest::decode(&manifest.encode()).expect("decode manifest");
@@ -594,7 +594,7 @@ mod tests {
         );
         assert_eq!(
             decoded.worker_entries,
-            vec![ManifestWorkerEntry::new("frontend", 2, 1, u64::MAX)]
+            vec![ManifestWorkerEntry::new("engine", 4, 1, u64::MAX)]
         );
     }
 

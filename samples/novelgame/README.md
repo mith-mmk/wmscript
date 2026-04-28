@@ -1,23 +1,21 @@
 # Novel Game Sample
 
-選択肢でエンディングが変わる、日本語ノベルゲーム本文サンプルです。
+`SPEC/spec-append.md` の package 分離に合わせた、日本語ノベルゲーム本文サンプルです。
 
-- `ext.message.choices_named(...)` で安定した choice id を使います
-- `main.wms` は物語と分岐だけを担当します
-- `background.wms` は `background.png` を resource `100` として読み込み、UI配置と操作ポリシーを設定します
-- `middleware.wms` は v1 の素通し middleware worker です
-- `wmfrontend.toml` で `frontend` / `middleware` / `background` の3 workerを明示します
+- `engine/main.wms` は物語、分岐、ending、scene image の切替だけを担当します
+- `ui/main.wms` は text box、choice layout、右クリック menu、Shift fast を設定します
+- `loader/main.wms` は v1 の最小 asset preload package です
+- `wmfrontend.toml` で `ui` / `loader` / `engine` packages と4つの scene image を明示します
 - 選択結果は `recv()` 後に `state.get("ui.last_choice")` から読みます
-- 各ルートは `state.save(1)` で最後に到達したエンディングを保存します
-- 自動テストや smoke run で確認しやすいよう、戻り値は ASCII の固定文字列です
+- 戻り値は smoke run で確認しやすいよう ASCII の固定文字列です
 
 ## Routes
 
-| Choice ID | 表示ラベル | Ending | Return |
+| Choice ID | 表示ラベル | Scene image | Return |
 | --- | --- | --- | --- |
-| `sea` | 小舟の灯りを追う | Ending A: 霧の帰港 | `ending-fog-harbor` |
-| `shelf` | 封印棚を開ける | Ending B: 白紙の目録 | `ending-blank-catalog` |
-| `lamp` | 灯台の火を守る | Ending C: 灯を継ぐ司書 | `ending-keeper-light` |
+| `sea` | 小舟の灯りを追う | `scene/sea` | `ending-fog-harbor` |
+| `shelf` | 封印棚を開ける | `scene/shelf` | `ending-blank-catalog` |
+| `lamp` | 灯台の火を守る | `scene/lamp` | `ending-keeper-light` |
 
 ## Run
 
@@ -30,20 +28,23 @@ cargo run -p wmfrontend --bin wmfrontend -- samples/novelgame
 ```powershell
 New-Item -ItemType Directory -Force .test-novelgame
 
-cargo run -p wmtoolchain --bin wmtoolchain -- samples/novelgame/main.wms `
+cargo run -p wmtoolchain --bin wmtoolchain -- samples/novelgame/engine/main.wms `
   --package novelgame `
   --platform egui `
-  --middleware samples/novelgame/middleware.wms `
-  --background samples/novelgame/background.wms `
-  --image ui/background=samples/novelgame/background.png `
+  --ui samples/novelgame/ui/main.wms `
+  --loader samples/novelgame/loader/main.wms `
+  --image scene/common=samples/novelgame/background.png `
+  --image scene/sea=samples/novelgame/sea.png `
+  --image scene/shelf=samples/novelgame/shelf.png `
+  --image scene/lamp=samples/novelgame/lamp.png `
   --out .test-novelgame/novelgame.warc
 
-cargo run -p wmfrontend --bin wmautoui -- .test-novelgame/novelgame.warc --platform egui --choice sea --expect ending-fog-harbor
-cargo run -p wmfrontend --bin wmautoui -- .test-novelgame/novelgame.warc --platform egui --choice shelf --expect ending-blank-catalog
-cargo run -p wmfrontend --bin wmautoui -- .test-novelgame/novelgame.warc --platform egui --choice lamp --expect ending-keeper-light
+cargo run -p wmfrontend --bin wmautoui -- .test-novelgame/novelgame.warc --platform egui --choice sea --expect ending-fog-harbor --expect-image-resource 101
+cargo run -p wmfrontend --bin wmautoui -- .test-novelgame/novelgame.warc --platform egui --choice shelf --expect ending-blank-catalog --expect-image-resource 102
+cargo run -p wmfrontend --bin wmautoui -- .test-novelgame/novelgame.warc --platform egui --choice lamp --expect ending-keeper-light --expect-image-resource 103
 ```
 
-## Asset
+## Assets
 
-`background.png` は、岬の灯台図書館を描いた 16:9 向け背景です。
-生成時のプロンプトは、夜の灯台図書館、霧の海、小舟の灯り、暖かな窓明かりを指定しています。
+`scene/common`, `scene/sea`, `scene/shelf`, `scene/lamp` を別 resource として package します。
+現在の route 画像は smoke 用の初期アセットなので、見た目の差分は同じ名前で差し替えできます。
