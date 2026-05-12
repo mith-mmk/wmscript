@@ -15,7 +15,7 @@ fn main() {
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let args = CliArgs::parse(env::args().skip(1))?;
+    let mut args = CliArgs::parse(env::args().skip(1))?;
 
     let toolchain =
         Toolchain::new(ToolchainConfig::new(args.platform).with_step_limit(args.step_limit));
@@ -73,7 +73,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         let message_state = runtime.message_window_state();
-        let payload = match select_auto_reply(&args, &message_state)? {
+        let payload = match select_auto_reply(&mut args, &message_state)? {
             AutoReply::Choice(choice) => {
                 if !args.quiet {
                     println!(
@@ -168,7 +168,7 @@ enum AutoReply {
 }
 
 fn select_auto_reply(
-    args: &CliArgs,
+    args: &mut CliArgs,
     message_state: &wmruntime::MessageWindowState,
 ) -> Result<AutoReply, Box<dyn std::error::Error>> {
     if !message_state.choices.is_empty() {
@@ -192,10 +192,18 @@ fn select_auto_reply(
 }
 
 fn select_choice(
-    args: &CliArgs,
+    args: &mut CliArgs,
     choices: &[wmruntime::MessageChoiceState],
 ) -> Option<wmruntime::MessageChoiceState> {
     let mut enabled = choices.iter().filter(|choice| choice.enabled);
+    if let Some(wanted) = args.next_sequence_choice() {
+        if let Some(choice) = enabled.clone().find(|choice| choice.id == wanted) {
+            return Some(choice.clone());
+        }
+        if let Some(choice) = enabled.clone().find(|choice| choice.label == wanted) {
+            return Some(choice.clone());
+        }
+    }
     if let Some(wanted) = args.choice.as_deref() {
         if let Some(choice) = enabled.clone().find(|choice| choice.id == wanted) {
             return Some(choice.clone());
@@ -217,6 +225,8 @@ struct CliArgs {
     platform: PlatformProfile,
     input: Option<String>,
     choice: Option<String>,
+    choice_sequence: Vec<String>,
+    choice_sequence_index: usize,
     expect_string: Option<String>,
     expect_image_resource: Option<u32>,
     quiet: bool,
@@ -232,6 +242,7 @@ impl CliArgs {
         let mut platform = PlatformProfile::native();
         let mut input = None;
         let mut choice = None;
+        let mut choice_sequence = Vec::new();
         let mut expect_string = None;
         let mut expect_image_resource = None;
         let mut quiet = false;
@@ -247,6 +258,9 @@ impl CliArgs {
                 "--max-rounds" => max_rounds = next_value(&mut args, "--max-rounds")?.parse()?,
                 "--input" => input = Some(next_value(&mut args, "--input")?),
                 "--choice" => choice = Some(next_value(&mut args, "--choice")?),
+                "--choices" => {
+                    choice_sequence = parse_choice_sequence(&next_value(&mut args, "--choices")?);
+                }
                 "--expect" => expect_string = Some(next_value(&mut args, "--expect")?),
                 "--expect-image-resource" => {
                     expect_image_resource =
@@ -290,10 +304,21 @@ impl CliArgs {
             platform,
             input,
             choice,
+            choice_sequence,
+            choice_sequence_index: 0,
             expect_string,
             expect_image_resource,
             quiet,
         })
+    }
+
+    fn next_sequence_choice(&mut self) -> Option<String> {
+        let value = self
+            .choice_sequence
+            .get(self.choice_sequence_index)
+            .cloned()?;
+        self.choice_sequence_index += 1;
+        Some(value)
     }
 }
 
@@ -314,9 +339,18 @@ fn parse_platform(value: &str) -> Result<PlatformProfile, Box<dyn std::error::Er
     }
 }
 
+fn parse_choice_sequence(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|choice| !choice.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
 fn print_usage() {
     eprintln!(
-        "usage: wmautoui <script.wms|archive.warc> [--archive FILE] [--package NAME] [--platform native|wasm|egui] [--step-limit N] [--max-rounds N] [--choice ID_OR_LABEL] [--input TEXT] [--expect TEXT] [--expect-image-resource ID] [--quiet]"
+        "usage: wmautoui <script.wms|archive.warc> [--archive FILE] [--package NAME] [--platform native|wasm|egui] [--step-limit N] [--max-rounds N] [--choice ID_OR_LABEL] [--choices ID_OR_LABEL,...] [--input TEXT] [--expect TEXT] [--expect-image-resource ID] [--quiet]"
     );
 }
 
@@ -334,6 +368,8 @@ mod tests {
             platform: PlatformProfile::native(),
             input: Some("lumen".to_owned()),
             choice: Some("repair".to_owned()),
+            choice_sequence: Vec::new(),
+            choice_sequence_index: 0,
             expect_string: None,
             expect_image_resource: None,
             quiet: false,
@@ -342,7 +378,7 @@ mod tests {
 
     #[test]
     fn auto_reply_prefers_choice_over_input_argument() {
-        let args = args_with_input_and_choice();
+        let mut args = args_with_input_and_choice();
         let mut state = wmruntime::MessageWindowState::default();
         state.input_prompt = Some("合言葉".to_owned());
         state.choices = vec![wmruntime::MessageChoiceState {
@@ -351,7 +387,7 @@ mod tests {
             enabled: true,
         }];
 
-        let reply = select_auto_reply(&args, &state).expect("auto reply");
+        let reply = select_auto_reply(&mut args, &state).expect("auto reply");
 
         assert!(matches!(
             reply,
@@ -361,11 +397,11 @@ mod tests {
 
     #[test]
     fn auto_reply_uses_input_only_when_prompt_has_no_choices() {
-        let args = args_with_input_and_choice();
+        let mut args = args_with_input_and_choice();
         let mut state = wmruntime::MessageWindowState::default();
         state.input_prompt = Some("合言葉".to_owned());
 
-        let reply = select_auto_reply(&args, &state).expect("auto reply");
+        let reply = select_auto_reply(&mut args, &state).expect("auto reply");
 
         assert_eq!(
             reply,
@@ -378,11 +414,51 @@ mod tests {
 
     #[test]
     fn auto_reply_advances_plain_message() {
-        let args = args_with_input_and_choice();
+        let mut args = args_with_input_and_choice();
         let state = wmruntime::MessageWindowState::default();
 
-        let reply = select_auto_reply(&args, &state).expect("auto reply");
+        let reply = select_auto_reply(&mut args, &state).expect("auto reply");
 
         assert_eq!(reply, AutoReply::Advance);
+    }
+
+    #[test]
+    fn parse_choices_sequence_ignores_empty_items() {
+        assert_eq!(
+            parse_choice_sequence("forest, stone,, attack "),
+            vec!["forest".to_owned(), "stone".to_owned(), "attack".to_owned()]
+        );
+    }
+
+    #[test]
+    fn auto_reply_consumes_choice_sequence_before_single_choice() {
+        let mut args = args_with_input_and_choice();
+        args.choice = Some("fallback".to_owned());
+        args.choice_sequence = vec!["forest".to_owned(), "attack".to_owned()];
+        let mut state = wmruntime::MessageWindowState::default();
+        state.choices = vec![
+            wmruntime::MessageChoiceState {
+                id: "forest".to_owned(),
+                label: "森へ行く".to_owned(),
+                enabled: true,
+            },
+            wmruntime::MessageChoiceState {
+                id: "attack".to_owned(),
+                label: "攻撃".to_owned(),
+                enabled: true,
+            },
+        ];
+
+        let first = select_auto_reply(&mut args, &state).expect("first auto reply");
+        let second = select_auto_reply(&mut args, &state).expect("second auto reply");
+
+        assert!(matches!(
+            first,
+            AutoReply::Choice(wmruntime::MessageChoiceState { id, .. }) if id == "forest"
+        ));
+        assert!(matches!(
+            second,
+            AutoReply::Choice(wmruntime::MessageChoiceState { id, .. }) if id == "attack"
+        ));
     }
 }

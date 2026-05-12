@@ -85,6 +85,11 @@ export func main() {
   - `try_recv()`
   - `yield()`
   - `sleep()`
+- 制御フロー:
+  - `if expr { ... } else { ... }`
+  - `loop { ... }`
+  - `break;`
+  - `continue;`
 - 局所変数参照:
   - 同じ関数本体で前に `let` した裸の識別子
 
@@ -300,7 +305,6 @@ export func main() {
 - `samples/imageaudio`
 - `samples/uiimage`
 - `samples/easynovel`
-
 
 
 

@@ -1184,4 +1184,72 @@ mod tests {
             }
         ));
     }
+
+    #[test]
+    fn compiled_logical_short_circuit_runs_without_stack_underflow() {
+        let compiler = Compiler::new(CompilerConfig::new(PlatformProfile::native()));
+        let source = r#"
+            export func main() {
+                if true && false {
+                    return "bad-and";
+                } else if false || true {
+                    return "ok";
+                } else {
+                    return "bad-or";
+                }
+            }
+        "#;
+        let mut catalog = ModuleCatalog::new();
+        let program = compiler
+            .compile_program("main", source, &mut catalog)
+            .expect("compile program");
+        let mut vm = Vm::with_program(
+            VmConfig::new(
+                PlatformProfile::native(),
+                HostRegistry::new(PlatformProfile::native()),
+                32,
+            ),
+            program,
+        );
+        let outcome = vm.run_frame(64);
+        assert!(matches!(
+            outcome,
+            RunOutcome::Halted {
+                value: Some(wmvm::Value::String(text)),
+                ..
+            } if text == "ok"
+        ));
+    }
+
+    #[test]
+    fn compiler_keeps_implicit_return_after_partial_if_return() {
+        let compiler = Compiler::new(CompilerConfig::new(PlatformProfile::native()));
+        let source = r#"
+            export func main() {
+                if false {
+                    return "unreachable";
+                }
+            }
+        "#;
+        let mut catalog = ModuleCatalog::new();
+        let program = compiler
+            .compile_program("main", source, &mut catalog)
+            .expect("compile program");
+        let mut vm = Vm::with_program(
+            VmConfig::new(
+                PlatformProfile::native(),
+                HostRegistry::new(PlatformProfile::native()),
+                32,
+            ),
+            program,
+        );
+        let outcome = vm.run_frame(64);
+        assert!(matches!(
+            outcome,
+            RunOutcome::Halted {
+                value: None | Some(wmvm::Value::Nil),
+                ..
+            }
+        ));
+    }
 }

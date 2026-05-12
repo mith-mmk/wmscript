@@ -1468,10 +1468,25 @@ impl eframe::App for ReportApp {
             self.open_runtime_view(RuntimeView::Title);
         }
         let shortcut_keys_enabled = !ctx.wants_keyboard_input();
-        if shortcut_keys_enabled && ctx.input(|input| input.key_pressed(egui::Key::ArrowUp)) {
+        let direction_shortcut_consumed = shortcut_keys_enabled
+            && direction_choice_for_pressed_key(
+                &self.report.ui_state.scene.message_window.choices,
+                ctx,
+            )
+            .map(|choice| {
+                self.apply_choice(&choice);
+            })
+            .is_some();
+        if !direction_shortcut_consumed
+            && shortcut_keys_enabled
+            && ctx.input(|input| input.key_pressed(egui::Key::ArrowUp))
+        {
             self.select_adjacent_choice(-1);
         }
-        if shortcut_keys_enabled && ctx.input(|input| input.key_pressed(egui::Key::ArrowDown)) {
+        if !direction_shortcut_consumed
+            && shortcut_keys_enabled
+            && ctx.input(|input| input.key_pressed(egui::Key::ArrowDown))
+        {
             self.select_adjacent_choice(1);
         }
         if ctx.input(|input| input.key_pressed(egui::Key::Enter))
@@ -1481,10 +1496,16 @@ impl eframe::App for ReportApp {
         } else if ctx.input(|input| input.key_pressed(egui::Key::Enter)) {
             let _ = self.advance_message();
         }
-        if shortcut_keys_enabled && ctx.input(|input| input.key_pressed(egui::Key::A)) {
+        if !direction_shortcut_consumed
+            && shortcut_keys_enabled
+            && ctx.input(|input| input.key_pressed(egui::Key::A))
+        {
             self.toggle_auto_mode();
         }
-        if shortcut_keys_enabled && ctx.input(|input| input.key_pressed(egui::Key::S)) {
+        if !direction_shortcut_consumed
+            && shortcut_keys_enabled
+            && ctx.input(|input| input.key_pressed(egui::Key::S))
+        {
             self.toggle_skip_mode();
         }
         if shortcut_keys_enabled && ctx.input(|input| input.key_pressed(egui::Key::L)) {
@@ -1493,7 +1514,10 @@ impl eframe::App for ReportApp {
         if shortcut_keys_enabled && ctx.input(|input| input.key_pressed(egui::Key::M)) {
             self.open_runtime_view(RuntimeView::Title);
         }
-        if shortcut_keys_enabled && ctx.input(|input| input.key_pressed(egui::Key::D)) {
+        if !direction_shortcut_consumed
+            && shortcut_keys_enabled
+            && ctx.input(|input| input.key_pressed(egui::Key::D))
+        {
             self.debug_panel_open = !self.debug_panel_open;
         }
         if shortcut_keys_enabled && ctx.input(|input| input.key_pressed(egui::Key::R)) {
@@ -1737,6 +1761,42 @@ fn resolve_source_rect(draw: &UiImageDrawCall, natural: egui::Vec2) -> egui::Rec
     egui::Rect::from_min_size(egui::Pos2::ZERO, natural)
 }
 
+fn direction_choice_for_pressed_key(choices: &[UiChoice], ctx: &egui::Context) -> Option<UiChoice> {
+    for key in [
+        egui::Key::ArrowUp,
+        egui::Key::W,
+        egui::Key::ArrowDown,
+        egui::Key::S,
+        egui::Key::ArrowLeft,
+        egui::Key::A,
+        egui::Key::ArrowRight,
+        egui::Key::D,
+    ] {
+        if ctx.input(|input| input.key_pressed(key))
+            && let Some(choice) = direction_choice_for_key(choices, key)
+        {
+            return Some(choice);
+        }
+    }
+    None
+}
+
+fn direction_choice_for_key(choices: &[UiChoice], key: egui::Key) -> Option<UiChoice> {
+    let ids: &[&str] = match key {
+        egui::Key::ArrowUp | egui::Key::W => &["north", "forward"],
+        egui::Key::ArrowDown | egui::Key::S => &["south", "back"],
+        egui::Key::ArrowLeft | egui::Key::A => &["west", "turn_left"],
+        egui::Key::ArrowRight | egui::Key::D => &["east", "turn_right"],
+        _ => return None,
+    };
+    ids.iter().find_map(|id| {
+        choices
+            .iter()
+            .find(|choice| choice.enabled && choice.id == *id)
+            .cloned()
+    })
+}
+
 fn paint_textured_rect(
     painter: &egui::Painter,
     texture_id: egui::TextureId,
@@ -1946,3 +2006,82 @@ impl fmt::Display for DecodeTextureError {
 }
 
 impl std::error::Error for DecodeTextureError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn choice(id: &str) -> UiChoice {
+        UiChoice::new(id, id)
+    }
+
+    #[test]
+    fn direction_keys_map_to_2d_choices() {
+        let choices = vec![
+            choice("north"),
+            choice("south"),
+            choice("west"),
+            choice("east"),
+        ];
+        assert_eq!(
+            direction_choice_for_key(&choices, egui::Key::ArrowUp)
+                .map(|choice| choice.id)
+                .as_deref(),
+            Some("north")
+        );
+        assert_eq!(
+            direction_choice_for_key(&choices, egui::Key::W)
+                .map(|choice| choice.id)
+                .as_deref(),
+            Some("north")
+        );
+        assert_eq!(
+            direction_choice_for_key(&choices, egui::Key::S)
+                .map(|choice| choice.id)
+                .as_deref(),
+            Some("south")
+        );
+        assert_eq!(
+            direction_choice_for_key(&choices, egui::Key::D)
+                .map(|choice| choice.id)
+                .as_deref(),
+            Some("east")
+        );
+    }
+
+    #[test]
+    fn direction_keys_map_to_grid3d_choices() {
+        let choices = vec![
+            choice("forward"),
+            choice("back"),
+            choice("turn_left"),
+            choice("turn_right"),
+        ];
+        assert_eq!(
+            direction_choice_for_key(&choices, egui::Key::ArrowUp)
+                .map(|choice| choice.id)
+                .as_deref(),
+            Some("forward")
+        );
+        assert_eq!(
+            direction_choice_for_key(&choices, egui::Key::ArrowLeft)
+                .map(|choice| choice.id)
+                .as_deref(),
+            Some("turn_left")
+        );
+        assert_eq!(
+            direction_choice_for_key(&choices, egui::Key::A)
+                .map(|choice| choice.id)
+                .as_deref(),
+            Some("turn_left")
+        );
+    }
+
+    #[test]
+    fn non_map_choices_do_not_consume_shortcut_keys() {
+        let choices = vec![choice("status"), choice("inventory")];
+        assert!(direction_choice_for_key(&choices, egui::Key::A).is_none());
+        assert!(direction_choice_for_key(&choices, egui::Key::S).is_none());
+        assert!(direction_choice_for_key(&choices, egui::Key::ArrowDown).is_none());
+    }
+}

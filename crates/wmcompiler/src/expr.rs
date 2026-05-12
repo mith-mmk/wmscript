@@ -67,6 +67,11 @@ enum Stmt {
         then_branch: Vec<Stmt>,
         else_branch: Vec<Stmt>,
     },
+    Loop {
+        body: Vec<Stmt>,
+    },
+    Break,
+    Continue,
 }
 
 /// Compiles a `return` statement body into bytecode and a type tag.
@@ -123,6 +128,7 @@ fn compile_body(
         &mut locals,
         &mut code,
         &mut type_tag,
+        None,
     )?;
     let saw_return = emitted.saw_return;
     let type_tag = type_tag.or(emitted.return_type).unwrap_or(TypeTag::Nil);
@@ -182,6 +188,7 @@ fn emit_statements(
     locals: &mut LocalScope,
     out: &mut Vec<u8>,
     type_tag: &mut Option<TypeTag>,
+    mut loop_ctx: Option<&mut LoopContext>,
 ) -> Result<EmitResult> {
     let mut summary = EmitResult::default();
     for stmt in statements {
@@ -193,6 +200,7 @@ fn emit_statements(
             locals,
             out,
             type_tag,
+            loop_ctx.as_deref_mut(),
         )?;
         summary.saw_return |= emitted.saw_return;
         if let Some(return_type) = emitted.return_type {
@@ -216,6 +224,23 @@ struct EmitResult {
     return_type: Option<TypeTag>,
 }
 
+#[derive(Debug)]
+struct LoopContext {
+    start: usize,
+    breaks: Vec<usize>,
+    continues: Vec<usize>,
+}
+
+impl LoopContext {
+    fn new(start: usize) -> Self {
+        Self {
+            start,
+            breaks: Vec::new(),
+            continues: Vec::new(),
+        }
+    }
+}
+
 fn emit_statement(
     stmt: &Stmt,
     program: &mut VmProgram,
@@ -224,6 +249,7 @@ fn emit_statement(
     locals: &mut LocalScope,
     out: &mut Vec<u8>,
     type_tag: &mut Option<TypeTag>,
+    mut loop_ctx: Option<&mut LoopContext>,
 ) -> Result<EmitResult> {
     match stmt {
         Stmt::Expr(expr) => {
@@ -308,6 +334,7 @@ fn emit_statement(
                 &mut then_locals,
                 out,
                 type_tag,
+                loop_ctx.as_deref_mut(),
             )?;
             locals.merge_max(then_locals.local_count());
             let mut else_result = EmitResult::default();
@@ -327,6 +354,7 @@ fn emit_statement(
                     &mut else_locals,
                     out,
                     type_tag,
+                    loop_ctx.as_deref_mut(),
                 )?;
                 locals.merge_max(else_locals.local_count());
                 let target = out.len();
@@ -345,11 +373,62 @@ fn emit_statement(
                 ) if left == right => Some(left),
                 _ => None,
             };
-            let saw_return = then_result.saw_return || else_result.saw_return;
+            let saw_return =
+                then_result.saw_return && !else_branch.is_empty() && else_result.saw_return;
             Ok(EmitResult {
                 saw_return,
                 return_type,
             })
+        }
+        Stmt::Loop { body } => {
+            let loop_start = out.len();
+            let mut local_loop_ctx = LoopContext::new(loop_start);
+            let mut body_locals = locals.clone();
+            let body_result = emit_statements(
+                body,
+                program,
+                extension_registry,
+                platform_capabilities,
+                &mut body_locals,
+                out,
+                type_tag,
+                Some(&mut local_loop_ctx),
+            )?;
+            locals.merge_max(body_locals.local_count());
+            let jump_back_pos = emit_jump_placeholder(Op::Jump(0), out);
+            patch_jump_target(out, jump_back_pos, loop_start)?;
+            let loop_end = out.len();
+            let has_break = !local_loop_ctx.breaks.is_empty();
+            for break_pos in local_loop_ctx.breaks {
+                patch_jump_target(out, break_pos, loop_end)?;
+            }
+            for continue_pos in local_loop_ctx.continues {
+                patch_jump_target(out, continue_pos, local_loop_ctx.start)?;
+            }
+            Ok(EmitResult {
+                saw_return: body_result.saw_return && !has_break,
+                return_type: if has_break {
+                    None
+                } else {
+                    body_result.return_type
+                },
+            })
+        }
+        Stmt::Break => {
+            let Some(loop_ctx) = loop_ctx.as_deref_mut() else {
+                return Err(unsupported_expression("break used outside loop"));
+            };
+            let pos = emit_jump_placeholder(Op::Jump(0), out);
+            loop_ctx.breaks.push(pos);
+            Ok(EmitResult::default())
+        }
+        Stmt::Continue => {
+            let Some(loop_ctx) = loop_ctx.as_deref_mut() else {
+                return Err(unsupported_expression("continue used outside loop"));
+            };
+            let pos = emit_jump_placeholder(Op::Jump(0), out);
+            loop_ctx.continues.push(pos);
+            Ok(EmitResult::default())
         }
     }
 }
@@ -965,7 +1044,6 @@ fn emit_short_circuit_and(
         out,
     )?;
     let jump_false_pos = emit_jump_placeholder(Op::JumpIfFalse(0), out);
-    encode_op(&Op::Pop, out);
     emit_expr_into(
         right,
         program,
@@ -975,7 +1053,6 @@ fn emit_short_circuit_and(
         out,
     )?;
     let jump_false_pos_right = emit_jump_placeholder(Op::JumpIfFalse(0), out);
-    encode_op(&Op::Pop, out);
     encode_op(&Op::PushTrue, out);
     let jump_end_pos = emit_jump_placeholder(Op::Jump(0), out);
     let false_target = out.len();
@@ -1005,7 +1082,6 @@ fn emit_short_circuit_or(
         out,
     )?;
     let jump_true_pos = emit_jump_placeholder(Op::JumpIfTrue(0), out);
-    encode_op(&Op::Pop, out);
     emit_expr_into(
         right,
         program,
@@ -1015,7 +1091,6 @@ fn emit_short_circuit_or(
         out,
     )?;
     let jump_true_pos_right = emit_jump_placeholder(Op::JumpIfTrue(0), out);
-    encode_op(&Op::Pop, out);
     encode_op(&Op::PushFalse, out);
     let jump_end_pos = emit_jump_placeholder(Op::Jump(0), out);
     let true_target = out.len();
@@ -1169,6 +1244,20 @@ impl<'a> ExprParser<'a> {
         }
         if self.consume_keyword("if") {
             return self.parse_if_statement();
+        }
+        if self.consume_keyword("loop") {
+            let body = self.parse_block()?;
+            return Ok(Stmt::Loop { body });
+        }
+        if self.consume_keyword("break") {
+            self.skip_ws_and_comments();
+            self.expect_byte(b';')?;
+            return Ok(Stmt::Break);
+        }
+        if self.consume_keyword("continue") {
+            self.skip_ws_and_comments();
+            self.expect_byte(b';')?;
+            return Ok(Stmt::Continue);
         }
         if self.consume_keyword("let") {
             self.skip_ws_and_comments();
@@ -1899,5 +1988,62 @@ mod tests {
         assert!(code.contains(&(Opcode::Recv as u8)));
         assert!(code.contains(&(Opcode::Eq as u8)));
         assert!(code.contains(&(Opcode::JumpIfFalse as u8)));
+    }
+
+    #[test]
+    fn loop_break_continue_and_recv_compile() {
+        let mut program = VmProgram::new();
+        let body = r#"
+            loop {
+                let choice = recv();
+                if choice == "skip" {
+                    continue;
+                } else if choice == "done" {
+                    break;
+                }
+            }
+            return "after-loop";
+        "#;
+        let (code, type_tag) = compile_return_body(
+            body,
+            &mut program,
+            None,
+            PlatformProfile::native().capabilities,
+        )
+        .expect("compile body");
+        assert_eq!(type_tag, TypeTag::String);
+        assert!(code.contains(&(Opcode::Recv as u8)));
+        assert!(code.contains(&(Opcode::Jump as u8)));
+        assert!(code.contains(&(Opcode::JumpIfFalse as u8)));
+        assert!(code.contains(&(Opcode::Return as u8)));
+    }
+
+    #[test]
+    fn break_and_continue_require_loop() {
+        let mut program = VmProgram::new();
+        let break_error = compile_return_body(
+            "break;",
+            &mut program,
+            None,
+            PlatformProfile::native().capabilities,
+        )
+        .expect_err("break outside loop should fail");
+        assert!(matches!(
+            break_error,
+            CompileError::UnsupportedExpression { source } if source.contains("break used outside loop")
+        ));
+
+        let mut program = VmProgram::new();
+        let continue_error = compile_return_body(
+            "continue;",
+            &mut program,
+            None,
+            PlatformProfile::native().capabilities,
+        )
+        .expect_err("continue outside loop should fail");
+        assert!(matches!(
+            continue_error,
+            CompileError::UnsupportedExpression { source } if source.contains("continue used outside loop")
+        ));
     }
 }

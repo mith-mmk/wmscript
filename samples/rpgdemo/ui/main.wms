@@ -1,0 +1,27 @@
+export func main() {
+    ui.reset();
+    ui.layout(276, 80, 728, 244, 20, 500, 1240, 188);
+    ui.background(100);
+
+    text.reset_style();
+    text.locale("ja");
+    text.box_style(10, 14, 24, 232, 72, 112, 96, 238);
+    text.text_color(240, 248, 246, 255);
+    text.speaker_color(255, 226, 156, 255);
+    text.accent_color(168, 230, 176, 255);
+    text.choice_box_style(12, 20, 28, 232, 96, 148, 118, 238);
+    text.choice_text_color(246, 252, 248, 255);
+    text.choice_accent_color(180, 236, 188, 255);
+    text.choice_selected_style(46, 104, 70, 218, 198, 242, 188, 242);
+    text.input_box_style(10, 16, 24, 232, 84, 124, 104, 230);
+    text.input_text_color(244, 250, 255, 255);
+    text.input_hint_color(176, 198, 190, 228);
+    text.input_prompt_color(184, 232, 176, 255);
+    text.font_size(22, 24);
+    text.speed(26);
+    text.auto(false);
+    ui.context_menu(true);
+    ui.shift_fast(true);
+
+    return "rpg-ui-ready";
+}

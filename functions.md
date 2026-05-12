@@ -85,6 +85,11 @@ The current expression grammar is intentionally small:
   - `try_recv()`
   - `yield()`
   - `sleep()`
+- control flow:
+  - `if expr { ... } else { ... }`
+  - `loop { ... }`
+  - `break;`
+  - `continue;`
 - local variable references:
   - bare identifiers bound earlier in the same function body by `let`
 
@@ -299,7 +304,6 @@ See:
 - `samples/imageaudio`
 - `samples/uiimage`
 - `samples/easynovel`
-
 
 
 

@@ -1,0 +1,486 @@
+export let title = "小さな自動化ギルド";
+export let description = "2D map / pseudo-3D grid map / event mode / battle mode を扱う gameplay v1 サンプル";
+
+export func main() {
+    state.set("game.mode", "map");
+    state.set("game.turn", 1);
+    state.set("game.tick", 0);
+    state.set("game.location", "town");
+    state.set("game.last_action", "start");
+    state.set("actor.hero.hp", 30);
+    state.set("actor.hero.max_hp", 30);
+    state.set("actor.hero.atk", 7);
+    state.set("actor.hero.def", 2);
+    state.set("actor.slime.hp", 18);
+    state.set("actor.slime.atk", 5);
+    state.set("actor.slime.def", 1);
+    state.set("inventory.potion", 1);
+    state.set("resource.gold", 12);
+    state.set("job.herb_garden.enabled", false);
+    state.set("job.herb_garden.rate", 1);
+    state.set("job.herb_garden.progress", 0);
+    state.set("job.herb_garden.output", "inventory.potion");
+    state.set("map.current", "town");
+    state.set("map.projection", "tile2d");
+    state.set("map.x", 1);
+    state.set("map.y", 1);
+    state.set("map.z", 0);
+    state.set("map.facing", "north");
+    state.set("map.last_move", "start");
+    state.set("map.last_blocked", false);
+    state.set("map.transition", "none");
+    state.set("map.return_mode", "map");
+    state.set("flag.map_switched", false);
+    state.set("flag.stone_read", false);
+    state.set("flag.ruins_scouted", false);
+    state.set("flag.slime_defeated", false);
+
+    ext.scene.reset();
+    ui.layout(276, 80, 728, 244, 20, 500, 1240, 188);
+    text.reset_style();
+    text.locale("ja");
+    text.box_style(10, 14, 24, 232, 72, 112, 96, 238);
+    text.text_color(240, 248, 246, 255);
+    text.speaker_color(255, 226, 156, 255);
+    text.accent_color(168, 230, 176, 255);
+    text.choice_box_style(12, 20, 28, 232, 96, 148, 118, 238);
+    text.choice_text_color(246, 252, 248, 255);
+    text.choice_accent_color(180, 236, 188, 255);
+    text.choice_selected_style(46, 104, 70, 218, 198, 242, 188, 242);
+    text.font_size(22, 24);
+    text.speed(26);
+    text.auto(false);
+    ui.context_menu(true);
+    ui.shift_fast(true);
+    ui.background(100);
+    text.clear();
+    text.log_clear();
+    text.show(
+        "ギルド受付",
+        "町と森は2Dマップ、遺跡は疑似3Dグリッドで移動します。\nGUIでは矢印キー/WASD、Auto UIでは choice id で同じ移動を送れます。"
+    );
+    recv();
+
+    loop {
+        state.set("game.mode", "map");
+        let map = state.get("map.current");
+        let x = state.get("map.x");
+        let y = state.get("map.y");
+        let z = state.get("map.z");
+        let facing = state.get("map.facing");
+        ext.scene.reset();
+        ui.layout(276, 80, 728, 244, 20, 500, 1240, 188);
+        text.reset_style();
+        text.locale("ja");
+        text.box_style(10, 14, 24, 232, 72, 112, 96, 238);
+        text.text_color(240, 248, 246, 255);
+        text.speaker_color(255, 226, 156, 255);
+        text.accent_color(168, 230, 176, 255);
+        text.choice_box_style(12, 20, 28, 232, 96, 148, 118, 238);
+        text.choice_text_color(246, 252, 248, 255);
+        text.choice_accent_color(180, 236, 188, 255);
+        text.choice_selected_style(46, 104, 70, 218, 198, 242, 188, 242);
+        text.font_size(22, 24);
+        text.speed(26);
+        text.auto(false);
+        ui.context_menu(true);
+        ui.shift_fast(true);
+
+        if map == "town" {
+            state.set("game.location", "town");
+            state.set("map.projection", "tile2d");
+            ui.background(100);
+            let map_icons = ext.image.load(105);
+            ext.image.set_icon_sheet(map_icons, 64, 64);
+            ext.image.draw_icon(map_icons, 1, 980, 180);
+            if x == 2 {
+                ext.image.draw_icon(map_icons, 0, 920, 300);
+                text.show("町の東門", "東門の先に森が見える。\n森へ出るか、町の広場へ戻れます。");
+                text.choices_named(
+                    "west", "西へ戻る",
+                    "forest", "森へ出る",
+                    "status", "ステータス",
+                    "inventory", "所持品",
+                    "end_demo", "デモ終了"
+                );
+            } else {
+                ext.image.draw_icon(map_icons, 0, 640, 330);
+                text.show("町の広場", "ギルド前の広場です。\n東へ進むと森への門、ここから状態確認もできます。");
+                text.choices_named(
+                    "east", "東へ進む",
+                    "status", "ステータス",
+                    "inventory", "所持品",
+                    "end_demo", "デモ終了"
+                );
+            }
+            recv();
+            let action = state.get("ui.last_choice");
+            text.choices_named();
+            state.set("game.last_action", action);
+            state.set("map.last_move", action);
+
+            if action == "east" {
+                state.set("map.x", 2);
+                state.set("map.y", 1);
+                state.set("map.transition", "town_gate");
+            } else if action == "west" {
+                state.set("map.x", 1);
+                state.set("map.y", 1);
+                state.set("map.transition", "town_square");
+            } else if action == "forest" {
+                state.set("map.current", "forest");
+                state.set("map.x", 0);
+                state.set("map.y", 1);
+                state.set("map.transition", "town_to_forest");
+                state.set("flag.map_switched", true);
+            } else if action == "status" {
+                state.set("game.mode", "menu");
+                text.show(
+                    "ステータス",
+                    "主人公 HP 30/30  ATK 7  DEF 2\n現在地: 町\n自動化予約: 薬草畑 job は未稼働です。"
+                );
+                recv();
+                state.set("event.result", "status-opened");
+                state.save(1);
+                return "rpg-status";
+            } else if action == "inventory" {
+                state.set("game.mode", "menu");
+                text.show(
+                    "所持品",
+                    "ポーション x1\nゴールド 12\n剣と盾は初期装備です。"
+                );
+                recv();
+                state.set("event.result", "inventory-opened");
+                state.save(1);
+                return "rpg-inventory";
+            } else if action == "end_demo" {
+                if state.get("flag.stone_read") {
+                    return "rpg-stone-read";
+                } else if state.get("flag.ruins_scouted") {
+                    return "rpg-3d-ruins";
+                } else if state.get("flag.map_switched") {
+                    return "rpg-map-switch";
+                } else {
+                    return "rpg-map-idle";
+                }
+            }
+        } else if map == "forest" {
+            state.set("game.location", "forest");
+            state.set("map.projection", "tile2d");
+            ui.background(101);
+            let map_icons = ext.image.load(105);
+            ext.image.set_icon_sheet(map_icons, 64, 64);
+            ext.image.draw_icon(map_icons, 1, 150, 330);
+            ext.image.draw_icon(map_icons, 2, 590, 160);
+            ext.image.draw_icon(map_icons, 3, 910, 330);
+            if y == 0 {
+                ext.image.draw_icon(map_icons, 0, 600, 260);
+                text.show("森の石碑", "苔むした石碑の前です。\n調べると event mode に入り、ノベルゲームUIで進みます。");
+                text.choices_named(
+                    "south", "南へ戻る",
+                    "check", "石碑を調べる",
+                    "end_demo", "デモ終了"
+                );
+            } else {
+                ext.image.draw_icon(map_icons, 0, 230, 330);
+                text.show("森の入口", "西は町への帰り道、北に石碑、東にスライム、南に遺跡の通路があります。");
+                text.choices_named(
+                    "west", "西へ戻る",
+                    "north", "北へ進む",
+                    "east", "東へ進む",
+                    "south", "南の遺跡へ"
+                );
+            }
+            recv();
+            let action = state.get("ui.last_choice");
+            text.choices_named();
+            state.set("game.last_action", action);
+            state.set("map.last_move", action);
+
+            if action == "north" {
+                state.set("map.x", 0);
+                state.set("map.y", 0);
+                state.set("map.transition", "forest_stone_path");
+            } else if action == "south" {
+                if y == 0 {
+                    state.set("map.x", 0);
+                    state.set("map.y", 1);
+                    state.set("map.transition", "forest_entry");
+                } else {
+                    state.set("map.current", "ruins");
+                    state.set("map.projection", "grid3d");
+                    state.set("map.x", 0);
+                    state.set("map.y", 0);
+                    state.set("map.z", 0);
+                    state.set("map.facing", "north");
+                    state.set("map.transition", "forest_to_ruins");
+                    state.set("flag.map_switched", true);
+                }
+            } else if action == "west" {
+                state.set("map.transition", "forest_exit_prompt");
+                text.show("森の出口", "町の東門が見えます。町へ戻りますか？");
+                text.choices_named(
+                    "town", "町へ戻る",
+                    "forest", "森に残る"
+                );
+                recv();
+                let exit_action = state.get("ui.last_choice");
+                text.choices_named();
+                state.set("game.last_action", exit_action);
+                if exit_action == "town" {
+                    state.set("map.current", "town");
+                    state.set("map.x", 2);
+                    state.set("map.y", 1);
+                    state.set("map.transition", "forest_to_town");
+                    state.set("flag.map_switched", true);
+                }
+            } else if action == "east" {
+                state.set("map.x", 1);
+                state.set("map.y", 1);
+                state.set("map.transition", "forest_slime");
+                state.set("game.mode", "battle");
+                ui.background(103);
+                text.show(
+                    "語り",
+                    "森の東側で、青いスライムが道をふさいだ。\nここからは battle mode として固定ターンの戦闘を行います。"
+                );
+                recv();
+
+                text.show("スライム", "ぷるぷる震えている。どうする？");
+                text.choices_named(
+                    "attack", "攻撃",
+                    "guard", "防御",
+                    "potion", "ポーション",
+                    "run", "逃げる"
+                );
+                recv();
+                let battle1 = state.get("ui.last_choice");
+                text.choices_named();
+                state.set("game.last_action", battle1);
+
+                if battle1 == "run" {
+                    state.set("game.mode", "map");
+                    state.set("event.result", "retreated-from-battle");
+                    text.show("語り", "主人公は距離を取り、森の入口まで戻った。");
+                    recv();
+                    return "rpg-retreat";
+                } else if battle1 == "potion" {
+                    state.set("inventory.potion", 0);
+                    state.set("actor.hero.hp", 30);
+                    state.set("actor.slime.hp", 18);
+                    text.show("語り", "ポーションで体勢を立て直した。スライムはまだ元気だ。");
+                    recv();
+                } else if battle1 == "guard" {
+                    state.set("actor.hero.hp", 29);
+                    state.set("actor.slime.hp", 18);
+                    text.show("語り", "盾を構えた。スライムの体当たりを受け流し、HP は 29 になった。");
+                    recv();
+                } else {
+                    state.set("actor.hero.hp", 27);
+                    state.set("actor.slime.hp", 12);
+                    text.show("語り", "剣で斬りつけた。スライム HP は 12、主人公 HP は 27。");
+                    recv();
+                }
+
+                text.show("スライム", "まだ道をふさいでいる。次の行動は？");
+                text.choices_named(
+                    "attack", "攻撃",
+                    "guard", "防御",
+                    "potion", "ポーション",
+                    "run", "逃げる"
+                );
+                recv();
+                let battle2 = state.get("ui.last_choice");
+                text.choices_named();
+                state.set("game.last_action", battle2);
+
+                if battle2 == "run" {
+                    state.set("game.mode", "map");
+                    state.set("event.result", "retreated-from-battle");
+                    text.show("語り", "主人公は無理をせず、森から退いた。");
+                    recv();
+                    return "rpg-retreat";
+                } else if battle2 == "guard" {
+                    state.set("actor.hero.hp", 26);
+                    state.set("actor.slime.hp", 12);
+                    text.show("語り", "防御で被害を抑えた。主人公 HP は 26。");
+                    recv();
+                } else {
+                    state.set("actor.hero.hp", 24);
+                    state.set("actor.slime.hp", 6);
+                    text.show("語り", "追撃が当たった。スライム HP は 6、主人公 HP は 24。");
+                    recv();
+                }
+
+                text.show("スライム", "弱っている。最後の行動を選んでください。");
+                text.choices_named(
+                    "attack", "攻撃",
+                    "guard", "防御",
+                    "potion", "ポーション",
+                    "run", "逃げる"
+                );
+                recv();
+                let battle3 = state.get("ui.last_choice");
+                text.choices_named();
+                state.set("game.last_action", battle3);
+
+                if battle3 == "run" {
+                    state.set("game.mode", "map");
+                    state.set("event.result", "retreated-from-battle");
+                    text.show("語り", "勝てそうだったが、主人公は安全を優先した。");
+                    recv();
+                    return "rpg-retreat";
+                }
+
+                state.set("actor.slime.hp", 0);
+                state.set("flag.slime_defeated", true);
+                state.set("resource.gold", 20);
+                state.set("game.mode", "map");
+                state.set("game.turn", 5);
+                state.set("event.result", "slime-defeated");
+                state.save(1);
+                ext.vm.save(1);
+                text.show(
+                    "語り",
+                    "最後の一撃でスライムは跳ねるように逃げていった。\n報酬としてゴールドは 20 になり、森の調査は完了です。"
+                );
+                recv();
+                return "rpg-victory";
+            } else if action == "check" {
+                state.set("game.mode", "event");
+                state.set("event.current", "forest_stone");
+                state.set("event.state", "entered");
+                state.set("event.return_mode", "map");
+                ui.background(102);
+                text.show(
+                    "石碑",
+                    "石碑には、森の仕事を自動化した古いギルドの記録が刻まれている。\n「薬草畑は一日一束。水路を直せば、冒険者は戦いに専念できる」"
+                );
+                text.choices_named(
+                    "read", "最後まで読む",
+                    "leave", "読むのをやめる"
+                );
+                recv();
+                let event_action = state.get("ui.last_choice");
+                text.choices_named();
+                state.set("game.last_action", event_action);
+
+                if event_action == "read" {
+                    state.set("event.state", "read");
+                    state.set("event.result", "stone-read");
+                    state.set("resource.gold", 15);
+                    state.set("job.herb_garden.enabled", true);
+                    state.set("job.herb_garden.progress", 1);
+                    state.set("flag.stone_read", true);
+                    text.show(
+                        "語り",
+                        "読み終えると石碑の奥から古い金貨が三枚こぼれた。\n薬草畑 job も起動可能になった。"
+                    );
+                    recv();
+                } else {
+                    state.set("event.state", "skipped");
+                    state.set("event.result", "stone-skipped");
+                    text.show("語り", "主人公は石碑から離れ、森の入口へ戻った。");
+                    recv();
+                }
+                state.set("game.mode", "map");
+                state.set("map.current", "forest");
+                state.set("map.x", 0);
+                state.set("map.y", 0);
+            } else if action == "end_demo" {
+                if state.get("flag.stone_read") {
+                    return "rpg-stone-read";
+                } else if state.get("flag.ruins_scouted") {
+                    return "rpg-3d-ruins";
+                } else if state.get("flag.map_switched") {
+                    return "rpg-map-switch";
+                } else {
+                    return "rpg-map-idle";
+                }
+            }
+        } else if map == "ruins" {
+            state.set("game.location", "ruins");
+            state.set("map.projection", "grid3d");
+            ui.background(106);
+            let map_icons = ext.image.load(105);
+            ext.image.set_icon_sheet(map_icons, 64, 64);
+            ext.image.draw_icon(map_icons, 0, 610, 420);
+            text.show("遺跡通路", "疑似3Dグリッドの通路です。\n現在の向きと座標を state に保存し、前進と方向転換で進みます。");
+            text.choices_named(
+                "forward", "前へ進む",
+                "back", "後ろへ下がる",
+                "turn_left", "左を向く",
+                "turn_right", "右を向く",
+                "check", "周囲を調べる",
+                "end_demo", "デモ終了"
+            );
+            recv();
+            let action = state.get("ui.last_choice");
+            text.choices_named();
+            state.set("game.last_action", action);
+            state.set("map.last_move", action);
+
+            if action == "forward" {
+                if facing == "north" {
+                    if z == 0 {
+                        state.set("map.z", 1);
+                        state.set("map.last_blocked", false);
+                    } else {
+                        state.set("map.last_blocked", true);
+                    }
+                } else if facing == "east" {
+                    if x == 0 {
+                        state.set("map.x", 1);
+                        state.set("map.last_blocked", false);
+                    } else {
+                        state.set("map.last_blocked", true);
+                    }
+                } else {
+                    state.set("map.last_blocked", true);
+                }
+            } else if action == "back" {
+                state.set("map.last_blocked", true);
+            } else if action == "turn_left" {
+                if facing == "north" {
+                    state.set("map.facing", "west");
+                } else if facing == "east" {
+                    state.set("map.facing", "north");
+                } else {
+                    state.set("map.facing", "east");
+                }
+            } else if action == "turn_right" {
+                if facing == "north" {
+                    state.set("map.facing", "east");
+                } else if facing == "east" {
+                    state.set("map.facing", "south");
+                } else {
+                    state.set("map.facing", "north");
+                }
+            } else if action == "check" {
+                if x == 1 {
+                    if z == 1 {
+                        state.set("flag.ruins_scouted", true);
+                        state.set("event.result", "ruins-grid3d-scouted");
+                        text.show("遺跡調査", "右奥の小部屋に、森へ水を送る古い水路制御盤を見つけた。");
+                        recv();
+                    } else {
+                        text.show("遺跡調査", "壁の紋様を確認した。奥へ進むには向きと座標の管理が必要です。");
+                        recv();
+                    }
+                } else {
+                    text.show("遺跡調査", "壁の紋様を確認した。奥へ進むには向きと座標の管理が必要です。");
+                    recv();
+                }
+            } else if action == "end_demo" {
+                if state.get("flag.ruins_scouted") {
+                    return "rpg-3d-ruins";
+                } else if state.get("flag.map_switched") {
+                    return "rpg-map-switch";
+                } else {
+                    return "rpg-map-idle";
+                }
+            }
+        }
+
+    }
+}

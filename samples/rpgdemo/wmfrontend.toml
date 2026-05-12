@@ -1,0 +1,43 @@
+package = "rpgdemo"
+platform = "egui"
+font = "noto"
+
+[[package]]
+name = "ui"
+entry = "ui/main.wms"
+
+[[package]]
+name = "loader"
+entry = "loader/main.wms"
+
+[[package]]
+name = "engine"
+entry = "engine/main.wms"
+
+[[image]]
+name = "rpg/town"
+path = "assets/town.png"
+
+[[image]]
+name = "rpg/forest"
+path = "assets/forest.png"
+
+[[image]]
+name = "rpg/stone-event"
+path = "assets/stone-event.png"
+
+[[image]]
+name = "rpg/battle-slime"
+path = "assets/battle-slime.png"
+
+[[image]]
+name = "rpg/icons"
+path = "assets/rpg-icons.png"
+
+[[image]]
+name = "rpg/map-icons"
+path = "assets/map-icons.png"
+
+[[image]]
+name = "rpg/ruins-3d"
+path = "assets/ruins-3d.png"
