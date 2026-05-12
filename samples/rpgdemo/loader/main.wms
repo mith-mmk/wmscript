@@ -6,5 +6,10 @@ export func main() {
     asset.preload(104);
     asset.preload(105);
     asset.preload(106);
+    asset.preload(200);
+    asset.preload(201);
+    asset.preload(202);
+    asset.preload(203);
+    asset.preload(204);
     return "rpg-loader-ready";
 }

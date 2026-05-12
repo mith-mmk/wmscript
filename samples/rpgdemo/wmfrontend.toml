@@ -41,3 +41,23 @@ path = "assets/map-icons.png"
 [[image]]
 name = "rpg/ruins-3d"
 path = "assets/ruins-3d.png"
+
+[[audio]]
+name = "rpg/town-loop"
+path = "assets/town-loop.wav"
+
+[[audio]]
+name = "rpg/forest-loop"
+path = "assets/forest-loop.wav"
+
+[[audio]]
+name = "rpg/dungeon-loop"
+path = "assets/dungeon-loop.wav"
+
+[[audio]]
+name = "rpg/stone-chime"
+path = "assets/stone-chime.wav"
+
+[[audio]]
+name = "rpg/battle-hit"
+path = "assets/battle-hit.wav"

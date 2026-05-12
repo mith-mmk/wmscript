@@ -243,6 +243,11 @@ Requires: `CAP_ASYNC_IO`
 | `ext.audio.status` | `status(handle)` | `int` | Returns the current playback state code. |
 | `ext.audio.release` | `release(handle)` | `bool` | Releases the audio handle. |
 
+Audio resources are DAW-exported final files in v1. `wav`, `mp3`, `ogg`, `aac`,
+and `m4a` may be packaged with `--audio NAME=PATH` or an `audio` project-config
+section without conversion. MIDI files and DAW project files are out of scope;
+OGG/AAC/M4A playback depends on the host frontend/backend codec support.
+
 ### 3.9 `ext.vm`
 
 Requires: no capability
@@ -304,7 +309,6 @@ See:
 - `samples/imageaudio`
 - `samples/uiimage`
 - `samples/easynovel`
-
 
 
 

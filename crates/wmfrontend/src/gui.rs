@@ -984,6 +984,7 @@ impl ReportApp {
             .map(|line| line.to_owned())
             .collect::<Vec<_>>();
         let backlog = message.backlog.clone();
+        let hide_choice_panel = should_hide_choice_panel_for_movement(&choices);
         let can_advance = choices.is_empty() && input_prompt.is_none();
         let reveal_complete = self.message_reveal_chars >= message.text.chars().count();
         let backlog_effect = self.backlog_effect_progress.clamp(0.0, 1.0);
@@ -1010,7 +1011,7 @@ impl ReportApp {
         let (choice_order, input_order, message_order) = Self::scene_overlay_orders(&layout);
 
         let choice_rect = Self::scale_scene_rect(layout.choice_panel, canvas_rect, scale);
-        if visible && !choices.is_empty() {
+        if visible && !choices.is_empty() && !hide_choice_panel {
             egui::Area::new(egui::Id::new("choice_panel"))
                 .order(choice_order)
                 .fixed_pos(choice_rect.min)
@@ -1359,7 +1360,7 @@ impl ReportApp {
                             } else {
                                 chips.push(if locale_is_ja { "手動" } else { "MANUAL" }.to_owned());
                             }
-                            if !choices.is_empty() {
+                            if !choices.is_empty() && !hide_choice_panel {
                                 chips.push(if locale_is_ja {
                                     format!("選択肢 {}", choices.len())
                                 } else {
@@ -1514,10 +1515,7 @@ impl eframe::App for ReportApp {
         if shortcut_keys_enabled && ctx.input(|input| input.key_pressed(egui::Key::M)) {
             self.open_runtime_view(RuntimeView::Title);
         }
-        if !direction_shortcut_consumed
-            && shortcut_keys_enabled
-            && ctx.input(|input| input.key_pressed(egui::Key::D))
-        {
+        if shortcut_keys_enabled && debug_shortcut_pressed(ctx) {
             self.debug_panel_open = !self.debug_panel_open;
         }
         if shortcut_keys_enabled && ctx.input(|input| input.key_pressed(egui::Key::R)) {
@@ -1795,6 +1793,30 @@ fn direction_choice_for_key(choices: &[UiChoice], key: egui::Key) -> Option<UiCh
             .find(|choice| choice.enabled && choice.id == *id)
             .cloned()
     })
+}
+
+fn should_hide_choice_panel_for_movement(choices: &[UiChoice]) -> bool {
+    !choices.is_empty()
+        && choices
+            .iter()
+            .all(|choice| choice.enabled && is_movement_choice_id(&choice.id))
+}
+
+fn is_movement_choice_id(id: &str) -> bool {
+    matches!(
+        id,
+        "north" | "south" | "east" | "west" | "forward" | "back" | "turn_left" | "turn_right"
+    )
+}
+
+fn debug_shortcut_pressed(ctx: &egui::Context) -> bool {
+    ctx.input(|input| {
+        debug_shortcut_for_key(egui::Key::D, input.modifiers) && input.key_pressed(egui::Key::D)
+    })
+}
+
+fn debug_shortcut_for_key(key: egui::Key, modifiers: egui::Modifiers) -> bool {
+    key == egui::Key::D && modifiers.alt
 }
 
 fn paint_textured_rect(
@@ -2083,5 +2105,55 @@ mod tests {
         assert!(direction_choice_for_key(&choices, egui::Key::A).is_none());
         assert!(direction_choice_for_key(&choices, egui::Key::S).is_none());
         assert!(direction_choice_for_key(&choices, egui::Key::ArrowDown).is_none());
+    }
+
+    #[test]
+    fn movement_only_choices_hide_choice_panel() {
+        let choices = vec![
+            choice("north"),
+            choice("south"),
+            choice("east"),
+            choice("west"),
+        ];
+        assert!(should_hide_choice_panel_for_movement(&choices));
+
+        let choices = vec![
+            choice("forward"),
+            choice("back"),
+            choice("turn_left"),
+            choice("turn_right"),
+        ];
+        assert!(should_hide_choice_panel_for_movement(&choices));
+    }
+
+    #[test]
+    fn explicit_choices_keep_choice_panel_visible() {
+        let choices = vec![choice("north"), choice("check")];
+        assert!(!should_hide_choice_panel_for_movement(&choices));
+
+        let choices = vec![choice("status"), choice("inventory")];
+        assert!(!should_hide_choice_panel_for_movement(&choices));
+    }
+
+    #[test]
+    fn debug_shortcut_requires_alt_d() {
+        assert!(!debug_shortcut_for_key(
+            egui::Key::D,
+            egui::Modifiers::default()
+        ));
+        assert!(debug_shortcut_for_key(
+            egui::Key::D,
+            egui::Modifiers {
+                alt: true,
+                ..Default::default()
+            }
+        ));
+        assert!(!debug_shortcut_for_key(
+            egui::Key::A,
+            egui::Modifiers {
+                alt: true,
+                ..Default::default()
+            }
+        ));
     }
 }

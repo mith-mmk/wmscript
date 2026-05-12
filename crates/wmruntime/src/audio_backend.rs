@@ -385,11 +385,19 @@ fn spawn_shell(encoded_command: &str, audio_uri: &str) -> Result<Child, HostErro
     }
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", test))]
 fn audio_file_extension(bytes: &[u8]) -> &'static str {
     if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WAVE" {
         "wav"
     } else if bytes.len() >= 3 && &bytes[0..3] == b"ID3" {
+        "mp3"
+    } else if bytes.len() >= 4 && &bytes[0..4] == b"OggS" {
+        "ogg"
+    } else if bytes.len() >= 12 && &bytes[4..8] == b"ftyp" {
+        "m4a"
+    } else if bytes.len() >= 2 && bytes[0] == 0xFF && (bytes[1] & 0xF6) == 0xF0 {
+        "aac"
+    } else if bytes.len() >= 2 && bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0 {
         "mp3"
     } else {
         "aud"
@@ -536,4 +544,20 @@ fn base64_encode(bytes: &[u8]) -> String {
     }
 
     encoded
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn audio_file_extension_detects_common_daw_exports() {
+        assert_eq!(audio_file_extension(b"RIFF\0\0\0\0WAVEfmt "), "wav");
+        assert_eq!(audio_file_extension(b"ID3\x04\0\0\0"), "mp3");
+        assert_eq!(audio_file_extension(&[0xFF, 0xFB, 0x90, 0x64]), "mp3");
+        assert_eq!(audio_file_extension(b"OggS\0\0\0"), "ogg");
+        assert_eq!(audio_file_extension(&[0xFF, 0xF1, 0x50, 0x80]), "aac");
+        assert_eq!(audio_file_extension(b"\0\0\0\x18ftypM4A \0\0"), "m4a");
+        assert_eq!(audio_file_extension(b"not audio"), "aud");
+    }
 }

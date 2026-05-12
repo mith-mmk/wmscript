@@ -40,10 +40,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     for asset in &args.assets {
         let payload = fs::read(&asset.path)?;
         let section_id = 10 + project.assets.len() as u32;
-        let resource_id = 100 + project.assets.len() as u32;
+        let resource_id = next_resource_id(&project, asset.resource_type);
         project = project.push_asset(match asset.resource_type {
             ResourceType::Image => {
                 GameAsset::image(asset.name.clone(), section_id, resource_id, payload)
+            }
+            ResourceType::Audio => {
+                GameAsset::audio(asset.name.clone(), section_id, resource_id, payload)
             }
             _ => GameAsset::script_data(asset.name.clone(), section_id, resource_id, payload),
         });
@@ -104,6 +107,7 @@ impl CliArgs {
                 "--release" => release = true,
                 "--asset" => assets.push(parse_asset_spec(&next_value(&mut args, "--asset")?)?),
                 "--image" => assets.push(parse_image_spec(&next_value(&mut args, "--image")?)?),
+                "--audio" => assets.push(parse_audio_spec(&next_value(&mut args, "--audio")?)?),
                 "--frontend" => {
                     script_path = Some(PathBuf::from(next_value(&mut args, "--frontend")?))
                 }
@@ -168,25 +172,45 @@ struct CliScript {
 }
 
 fn parse_asset_spec(spec: &str) -> Result<CliAsset, Box<dyn std::error::Error>> {
+    parse_typed_asset_spec(spec, ResourceType::ScriptData)
+}
+
+fn parse_image_spec(spec: &str) -> Result<CliAsset, Box<dyn std::error::Error>> {
+    parse_typed_asset_spec(spec, ResourceType::Image)
+}
+
+fn parse_audio_spec(spec: &str) -> Result<CliAsset, Box<dyn std::error::Error>> {
+    parse_typed_asset_spec(spec, ResourceType::Audio)
+}
+
+fn parse_typed_asset_spec(
+    spec: &str,
+    resource_type: ResourceType,
+) -> Result<CliAsset, Box<dyn std::error::Error>> {
     let (name, path) = spec
         .split_once('=')
         .ok_or("asset must be specified as NAME=PATH")?;
     Ok(CliAsset {
         name: name.to_owned(),
         path: PathBuf::from(path),
-        resource_type: ResourceType::ScriptData,
+        resource_type,
     })
 }
 
-fn parse_image_spec(spec: &str) -> Result<CliAsset, Box<dyn std::error::Error>> {
-    let (name, path) = spec
-        .split_once('=')
-        .ok_or("image must be specified as NAME=PATH")?;
-    Ok(CliAsset {
-        name: name.to_owned(),
-        path: PathBuf::from(path),
-        resource_type: ResourceType::Image,
-    })
+fn next_resource_id(project: &GameProject, resource_type: ResourceType) -> u32 {
+    let base = match resource_type {
+        ResourceType::Audio => 200,
+        _ => 100,
+    };
+    let count = project
+        .assets
+        .iter()
+        .filter(|asset| match resource_type {
+            ResourceType::Audio => asset.resource_type == ResourceType::Audio,
+            _ => asset.resource_type != ResourceType::Audio,
+        })
+        .count() as u32;
+    base + count
 }
 
 fn next_value(
@@ -208,6 +232,29 @@ fn parse_platform(value: &str) -> Result<PlatformProfile, Box<dyn std::error::Er
 
 fn print_usage() {
     eprintln!(
-        "usage: wmtoolchain <script.wms> [--engine FILE] [--ui FILE] [--loader FILE] [--frontend FILE] [--middleware FILE] [--background FILE] [--package NAME] [--out FILE] [--step-limit N] [--platform native|wasm|egui] [--release] [--asset NAME=PATH] [--image NAME=PATH]"
+        "usage: wmtoolchain <script.wms> [--engine FILE] [--ui FILE] [--loader FILE] [--frontend FILE] [--middleware FILE] [--background FILE] [--package NAME] [--out FILE] [--step-limit N] [--platform native|wasm|egui] [--release] [--asset NAME=PATH] [--image NAME=PATH] [--audio NAME=PATH]"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_audio_cli_asset() {
+        let asset = parse_audio_spec("bgm/town=assets/town-loop.wav").expect("parse audio");
+        assert_eq!(asset.name, "bgm/town");
+        assert_eq!(asset.path, PathBuf::from("assets/town-loop.wav"));
+        assert_eq!(asset.resource_type, ResourceType::Audio);
+    }
+
+    #[test]
+    fn audio_resource_ids_use_audio_range() {
+        let project = GameProject::new("sample", "main.wms", "export func main() { return 0; }")
+            .push_asset(GameAsset::image("img", 10, 100, b"img".to_vec()))
+            .push_asset(GameAsset::audio("bgm", 11, 200, b"audio".to_vec()));
+
+        assert_eq!(next_resource_id(&project, ResourceType::Image), 101);
+        assert_eq!(next_resource_id(&project, ResourceType::Audio), 201);
+    }
 }

@@ -145,6 +145,24 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             .into());
         }
     }
+    if let Some(expected) = args.expect_audio_resource {
+        let found = runtime
+            .audio_playback_states()
+            .values()
+            .any(|state| state.resource_id == expected);
+        if !found {
+            let actual = runtime
+                .audio_playback_states()
+                .values()
+                .map(|state| state.resource_id)
+                .collect::<Vec<_>>();
+            return Err(format!(
+                "expected audio resource {:?} in playback state, got {:?}",
+                expected, actual
+            )
+            .into());
+        }
+    }
 
     println!("=== auto-ui summary ===");
     println!("package: {}", build.manifest.package_name);
@@ -229,6 +247,7 @@ struct CliArgs {
     choice_sequence_index: usize,
     expect_string: Option<String>,
     expect_image_resource: Option<u32>,
+    expect_audio_resource: Option<u32>,
     quiet: bool,
 }
 
@@ -245,6 +264,7 @@ impl CliArgs {
         let mut choice_sequence = Vec::new();
         let mut expect_string = None;
         let mut expect_image_resource = None;
+        let mut expect_audio_resource = None;
         let mut quiet = false;
 
         while let Some(arg) = args.next() {
@@ -265,6 +285,10 @@ impl CliArgs {
                 "--expect-image-resource" => {
                     expect_image_resource =
                         Some(next_value(&mut args, "--expect-image-resource")?.parse()?)
+                }
+                "--expect-audio-resource" => {
+                    expect_audio_resource =
+                        Some(next_value(&mut args, "--expect-audio-resource")?.parse()?)
                 }
                 "--quiet" => quiet = true,
                 "--help" | "-h" => {
@@ -308,6 +332,7 @@ impl CliArgs {
             choice_sequence_index: 0,
             expect_string,
             expect_image_resource,
+            expect_audio_resource,
             quiet,
         })
     }
@@ -350,7 +375,7 @@ fn parse_choice_sequence(value: &str) -> Vec<String> {
 
 fn print_usage() {
     eprintln!(
-        "usage: wmautoui <script.wms|archive.warc> [--archive FILE] [--package NAME] [--platform native|wasm|egui] [--step-limit N] [--max-rounds N] [--choice ID_OR_LABEL] [--choices ID_OR_LABEL,...] [--input TEXT] [--expect TEXT] [--expect-image-resource ID] [--quiet]"
+        "usage: wmautoui <script.wms|archive.warc> [--archive FILE] [--package NAME] [--platform native|wasm|egui] [--step-limit N] [--max-rounds N] [--choice ID_OR_LABEL] [--choices ID_OR_LABEL,...] [--input TEXT] [--expect TEXT] [--expect-image-resource ID] [--expect-audio-resource ID] [--quiet]"
     );
 }
 
@@ -372,6 +397,7 @@ mod tests {
             choice_sequence_index: 0,
             expect_string: None,
             expect_image_resource: None,
+            expect_audio_resource: None,
             quiet: false,
         }
     }
@@ -428,6 +454,21 @@ mod tests {
             parse_choice_sequence("forest, stone,, attack "),
             vec!["forest".to_owned(), "stone".to_owned(), "attack".to_owned()]
         );
+    }
+
+    #[test]
+    fn parse_expect_audio_resource() {
+        let args = CliArgs::parse(
+            [
+                "sample.warc".to_owned(),
+                "--expect-audio-resource".to_owned(),
+                "204".to_owned(),
+            ]
+            .into_iter(),
+        )
+        .expect("parse args");
+
+        assert_eq!(args.expect_audio_resource, Some(204));
     }
 
     #[test]

@@ -51,8 +51,11 @@ introduced.
 
 | Key | Meaning |
 | --- | --- |
-| `map.current` | Stable map id such as `town`, `forest`, or `ruins`. |
+| `map.current` | Stable map id such as `town`, `forest`, or `dungeon`. |
 | `map.projection` | Map projection id. v1 sample values are `tile2d` and `grid3d`. |
+| `map.width` | Width of the active map grid. The RPG demo uses 64 for explorable maps. |
+| `map.height` | Height of the active map grid. The RPG demo uses 64 for explorable maps. |
+| `map.depth` | Depth or floor-span of a grid-style 3D map. |
 | `map.x` | Horizontal map coordinate. |
 | `map.y` | Vertical 2D map coordinate. |
 | `map.z` | Depth coordinate used by grid-style 3D maps. |
@@ -61,6 +64,7 @@ introduced.
 | `map.last_blocked` | `true` when the last movement could not enter the target cell. |
 | `map.transition` | Last map transition id, for example `town_to_forest`. |
 | `map.return_mode` | Mode to restore after map-triggered event or battle sequences. |
+| `dungeon.level` | Optional dungeon floor/depth marker for grid-style RPG maps. |
 
 2D map choices use stable ids such as `north`, `south`, `east`, `west`,
 `check`, `menu`, `status`, and `inventory`. Grid-style 3D choices use `forward`,

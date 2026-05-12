@@ -244,6 +244,11 @@ export func main() {
 | `ext.audio.status` | `status(handle)` | `int` | 現在の再生状態コードを返します。 |
 | `ext.audio.release` | `release(handle)` | `bool` | 音声 handle を解放します。 |
 
+v1 の音声 resource は DAW から書き出した最終ファイルです。`wav`, `mp3`,
+`ogg`, `aac`, `m4a` は `--audio NAME=PATH` または project config の `audio`
+セクションで変換せず package できます。MIDI と DAW project file は対象外です。
+OGG/AAC/M4A の実再生は host frontend/backend の codec 対応に依存します。
+
 ### 3.9 `ext.vm`
 
 必要 capability: なし
@@ -305,7 +310,6 @@ export func main() {
 - `samples/imageaudio`
 - `samples/uiimage`
 - `samples/easynovel`
-
 
 
 

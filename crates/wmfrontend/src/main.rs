@@ -82,10 +82,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         for asset in &launch.assets {
             let payload = fs::read(&asset.path)?;
             let section_id = 10 + project.assets.len() as u32;
-            let resource_id = 100 + project.assets.len() as u32;
+            let resource_id = next_resource_id(&project, asset.resource_type);
             project = project.push_asset(match asset.resource_type {
                 ResourceType::Image => {
                     GameAsset::image(asset.name.clone(), section_id, resource_id, payload)
+                }
+                ResourceType::Audio => {
+                    GameAsset::audio(asset.name.clone(), section_id, resource_id, payload)
                 }
                 _ => GameAsset::script_data(asset.name.clone(), section_id, resource_id, payload),
             });
@@ -214,6 +217,10 @@ impl CliArgs {
                 "--image" => {
                     let value = args.next().ok_or("--image requires a value")?;
                     assets.push(parse_asset_spec(&value, ResourceType::Image)?);
+                }
+                "--audio" => {
+                    let value = args.next().ok_or("--audio requires a value")?;
+                    assets.push(parse_asset_spec(&value, ResourceType::Audio)?);
                 }
                 "--font" => {
                     let value = args.next().ok_or("--font requires a value")?;
@@ -524,6 +531,12 @@ fn parse_project_toml(source: &str) -> Result<ProjectConfig, Box<dyn std::error:
                 section = ConfigSection::Image;
                 continue;
             }
+            "[[audio]]" | "[[audios]]" => {
+                finish_config_asset(&mut config, pending_asset.take())?;
+                pending_asset = Some(ProjectConfigAssetBuilder::new(ResourceType::Audio));
+                section = ConfigSection::Audio;
+                continue;
+            }
             "[[script_data]]" | "[[script_datas]]" => {
                 finish_config_asset(&mut config, pending_asset.take())?;
                 pending_asset = Some(ProjectConfigAssetBuilder::new(ResourceType::ScriptData));
@@ -544,7 +557,7 @@ fn parse_project_toml(source: &str) -> Result<ProjectConfig, Box<dyn std::error:
         match section {
             ConfigSection::Root => apply_root_config_value(&mut config, key, value)?,
             ConfigSection::Package => apply_package_config_value(&mut config, key, value)?,
-            ConfigSection::Asset | ConfigSection::Image => {
+            ConfigSection::Asset | ConfigSection::Image | ConfigSection::Audio => {
                 let asset = pending_asset
                     .as_mut()
                     .ok_or("internal config parser error: missing asset section")?;
@@ -577,6 +590,11 @@ fn parse_project_yaml(source: &str) -> Result<ProjectConfig, Box<dyn std::error:
             section = ConfigSection::Image;
             continue;
         }
+        if line == "audios:" || line == "audio:" {
+            finish_config_asset(&mut config, pending_asset.take())?;
+            section = ConfigSection::Audio;
+            continue;
+        }
         if line == "packages:" || line == "package:" {
             finish_config_asset(&mut config, pending_asset.take())?;
             section = ConfigSection::Package;
@@ -588,6 +606,7 @@ fn parse_project_yaml(source: &str) -> Result<ProjectConfig, Box<dyn std::error:
             if section != ConfigSection::Package {
                 pending_asset = Some(ProjectConfigAssetBuilder::new(match section {
                     ConfigSection::Image => ResourceType::Image,
+                    ConfigSection::Audio => ResourceType::Audio,
                     _ => ResourceType::ScriptData,
                 }));
             }
@@ -604,7 +623,7 @@ fn parse_project_yaml(source: &str) -> Result<ProjectConfig, Box<dyn std::error:
         match section {
             ConfigSection::Root => apply_root_config_value(&mut config, key, value)?,
             ConfigSection::Package => apply_package_config_value(&mut config, key, value)?,
-            ConfigSection::Asset | ConfigSection::Image => {
+            ConfigSection::Asset | ConfigSection::Image | ConfigSection::Audio => {
                 let asset = pending_asset
                     .as_mut()
                     .ok_or("asset entry must start with '-' in yaml config")?;
@@ -622,6 +641,7 @@ enum ConfigSection {
     Package,
     Asset,
     Image,
+    Audio,
 }
 
 #[derive(Debug)]
@@ -772,9 +792,25 @@ fn parse_font(value: &str) -> Result<GuiFontPreset, Box<dyn std::error::Error>> 
     }
 }
 
+fn next_resource_id(project: &GameProject, resource_type: ResourceType) -> u32 {
+    let base = match resource_type {
+        ResourceType::Audio => 200,
+        _ => 100,
+    };
+    let count = project
+        .assets
+        .iter()
+        .filter(|asset| match resource_type {
+            ResourceType::Audio => asset.resource_type == ResourceType::Audio,
+            _ => asset.resource_type != ResourceType::Audio,
+        })
+        .count() as u32;
+    base + count
+}
+
 fn print_usage() {
     eprintln!(
-        "usage: wmfrontend [--demo uiimage|image-audio|engineworker|messagewindow | <script.wms> | <archive.warc> | <project-without-extension> | --archive FILE] [--engine FILE] [--ui FILE] [--loader FILE] [--frontend FILE] [--middleware FILE] [--background FILE] [--package NAME] [--step-limit N] [--platform native|wasm|egui] [--font noto|default|mono] [--asset NAME=PATH] [--image NAME=PATH]"
+        "usage: wmfrontend [--demo uiimage|image-audio|engineworker|messagewindow | <script.wms> | <archive.warc> | <project-without-extension> | --archive FILE] [--engine FILE] [--ui FILE] [--loader FILE] [--frontend FILE] [--middleware FILE] [--background FILE] [--package NAME] [--step-limit N] [--platform native|wasm|egui] [--font noto|default|mono] [--asset NAME=PATH] [--image NAME=PATH] [--audio NAME=PATH]"
     );
 }
 
@@ -813,6 +849,10 @@ path = "guide.txt"
 [[image]]
 name = "ui/background"
 path = "background.png"
+
+[[audio]]
+name = "bgm/town"
+path = "town-loop.wav"
 "#,
         )
         .expect("parse toml config");
@@ -842,9 +882,10 @@ path = "background.png"
         assert_eq!(packages[1].path, Path::new("loader/main.wms"));
         assert_eq!(packages[2].role, GameWorkerRole::Engine);
         assert_eq!(packages[2].path, Path::new("engine/main.wms"));
-        assert_eq!(config.assets.len(), 2);
+        assert_eq!(config.assets.len(), 3);
         assert_eq!(config.assets[0].resource_type, ResourceType::ScriptData);
         assert_eq!(config.assets[1].resource_type, ResourceType::Image);
+        assert_eq!(config.assets[2].resource_type, ResourceType::Audio);
     }
 
     #[test]
@@ -862,6 +903,9 @@ assets:
 images:
   - name: ui/background
     path: background.png
+audio:
+  - name: bgm/town
+    path: town-loop.wav
 "#,
         )
         .expect("parse yaml config");
@@ -877,9 +921,38 @@ images:
             Some(Path::new("background.wms"))
         );
         assert_eq!(config.platform.as_deref(), Some("native"));
-        assert_eq!(config.assets.len(), 2);
+        assert_eq!(config.assets.len(), 3);
         assert_eq!(config.assets[0].resource_type, ResourceType::ScriptData);
         assert_eq!(config.assets[1].resource_type, ResourceType::Image);
+        assert_eq!(config.assets[2].resource_type, ResourceType::Audio);
+    }
+
+    #[test]
+    fn parse_audio_cli_asset() {
+        let args = CliArgs::parse(
+            [
+                "main.wms".to_owned(),
+                "--audio".to_owned(),
+                "bgm/town=assets/town-loop.wav".to_owned(),
+            ]
+            .into_iter(),
+        )
+        .expect("parse args");
+
+        assert_eq!(args.assets.len(), 1);
+        assert_eq!(args.assets[0].name, "bgm/town");
+        assert_eq!(args.assets[0].path, PathBuf::from("assets/town-loop.wav"));
+        assert_eq!(args.assets[0].resource_type, ResourceType::Audio);
+    }
+
+    #[test]
+    fn audio_resource_ids_use_audio_range() {
+        let project = GameProject::new("sample", "main.wms", "export func main() { return 0; }")
+            .push_asset(GameAsset::image("img", 10, 100, b"img".to_vec()))
+            .push_asset(GameAsset::audio("bgm", 11, 200, b"audio".to_vec()));
+
+        assert_eq!(next_resource_id(&project, ResourceType::Image), 101);
+        assert_eq!(next_resource_id(&project, ResourceType::Audio), 201);
     }
 
     #[test]

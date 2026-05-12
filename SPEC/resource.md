@@ -243,7 +243,14 @@ LZ4 / Zstd
 
 13.2 エンコード
 image → PNG / raw / GPU format
-audio → OGG / WAV
+audio → DAW exported final files (`wav`, `mp3`, `ogg`, `aac`, `m4a`)
+
+v1 では音声を変換しない。`wmtoolchain` / `wmfrontend` は `--audio NAME=PATH`
+または project config の `audio` セクションで指定されたファイルをそのまま
+`ResourceType::Audio` として archive に格納する。MIDI と DAW project file は
+resource 仕様の対象外で、OGG/AAC/M4A の実再生は host frontend/backend の codec
+対応に依存する。
+
 13.3 デコード層
 archive → raw → decoded → runtime
 14. ホットリロード
