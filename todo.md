@@ -439,6 +439,8 @@ Toolchain
 
  [+] state.save/load
 
+ [+] ext.automation / ext.rts (自動化ゲーム・RTS resource/job/tick/unit state)
+
  [+] ext.image.draw
 
  [+] ext.image.draw_part/draw_ext

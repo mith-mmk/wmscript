@@ -1,0 +1,128 @@
+export let title = "自動化RTSデモ";
+export let description = "ext.automation / ext.rts の resource, job, tick, unit state を使う deterministic sample";
+
+export func main() {
+    state.set("game.mode", "rts");
+    state.set("game.turn", 1);
+    state.set("game.tick", 0);
+    state.set("game.location", "frontier_base");
+    state.set("map.current", "frontier_base");
+    state.set("map.projection", "tile2d");
+    state.set("map.width", 32);
+    state.set("map.height", 32);
+    state.set("map.depth", 1);
+    state.set("map.x", 4);
+    state.set("map.y", 4);
+    state.set("map.z", 0);
+    state.set("map.facing", "east");
+
+    ext.automation.set_resource("wood", 10);
+    ext.automation.set_resource("ore", 0);
+    ext.automation.set_job("lumber", true, 2, "resource.wood");
+    ext.automation.set_job("mine", true, 1, "resource.ore");
+    ext.rts.set_unit("worker_1", "blue", 4, 4, 12);
+    ext.rts.set_unit("scout_1", "blue", 6, 5, 8);
+
+    ext.scene.reset();
+    ui.layout(276, 80, 728, 244, 20, 500, 1240, 188);
+    text.reset_style();
+    text.locale("ja");
+    text.box_style(10, 14, 24, 232, 62, 96, 126, 238);
+    text.text_color(242, 248, 246, 255);
+    text.speaker_color(255, 222, 142, 255);
+    text.accent_color(142, 216, 208, 255);
+    text.choice_box_style(12, 20, 28, 232, 84, 122, 148, 238);
+    text.choice_text_color(246, 252, 250, 255);
+    text.choice_accent_color(152, 226, 214, 255);
+    text.choice_selected_style(42, 96, 94, 224, 186, 240, 226, 244);
+    text.font_size(22, 24);
+    text.speed(28);
+    text.auto(false);
+    ui.context_menu(true);
+    ui.shift_fast(true);
+
+    text.show(
+        "司令部",
+        "自動化RTS拠点を起動しました。\njob は tick ごとに資源を生産し、unit は state.* に座標とHPを保持します。"
+    );
+    text.choices_named(
+        "tick", "5 tick 進める",
+        "build", "作業員を増産",
+        "scout", "偵察に出す",
+        "end_demo", "デモ終了"
+    );
+
+    loop {
+        recv();
+        let action = state.get("ui.last_choice");
+        text.choices_named();
+        state.set("game.last_action", action);
+
+        if action == "tick" {
+            let tick = ext.automation.tick(5);
+            let wood = ext.automation.resource("wood");
+            let ore = ext.automation.resource("ore");
+            state.set("game.turn", tick);
+            text.show(
+                "生産ログ",
+                "5 tick 経過しました。\n木材と鉱石が増え、game.tick も更新されています。"
+            );
+            state.set("event.result", "tick-complete");
+            state.set("resource.last_wood", wood);
+            state.set("resource.last_ore", ore);
+            text.choices_named(
+                "tick", "さらに進める",
+                "build", "作業員を増産",
+                "scout", "偵察に出す",
+                "end_demo", "デモ終了"
+            );
+        } else if action == "build" {
+            let wood = ext.automation.resource("wood");
+            if wood >= 18 {
+                ext.automation.add_resource("wood", -18);
+                ext.rts.set_unit("worker_2", "blue", 8, 8, 12);
+                state.set("event.result", "worker-built");
+                state.set("game.turn", 2);
+                text.show(
+                    "建造完了",
+                    "木材18を消費し、worker_2 を (8, 8) に追加しました。\nrts.units と unit.worker_2.* が保存対象になります。"
+                );
+                recv();
+                return "automation-rts-built";
+            } else {
+                state.set("event.result", "need-more-wood");
+                text.show("建造待ち", "木材が足りません。まず tick を進めてください。");
+                text.choices_named(
+                    "tick", "5 tick 進める",
+                    "build", "もう一度試す",
+                    "scout", "偵察に出す",
+                    "end_demo", "デモ終了"
+                );
+            }
+        } else if action == "scout" {
+            ext.rts.move_unit("scout_1", 12, 9);
+            let hp = ext.rts.damage_unit("scout_1", 1);
+            state.set("event.result", "scout-moved");
+            state.set("unit.scout_1.last_report", "east ridge");
+            text.show(
+                "偵察報告",
+                "scout_1 は (12, 9) へ移動しました。\n小競り合いでHPが1減り、残HPは state に保持されます。"
+            );
+            state.set("unit.scout_1.report_hp", hp);
+            recv();
+            return "automation-rts-scouted";
+        } else if action == "end_demo" {
+            state.set("event.result", "idle");
+            state.save(1);
+            return "automation-rts-idle";
+        } else {
+            text.show("司令部", "コマンドを選び直してください。");
+            text.choices_named(
+                "tick", "5 tick 進める",
+                "build", "作業員を増産",
+                "scout", "偵察に出す",
+                "end_demo", "デモ終了"
+            );
+        }
+    }
+}

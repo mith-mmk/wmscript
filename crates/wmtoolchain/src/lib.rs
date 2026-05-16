@@ -906,6 +906,14 @@ mod tests {
         )
     }
 
+    fn automationrts_project() -> GameProject {
+        GameProject::new(
+            "automationrts",
+            "samples/automationrts/main.wms",
+            include_str!("../../../samples/automationrts/main.wms"),
+        )
+    }
+
     #[test]
     fn build_project_creates_archive_and_program() {
         let toolchain = Toolchain::new(ToolchainConfig::new(PlatformProfile::native()));
@@ -1067,6 +1075,19 @@ mod tests {
                 1
             )]
         );
+    }
+
+    #[test]
+    fn build_automationrts_sample_with_gameplay_extensions() {
+        let toolchain = Toolchain::new(ToolchainConfig::new(PlatformProfile::egui()));
+        let project = automationrts_project();
+
+        let build = toolchain.build_project(&project).expect("build sample");
+
+        assert!(build.archive_size > 64);
+        assert_eq!(build.manifest.package_name, "automationrts");
+        assert_eq!(build.worker_programs.len(), 1);
+        assert_eq!(build.manifest.worker_entries[0].role, "engine");
     }
 
     #[test]

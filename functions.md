@@ -117,7 +117,7 @@ provide the required capability bit. In practice:
 - `CAP_NETWORK` is required by `ext.net.*`
 - `CAP_ASYNC_IO` is required by `ext.llm.*` and `ext.audio.*`
 - `CAP_GUI` is required by `ext.scene.*`, `ext.message.*`, and `ext.image.*`
-- `state.*` and `ext.vm.*` do not require a platform capability
+- `state.*`, `ext.vm.*`, `ext.automation.*`, and `ext.rts.*` do not require a platform capability
 
 Current default profiles:
 
@@ -270,6 +270,33 @@ Requires: no capability
 | `state.set` | `set(key: string, value)` | `bool` | Writes a value into the current state. |
 | `state.erase` | `erase(key: string)` | `bool` | Removes a key from the current state. |
 
+### 3.11 `ext.automation`
+
+Requires: no capability
+
+| Function | Signature | Returns | Notes |
+| --- | --- | --- | --- |
+| `ext.automation.resource` | `resource(name: string)` | `int` | Reads `resource.<name>` unless the name already starts with `resource.` or `inventory.`. |
+| `ext.automation.set_resource` | `set_resource(name: string, amount: int)` | `bool` | Sets a resource counter. |
+| `ext.automation.add_resource` | `add_resource(name: string, delta: int)` | `int` | Adds to a resource counter and returns the new value. |
+| `ext.automation.set_job` | `set_job(id: string, enabled: bool, rate: int, output: string)` | `bool` | Registers a deterministic production job under `job.<id>.*`. |
+| `ext.automation.enable_job` | `enable_job(id: string, enabled: bool)` | `bool` | Enables or disables a registered job. |
+| `ext.automation.tick` | `tick(steps: int)` | `int` | Advances `game.tick` and applies enabled job production. |
+| `ext.automation.job_progress` | `job_progress(id: string)` | `int` | Reads `job.<id>.progress`. |
+
+### 3.12 `ext.rts`
+
+Requires: no capability
+
+| Function | Signature | Returns | Notes |
+| --- | --- | --- | --- |
+| `ext.rts.set_unit` | `set_unit(id: string, team: string, x: int, y: int, hp: int)` | `bool` | Registers or replaces a unit under `unit.<id>.*`. |
+| `ext.rts.move_unit` | `move_unit(id: string, x: int, y: int)` | `bool` | Moves a unit and records a `move` order. |
+| `ext.rts.unit_x` | `unit_x(id: string)` | `int` | Reads a unit's x coordinate. |
+| `ext.rts.unit_y` | `unit_y(id: string)` | `int` | Reads a unit's y coordinate. |
+| `ext.rts.unit_hp` | `unit_hp(id: string)` | `int` | Reads a unit's HP. |
+| `ext.rts.damage_unit` | `damage_unit(id: string, amount: int)` | `int` | Reduces HP to a minimum of zero and returns the new HP. |
+
 ## 4. VM-Level Execution Primitives
 
 These are VM opcodes rather than surface-language functions, but they are part of the
@@ -309,7 +336,6 @@ See:
 - `samples/imageaudio`
 - `samples/uiimage`
 - `samples/easynovel`
-
 
 
 

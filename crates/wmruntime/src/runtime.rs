@@ -2344,6 +2344,296 @@ impl Runtime {
         })
     }
 
+    pub fn install_automation_extension(&mut self) -> Result<AutomationExtension, RuntimeError> {
+        let resource_host_id = 250;
+        let set_resource_host_id = 251;
+        let add_resource_host_id = 252;
+        let set_job_host_id = 253;
+        let enable_job_host_id = 254;
+        let tick_host_id = 255;
+        let job_progress_host_id = 256;
+        let state_manager = self.state_manager.clone();
+
+        let _ = self.register_host_function(
+            HostFunction::new(resource_host_id, 1, 1, 0),
+            move |args| {
+                let name = expect_string_arg(args, 0, "resource")?;
+                let key = automation_resource_key(&name);
+                Ok(Value::Integer(state_integer(&state_manager.borrow(), &key)))
+            },
+        );
+
+        let state_manager = self.state_manager.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(set_resource_host_id, 2, 2, 0),
+            move |args| {
+                let name = expect_string_arg(args, 0, "resource")?;
+                let amount = expect_integer_arg(args, 1, "amount")?;
+                let key = automation_resource_key(&name);
+                state_manager.borrow_mut().set(key, Value::Integer(amount));
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let state_manager = self.state_manager.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(add_resource_host_id, 2, 2, 0),
+            move |args| {
+                let name = expect_string_arg(args, 0, "resource")?;
+                let delta = expect_integer_arg(args, 1, "delta")?;
+                let key = automation_resource_key(&name);
+                let mut state = state_manager.borrow_mut();
+                let next = state_integer(&state, &key).saturating_add(delta);
+                state.set(key, Value::Integer(next));
+                Ok(Value::Integer(next))
+            },
+        );
+
+        let state_manager = self.state_manager.clone();
+        let _ =
+            self.register_host_function(HostFunction::new(set_job_host_id, 4, 4, 0), move |args| {
+                let id = expect_state_id_arg(args, 0, "job")?;
+                let enabled = expect_bool_arg(args, 1, "enabled")?;
+                let rate = expect_integer_arg(args, 2, "rate")?;
+                let output = expect_string_arg(args, 3, "output")?;
+                let mut state = state_manager.borrow_mut();
+                append_state_list_value(&mut state, "automation.jobs", &id);
+                state.set(format!("job.{id}.enabled"), Value::Bool(enabled));
+                state.set(format!("job.{id}.rate"), Value::Integer(rate.max(0)));
+                if !state.has(&format!("job.{id}.progress")) {
+                    state.set(format!("job.{id}.progress"), Value::Integer(0));
+                }
+                state.set(format!("job.{id}.output"), Value::String(output));
+                Ok(Value::Bool(true))
+            });
+
+        let state_manager = self.state_manager.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(enable_job_host_id, 2, 2, 0),
+            move |args| {
+                let id = expect_state_id_arg(args, 0, "job")?;
+                let enabled = expect_bool_arg(args, 1, "enabled")?;
+                state_manager
+                    .borrow_mut()
+                    .set(format!("job.{id}.enabled"), Value::Bool(enabled));
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let state_manager = self.state_manager.clone();
+        let _ =
+            self.register_host_function(HostFunction::new(tick_host_id, 1, 1, 0), move |args| {
+                let steps = expect_integer_arg(args, 0, "steps")?.max(0);
+                let mut state = state_manager.borrow_mut();
+                let current_tick = state_integer(&state, "game.tick");
+                let next_tick = current_tick.saturating_add(steps);
+                state.set("game.tick".to_owned(), Value::Integer(next_tick));
+
+                for job_id in state_list_value(&state, "automation.jobs") {
+                    if !state_bool(&state, &format!("job.{job_id}.enabled")) {
+                        continue;
+                    }
+                    let rate = state_integer(&state, &format!("job.{job_id}.rate")).max(0);
+                    let output = match state.get(&format!("job.{job_id}.output")) {
+                        Some(Value::String(value)) if !value.is_empty() => value,
+                        _ => continue,
+                    };
+                    let progress_key = format!("job.{job_id}.progress");
+                    let progress = state_integer(&state, &progress_key)
+                        .saturating_add(rate.saturating_mul(steps));
+                    let produced = progress.max(0);
+                    state.set(progress_key, Value::Integer(0));
+                    if produced > 0 {
+                        let output_key = automation_resource_key(&output);
+                        let next = state_integer(&state, &output_key).saturating_add(produced);
+                        state.set(output_key, Value::Integer(next));
+                    }
+                }
+
+                Ok(Value::Integer(next_tick))
+            });
+
+        let state_manager = self.state_manager.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(job_progress_host_id, 1, 1, 0),
+            move |args| {
+                let id = expect_state_id_arg(args, 0, "job")?;
+                Ok(Value::Integer(state_integer(
+                    &state_manager.borrow(),
+                    &format!("job.{id}.progress"),
+                )))
+            },
+        );
+
+        let ids = self.extensions.register_extension(
+            "ext.automation",
+            &[
+                ExtensionFunctionSpec::new("resource", resource_host_id, 1, 1, 0)
+                    .with_return_type(ExtValueType::Integer),
+                ExtensionFunctionSpec::new("set_resource", set_resource_host_id, 2, 2, 0)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("add_resource", add_resource_host_id, 2, 2, 0)
+                    .with_return_type(ExtValueType::Integer),
+                ExtensionFunctionSpec::new("set_job", set_job_host_id, 4, 4, 0)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("enable_job", enable_job_host_id, 2, 2, 0)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("tick", tick_host_id, 1, 1, 0)
+                    .with_return_type(ExtValueType::Integer),
+                ExtensionFunctionSpec::new("job_progress", job_progress_host_id, 1, 1, 0)
+                    .with_return_type(ExtValueType::Integer),
+            ],
+        )?;
+
+        Ok(AutomationExtension {
+            resource_ext_id: ids[0],
+            set_resource_ext_id: ids[1],
+            add_resource_ext_id: ids[2],
+            set_job_ext_id: ids[3],
+            enable_job_ext_id: ids[4],
+            tick_ext_id: ids[5],
+            job_progress_ext_id: ids[6],
+            resource_host_id,
+            set_resource_host_id,
+            add_resource_host_id,
+            set_job_host_id,
+            enable_job_host_id,
+            tick_host_id,
+            job_progress_host_id,
+        })
+    }
+
+    pub fn install_rts_extension(&mut self) -> Result<RtsExtension, RuntimeError> {
+        let set_unit_host_id = 260;
+        let move_unit_host_id = 261;
+        let unit_x_host_id = 262;
+        let unit_y_host_id = 263;
+        let unit_hp_host_id = 264;
+        let damage_unit_host_id = 265;
+        let state_manager = self.state_manager.clone();
+
+        let _ = self.register_host_function(
+            HostFunction::new(set_unit_host_id, 5, 5, 0),
+            move |args| {
+                let id = expect_state_id_arg(args, 0, "unit")?;
+                let team = expect_string_arg(args, 1, "team")?;
+                let x = expect_integer_arg(args, 2, "x")?;
+                let y = expect_integer_arg(args, 3, "y")?;
+                let hp = expect_integer_arg(args, 4, "hp")?;
+                let mut state = state_manager.borrow_mut();
+                append_state_list_value(&mut state, "rts.units", &id);
+                state.set(format!("unit.{id}.team"), Value::String(team));
+                state.set(format!("unit.{id}.x"), Value::Integer(x));
+                state.set(format!("unit.{id}.y"), Value::Integer(y));
+                state.set(format!("unit.{id}.target_x"), Value::Integer(x));
+                state.set(format!("unit.{id}.target_y"), Value::Integer(y));
+                state.set(format!("unit.{id}.hp"), Value::Integer(hp.max(0)));
+                state.set(
+                    format!("unit.{id}.last_order"),
+                    Value::String("spawn".to_owned()),
+                );
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let state_manager = self.state_manager.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(move_unit_host_id, 3, 3, 0),
+            move |args| {
+                let id = expect_state_id_arg(args, 0, "unit")?;
+                let x = expect_integer_arg(args, 1, "x")?;
+                let y = expect_integer_arg(args, 2, "y")?;
+                let mut state = state_manager.borrow_mut();
+                state.set(format!("unit.{id}.x"), Value::Integer(x));
+                state.set(format!("unit.{id}.y"), Value::Integer(y));
+                state.set(format!("unit.{id}.target_x"), Value::Integer(x));
+                state.set(format!("unit.{id}.target_y"), Value::Integer(y));
+                state.set(
+                    format!("unit.{id}.last_order"),
+                    Value::String("move".to_owned()),
+                );
+                Ok(Value::Bool(true))
+            },
+        );
+
+        let state_manager = self.state_manager.clone();
+        let _ =
+            self.register_host_function(HostFunction::new(unit_x_host_id, 1, 1, 0), move |args| {
+                let id = expect_state_id_arg(args, 0, "unit")?;
+                Ok(Value::Integer(state_integer(
+                    &state_manager.borrow(),
+                    &format!("unit.{id}.x"),
+                )))
+            });
+
+        let state_manager = self.state_manager.clone();
+        let _ =
+            self.register_host_function(HostFunction::new(unit_y_host_id, 1, 1, 0), move |args| {
+                let id = expect_state_id_arg(args, 0, "unit")?;
+                Ok(Value::Integer(state_integer(
+                    &state_manager.borrow(),
+                    &format!("unit.{id}.y"),
+                )))
+            });
+
+        let state_manager = self.state_manager.clone();
+        let _ =
+            self.register_host_function(HostFunction::new(unit_hp_host_id, 1, 1, 0), move |args| {
+                let id = expect_state_id_arg(args, 0, "unit")?;
+                Ok(Value::Integer(state_integer(
+                    &state_manager.borrow(),
+                    &format!("unit.{id}.hp"),
+                )))
+            });
+
+        let state_manager = self.state_manager.clone();
+        let _ = self.register_host_function(
+            HostFunction::new(damage_unit_host_id, 2, 2, 0),
+            move |args| {
+                let id = expect_state_id_arg(args, 0, "unit")?;
+                let damage = expect_integer_arg(args, 1, "damage")?.max(0);
+                let key = format!("unit.{id}.hp");
+                let mut state = state_manager.borrow_mut();
+                let hp = state_integer(&state, &key).saturating_sub(damage).max(0);
+                state.set(key, Value::Integer(hp));
+                Ok(Value::Integer(hp))
+            },
+        );
+
+        let ids = self.extensions.register_extension(
+            "ext.rts",
+            &[
+                ExtensionFunctionSpec::new("set_unit", set_unit_host_id, 5, 5, 0)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("move_unit", move_unit_host_id, 3, 3, 0)
+                    .with_return_type(ExtValueType::Bool),
+                ExtensionFunctionSpec::new("unit_x", unit_x_host_id, 1, 1, 0)
+                    .with_return_type(ExtValueType::Integer),
+                ExtensionFunctionSpec::new("unit_y", unit_y_host_id, 1, 1, 0)
+                    .with_return_type(ExtValueType::Integer),
+                ExtensionFunctionSpec::new("unit_hp", unit_hp_host_id, 1, 1, 0)
+                    .with_return_type(ExtValueType::Integer),
+                ExtensionFunctionSpec::new("damage_unit", damage_unit_host_id, 2, 2, 0)
+                    .with_return_type(ExtValueType::Integer),
+            ],
+        )?;
+
+        Ok(RtsExtension {
+            set_unit_ext_id: ids[0],
+            move_unit_ext_id: ids[1],
+            unit_x_ext_id: ids[2],
+            unit_y_ext_id: ids[3],
+            unit_hp_ext_id: ids[4],
+            damage_unit_ext_id: ids[5],
+            set_unit_host_id,
+            move_unit_host_id,
+            unit_x_host_id,
+            unit_y_host_id,
+            unit_hp_host_id,
+            damage_unit_host_id,
+        })
+    }
+
     pub fn install_standard_extensions(&mut self) -> Result<StandardExtensions, RuntimeError> {
         Ok(StandardExtensions {
             fs: self.install_fs_extension()?,
@@ -2357,6 +2647,8 @@ impl Runtime {
             ui: self.install_ui_extension()?,
             vm: self.install_vm_extension()?,
             state: self.install_state_extension()?,
+            automation: self.install_automation_extension()?,
+            rts: self.install_rts_extension()?,
         })
     }
 
@@ -2498,6 +2790,10 @@ impl Runtime {
 
     pub fn set_state_value(&self, key: impl Into<String>, value: Value) {
         self.state_manager.borrow_mut().set(key.into(), value);
+    }
+
+    pub fn state_value(&self, key: &str) -> Option<Value> {
+        self.state_manager.borrow().get(key)
     }
 
     pub fn save_checkpoint(&self, slot: u32) {
@@ -2843,6 +3139,42 @@ pub struct UiExtension {
     pub shift_fast_host_id: HostId,
 }
 
+/// Stable ids assigned to the automation-game extension.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AutomationExtension {
+    pub resource_ext_id: u32,
+    pub set_resource_ext_id: u32,
+    pub add_resource_ext_id: u32,
+    pub set_job_ext_id: u32,
+    pub enable_job_ext_id: u32,
+    pub tick_ext_id: u32,
+    pub job_progress_ext_id: u32,
+    pub resource_host_id: HostId,
+    pub set_resource_host_id: HostId,
+    pub add_resource_host_id: HostId,
+    pub set_job_host_id: HostId,
+    pub enable_job_host_id: HostId,
+    pub tick_host_id: HostId,
+    pub job_progress_host_id: HostId,
+}
+
+/// Stable ids assigned to the RTS state extension.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RtsExtension {
+    pub set_unit_ext_id: u32,
+    pub move_unit_ext_id: u32,
+    pub unit_x_ext_id: u32,
+    pub unit_y_ext_id: u32,
+    pub unit_hp_ext_id: u32,
+    pub damage_unit_ext_id: u32,
+    pub set_unit_host_id: HostId,
+    pub move_unit_host_id: HostId,
+    pub unit_x_host_id: HostId,
+    pub unit_y_host_id: HostId,
+    pub unit_hp_host_id: HostId,
+    pub damage_unit_host_id: HostId,
+}
+
 /// Stable ids for the runtime's standard extension set.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StandardExtensions {
@@ -2857,6 +3189,8 @@ pub struct StandardExtensions {
     pub ui: UiExtension,
     pub vm: VmExtension,
     pub state: StateExtension,
+    pub automation: AutomationExtension,
+    pub rts: RtsExtension,
 }
 
 /// Backend interface for `ext.net`.
@@ -2999,6 +3333,69 @@ fn expect_bool_arg(args: &[Value], index: usize, name: &'static str) -> Result<b
             "missing required argument {name} at index {index}"
         ))),
     }
+}
+
+fn expect_state_id_arg(
+    args: &[Value],
+    index: usize,
+    name: &'static str,
+) -> Result<String, HostError> {
+    let value = expect_string_arg(args, index, name)?;
+    if value.is_empty()
+        || value.contains('|')
+        || value.contains(char::is_whitespace)
+        || value.contains("..")
+    {
+        return Err(HostError::InvalidArguments(format!(
+            "expected {name} argument {index} to be a simple state id, found {value:?}"
+        )));
+    }
+    Ok(value)
+}
+
+fn automation_resource_key(name: &str) -> String {
+    if name.starts_with("resource.") || name.starts_with("inventory.") {
+        name.to_owned()
+    } else {
+        format!("resource.{name}")
+    }
+}
+
+fn state_integer(state: &StateManager, key: &str) -> i64 {
+    match state.get(key) {
+        Some(Value::Integer(value)) => value,
+        Some(Value::Bool(true)) => 1,
+        Some(Value::Bool(false)) | None => 0,
+        Some(Value::Float(value)) => value as i64,
+        _ => 0,
+    }
+}
+
+fn state_bool(state: &StateManager, key: &str) -> bool {
+    match state.get(key) {
+        Some(value) => value.truthy(),
+        None => false,
+    }
+}
+
+fn state_list_value(state: &StateManager, key: &str) -> Vec<String> {
+    match state.get(key) {
+        Some(Value::String(value)) => value
+            .split('|')
+            .filter(|part| !part.is_empty())
+            .map(str::to_owned)
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn append_state_list_value(state: &mut StateManager, key: &str, value: &str) {
+    let mut values = state_list_value(state, key);
+    if values.iter().any(|existing| existing == value) {
+        return;
+    }
+    values.push(value.to_owned());
+    state.set(key.to_owned(), Value::String(values.join("|")));
 }
 
 fn expect_color_component_arg(args: &[Value], index: usize, name: &str) -> Result<u8, HostError> {
@@ -3857,6 +4254,129 @@ mod tests {
         assert!(policy.context_menu_enabled);
         assert!(policy.shift_fast_enabled);
     }
+
+    #[test]
+    fn runtime_installs_and_executes_automation_and_rts_extensions() {
+        let mut runtime = Runtime::new(RuntimeConfig::new(PlatformProfile::native()));
+        let automation = runtime
+            .install_automation_extension()
+            .expect("install automation");
+        let rts = runtime.install_rts_extension().expect("install rts");
+
+        assert_eq!(
+            runtime
+                .extension_registry()
+                .resolve_id("ext.automation.tick"),
+            Ok(automation.tick_ext_id)
+        );
+        assert_eq!(
+            runtime.extension_registry().resolve_id("ext.rts.move_unit"),
+            Ok(rts.move_unit_ext_id)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(
+                    automation.set_resource_host_id,
+                    &[Value::String("wood".to_owned()), Value::Integer(2)]
+                )
+                .expect("set wood"),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(
+                    automation.set_job_host_id,
+                    &[
+                        Value::String("lumber".to_owned()),
+                        Value::Bool(true),
+                        Value::Integer(3),
+                        Value::String("resource.wood".to_owned()),
+                    ],
+                )
+                .expect("set lumber job"),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(automation.tick_host_id, &[Value::Integer(4)])
+                .expect("automation tick"),
+            Value::Integer(4)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(
+                    automation.resource_host_id,
+                    &[Value::String("wood".to_owned())]
+                )
+                .expect("wood amount"),
+            Value::Integer(14)
+        );
+        assert_eq!(runtime.state_value("game.tick"), Some(Value::Integer(4)));
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(
+                    rts.set_unit_host_id,
+                    &[
+                        Value::String("worker_1".to_owned()),
+                        Value::String("blue".to_owned()),
+                        Value::Integer(4),
+                        Value::Integer(5),
+                        Value::Integer(10),
+                    ],
+                )
+                .expect("set unit"),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(
+                    rts.move_unit_host_id,
+                    &[
+                        Value::String("worker_1".to_owned()),
+                        Value::Integer(8),
+                        Value::Integer(9),
+                    ],
+                )
+                .expect("move unit"),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(
+                    rts.damage_unit_host_id,
+                    &[Value::String("worker_1".to_owned()), Value::Integer(3)]
+                )
+                .expect("damage unit"),
+            Value::Integer(7)
+        );
+        assert_eq!(
+            runtime
+                .host
+                .borrow_mut()
+                .call(rts.unit_x_host_id, &[Value::String("worker_1".to_owned())])
+                .expect("unit x"),
+            Value::Integer(8)
+        );
+        assert_eq!(
+            runtime.state_value("rts.units"),
+            Some(Value::String("worker_1".to_owned()))
+        );
+    }
+
     #[test]
     fn runtime_installs_and_executes_scene_extension() {
         let mut runtime = Runtime::new(RuntimeConfig::new(PlatformProfile::native()));

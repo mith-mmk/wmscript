@@ -117,7 +117,7 @@ export func main() {
 - `CAP_NETWORK` が必要: `ext.net.*`
 - `CAP_ASYNC_IO` が必要: `ext.llm.*` / `ext.audio.*`
 - `CAP_GUI` が必要: `ext.scene.*` / `ext.message.*` / `ext.image.*`
-- `state.*` と `ext.vm.*` は platform capability 不要
+- `state.*` / `ext.vm.*` / `ext.automation.*` / `ext.rts.*` は platform capability 不要
 
 既定 profile の対応は次の表です。
 
@@ -271,6 +271,33 @@ OGG/AAC/M4A の実再生は host frontend/backend の codec 対応に依存し�
 | `state.set` | `set(key: string, value)` | `bool` | 現在の状態に値を書き込みます。 |
 | `state.erase` | `erase(key: string)` | `bool` | 現在の状態からキーを削除します。 |
 
+### 3.11 `ext.automation`
+
+必要 capability: なし
+
+| 関数 | シグネチャ | 戻り値 | 説明 |
+| --- | --- | --- | --- |
+| `ext.automation.resource` | `resource(name: string)` | `int` | `resource.<name>` を読みます。`resource.` / `inventory.` で始まる名前はそのまま扱います。 |
+| `ext.automation.set_resource` | `set_resource(name: string, amount: int)` | `bool` | resource カウンタを設定します。 |
+| `ext.automation.add_resource` | `add_resource(name: string, delta: int)` | `int` | resource カウンタへ加算し、更新後の値を返します。 |
+| `ext.automation.set_job` | `set_job(id: string, enabled: bool, rate: int, output: string)` | `bool` | `job.<id>.*` に deterministic な生産 job を登録します。 |
+| `ext.automation.enable_job` | `enable_job(id: string, enabled: bool)` | `bool` | 登録済み job の有効/無効を切り替えます。 |
+| `ext.automation.tick` | `tick(steps: int)` | `int` | `game.tick` を進め、有効な job の生産を適用します。 |
+| `ext.automation.job_progress` | `job_progress(id: string)` | `int` | `job.<id>.progress` を読みます。 |
+
+### 3.12 `ext.rts`
+
+必要 capability: なし
+
+| 関数 | シグネチャ | 戻り値 | 説明 |
+| --- | --- | --- | --- |
+| `ext.rts.set_unit` | `set_unit(id: string, team: string, x: int, y: int, hp: int)` | `bool` | `unit.<id>.*` に unit を登録または置換します。 |
+| `ext.rts.move_unit` | `move_unit(id: string, x: int, y: int)` | `bool` | unit を移動し、`move` order を記録します。 |
+| `ext.rts.unit_x` | `unit_x(id: string)` | `int` | unit の x 座標を読みます。 |
+| `ext.rts.unit_y` | `unit_y(id: string)` | `int` | unit の y 座標を読みます。 |
+| `ext.rts.unit_hp` | `unit_hp(id: string)` | `int` | unit の HP を読みます。 |
+| `ext.rts.damage_unit` | `damage_unit(id: string, amount: int)` | `int` | HP を 0 未満にならないよう減らし、更新後 HP を返します。 |
+
 ## 4. VM レベルの実行プリミティブ
 
 これは表層の「関数」ではなく VM の opcode ですが、実行モデルを読む際に重要です。
@@ -310,7 +337,6 @@ OGG/AAC/M4A の実再生は host frontend/backend の codec 対応に依存し�
 - `samples/imageaudio`
 - `samples/uiimage`
 - `samples/easynovel`
-
 
 
 

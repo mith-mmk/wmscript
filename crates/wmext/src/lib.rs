@@ -604,6 +604,42 @@ pub fn standard_extension_registry() -> Result<ExtensionRegistry> {
         ],
     )?;
     registry.register_extension(
+        "ext.automation",
+        &[
+            ExtensionFunctionSpec::new("resource", 250, 1, 1, 0)
+                .with_return_type(ExtValueType::Integer),
+            ExtensionFunctionSpec::new("set_resource", 251, 2, 2, 0)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("add_resource", 252, 2, 2, 0)
+                .with_return_type(ExtValueType::Integer),
+            ExtensionFunctionSpec::new("set_job", 253, 4, 4, 0)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("enable_job", 254, 2, 2, 0)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("tick", 255, 1, 1, 0)
+                .with_return_type(ExtValueType::Integer),
+            ExtensionFunctionSpec::new("job_progress", 256, 1, 1, 0)
+                .with_return_type(ExtValueType::Integer),
+        ],
+    )?;
+    registry.register_extension(
+        "ext.rts",
+        &[
+            ExtensionFunctionSpec::new("set_unit", 260, 5, 5, 0)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("move_unit", 261, 3, 3, 0)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("unit_x", 262, 1, 1, 0)
+                .with_return_type(ExtValueType::Integer),
+            ExtensionFunctionSpec::new("unit_y", 263, 1, 1, 0)
+                .with_return_type(ExtValueType::Integer),
+            ExtensionFunctionSpec::new("unit_hp", 264, 1, 1, 0)
+                .with_return_type(ExtValueType::Integer),
+            ExtensionFunctionSpec::new("damage_unit", 265, 2, 2, 0)
+                .with_return_type(ExtValueType::Integer),
+        ],
+    )?;
+    registry.register_extension(
         "state",
         &[
             ExtensionFunctionSpec::new("save", 170, 1, 1, 0).with_return_type(ExtValueType::Bool),
@@ -765,5 +801,23 @@ mod tests {
             registry.register_function("ext.net", "bad-name", 1, 0, 0, 0),
             Err(ExtError::InvalidFunctionName(_))
         ));
+    }
+
+    #[test]
+    fn standard_registry_includes_gameplay_extensions() {
+        let registry = standard_extension_registry().expect("standard registry");
+
+        assert_eq!(
+            registry.resolve("ext.automation.tick").unwrap().host_id,
+            255
+        );
+        assert_eq!(registry.resolve("ext.rts.move_unit").unwrap().host_id, 261);
+        assert_eq!(
+            registry
+                .resolve("ext.automation.set_job")
+                .unwrap()
+                .return_type(),
+            Some(ExtValueType::Bool)
+        );
     }
 }
