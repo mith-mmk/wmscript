@@ -40,7 +40,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     for asset in &args.assets {
         let payload = fs::read(&asset.path)?;
         let section_id = 10 + project.assets.len() as u32;
-        let resource_id = next_resource_id(&project, asset.resource_type);
+        let resource_id = asset
+            .resource_id
+            .unwrap_or_else(|| next_resource_id(&project, asset.resource_type));
         project = project.push_asset(match asset.resource_type {
             ResourceType::Image => {
                 GameAsset::image(asset.name.clone(), section_id, resource_id, payload)
@@ -163,6 +165,7 @@ struct CliAsset {
     name: String,
     path: PathBuf,
     resource_type: ResourceType,
+    resource_id: Option<u32>,
 }
 
 #[derive(Debug)]
@@ -190,11 +193,25 @@ fn parse_typed_asset_spec(
     let (name, path) = spec
         .split_once('=')
         .ok_or("asset must be specified as NAME=PATH")?;
+    let (name, resource_id) = parse_asset_name_and_resource_id(name)?;
     Ok(CliAsset {
-        name: name.to_owned(),
+        name,
         path: PathBuf::from(path),
         resource_type,
+        resource_id,
     })
+}
+
+fn parse_asset_name_and_resource_id(
+    name: &str,
+) -> Result<(String, Option<u32>), Box<dyn std::error::Error>> {
+    let Some((name, resource_id)) = name.rsplit_once('@') else {
+        return Ok((name.to_owned(), None));
+    };
+    if name.is_empty() {
+        return Err("asset name is empty".into());
+    }
+    Ok((name.to_owned(), Some(resource_id.parse()?)))
 }
 
 fn next_resource_id(project: &GameProject, resource_type: ResourceType) -> u32 {
@@ -232,7 +249,7 @@ fn parse_platform(value: &str) -> Result<PlatformProfile, Box<dyn std::error::Er
 
 fn print_usage() {
     eprintln!(
-        "usage: wmtoolchain <script.wms> [--engine FILE] [--ui FILE] [--loader FILE] [--frontend FILE] [--middleware FILE] [--background FILE] [--package NAME] [--out FILE] [--step-limit N] [--platform native|wasm|egui] [--release] [--asset NAME=PATH] [--image NAME=PATH] [--audio NAME=PATH]"
+        "usage: wmtoolchain <script.wms> [--engine FILE] [--ui FILE] [--loader FILE] [--frontend FILE] [--middleware FILE] [--background FILE] [--package NAME] [--out FILE] [--step-limit N] [--platform native|wasm|egui] [--release] [--asset NAME[@ID]=PATH] [--image NAME[@ID]=PATH] [--audio NAME[@ID]=PATH]"
     );
 }
 
@@ -246,6 +263,17 @@ mod tests {
         assert_eq!(asset.name, "bgm/town");
         assert_eq!(asset.path, PathBuf::from("assets/town-loop.wav"));
         assert_eq!(asset.resource_type, ResourceType::Audio);
+        assert_eq!(asset.resource_id, None);
+    }
+
+    #[test]
+    fn parse_audio_cli_asset_with_explicit_resource_id() {
+        let asset = parse_audio_spec("rpg/stone-chime@203=assets/stone-chime.wav")
+            .expect("parse audio with id");
+        assert_eq!(asset.name, "rpg/stone-chime");
+        assert_eq!(asset.path, PathBuf::from("assets/stone-chime.wav"));
+        assert_eq!(asset.resource_type, ResourceType::Audio);
+        assert_eq!(asset.resource_id, Some(203));
     }
 
     #[test]

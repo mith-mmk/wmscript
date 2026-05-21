@@ -27,3 +27,21 @@ export func main() {
 - A choice panel appears near the top center.
 - A message window appears across the bottom.
 - The input field is shown inside the message window.
+
+## Smoke
+
+```powershell
+New-Item -ItemType Directory -Force .test-samples
+
+cargo run -p wmtoolchain --bin wmtoolchain -- samples/uiimage/main.wms `
+  --package uiimage `
+  --platform egui `
+  --image ui/background@100=samples/uiimage.png `
+  --out .test-samples/uiimage.warc
+
+cargo run -p wmfrontend --bin wmautoui -- .test-samples/uiimage.warc `
+  --platform egui `
+  --expect "UI image layout demo" `
+  --expect-image-resource 100 `
+  --quiet
+```

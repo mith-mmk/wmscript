@@ -1,3 +1,4 @@
 export func main() {
-    return load_asset(100);
+    asset.preload(100);
+    return "assetload-ok";
 }

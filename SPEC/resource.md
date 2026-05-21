@@ -245,11 +245,15 @@ LZ4 / Zstd
 image → PNG / raw / GPU format
 audio → DAW exported final files (`wav`, `mp3`, `ogg`, `aac`, `m4a`)
 
-v1 では音声を変換しない。`wmtoolchain` / `wmfrontend` は `--audio NAME=PATH`
+v1 では音声を変換しない。`wmtoolchain` / `wmfrontend` は `--audio NAME[@ID]=PATH`
 または project config の `audio` セクションで指定されたファイルをそのまま
 `ResourceType::Audio` として archive に格納する。MIDI と DAW project file は
 resource 仕様の対象外で、OGG/AAC/M4A の実再生は host frontend/backend の codec
 対応に依存する。
+
+`@ID` と project config の `resource_id` は省略可能で、省略時は従来どおり
+audio は `200..`、image/script-data は `100..` から自動採番する。固定 demo や
+外部差し替えスロットの ABI を保つ場合だけ明示する。
 
 13.3 デコード層
 archive → raw → decoded → runtime

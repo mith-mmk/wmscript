@@ -1,20 +1,22 @@
 # Worker Communication Sample
 
-This sample demonstrates one worker sending a string to another worker.
+`main.wms` is kept as a current WMScript smoke sample:
 
-Source:
-
-```wm
-worker sender {
-    send 2, "hello worker";
-}
-
-worker receiver {
-    return recv();
+```wms
+export func main() {
+    return "hello worker";
 }
 ```
 
-Runtime behavior:
+Run it with:
 
-- Worker 1 sends a payload to worker 2.
-- Worker 2 receives the payload and returns it.
+```powershell
+cargo run -p wmfrontend --bin wmfrontend -- samples/workercomm/main.wms --platform native
+```
+
+The actual low-level multi-worker send/recv example is currently a runtime
+bytecode example:
+
+```powershell
+cargo run -p wmruntime --example worker_comm
+```

@@ -1,72 +1,191 @@
 # Samples Run Catalog
 
-このファイルはサンプル実行の単一入口です。
+このファイルはサンプル実行の単一入口です。コピーして動く smoke コマンドだけを載せています。
+archive を作るサンプルはすべて `.test-samples/` に出力します。
 
-## Run Matrix
-
-| Sample | Purpose | Script Run (wmfrontend) | Demo/Example Run | Toolchain Build |
-| --- | --- | --- | --- | --- |
-| `helloworld` | 定数畳み込みの最小例 | `cargo run -p wmfrontend --bin wmfrontend -- samples/helloworld/main.wms --platform native` | `cargo run -p wmruntime --example hello_runtime` | `cargo run -p wmtoolchain --bin wmtoolchain -- samples/helloworld/main.wms --out releases/helloworld-cycle.warc` |
-| `inputlink` | ホスト入力連携 | `cargo run -p wmfrontend --bin wmfrontend -- samples/inputlink/main.wms --platform native` | `cargo run -p wmruntime --example input_link` | `cargo run -p wmtoolchain --bin wmtoolchain -- samples/inputlink/main.wms` |
-| `workercomm` | worker 間通信 | `cargo run -p wmfrontend --bin wmfrontend -- samples/workercomm/main.wms --platform native` | `cargo run -p wmruntime --example worker_comm` | `cargo run -p wmtoolchain --bin wmtoolchain -- samples/workercomm/main.wms` |
-| `engineworker` | engine 主導 message/choice/input | `cargo run -p wmfrontend --bin wmfrontend -- samples/engineworker/main.wms --platform egui --font noto` | `cargo run -p wmfrontend --bin wmfrontend -- --demo engineworker --platform egui --font noto` | `cargo run -p wmtoolchain --bin wmtoolchain -- samples/engineworker/main.wms --platform egui` |
-| `messagewindow` | message window 専用検証 | `cargo run -p wmfrontend --bin wmfrontend -- samples/messagewindow/main.wms --platform egui --font noto` | `cargo run -p wmfrontend --bin wmfrontend -- --demo messagewindow --platform egui --font noto` | `cargo run -p wmtoolchain --bin wmtoolchain -- samples/messagewindow/main.wms --platform egui` |
-| `assetload` | archive/resource load | `cargo run -p wmfrontend --bin wmfrontend -- samples/assetload/main.wms --platform native` | `cargo run -p wmruntime --example asset_load` | `cargo run -p wmtoolchain --bin wmtoolchain -- samples/assetload/main.wms` |
-| `uiimage` | scene/layout + image draw | `cargo run -p wmfrontend --bin wmfrontend -- samples/uiimage/main.wms --platform egui --font noto --image ui/background=samples/uiimage.png` | `cargo run -p wmfrontend --bin wmfrontend -- --demo uiimage --platform egui --font noto` | `cargo run -p wmtoolchain --bin wmtoolchain -- samples/uiimage/main.wms --platform egui --image ui/background=samples/uiimage.png` |
-| `imageaudio` | image + audio 統合 | `cargo run -p wmfrontend --bin wmfrontend -- samples/imageaudio/main.wms --platform egui --font noto` | `cargo run -p wmfrontend --example image_audio_demo` | `cargo run -p wmtoolchain --bin wmtoolchain -- samples/imageaudio/main.wms --platform egui` |
-| `easynovel` | writer-first VN flow | `cargo run -p wmfrontend --bin wmfrontend -- samples/easynovel/main.wms --platform egui --font noto --image ui/message_frame=samples/easynovel/message_frame.png` | `cargo run -p wmruntime --example easynovel` | `cargo run -p wmtoolchain --bin wmtoolchain -- samples/easynovel/main.wms --platform egui --image ui/message_frame=samples/easynovel/message_frame.png` |
-| `novelgame` | branching Japanese VN story with ui/loader/engine packages | `cargo run -p wmfrontend --bin wmfrontend -- samples/novelgame` | `cargo run -p wmfrontend --bin wmautoui -- .test-novelgame/novelgame.warc --platform egui --choice sea --expect ending-fog-harbor --expect-image-resource 101` | `cargo run -p wmtoolchain --bin wmtoolchain -- samples/novelgame/engine/main.wms --package novelgame --platform egui --ui samples/novelgame/ui/main.wms --loader samples/novelgame/loader/main.wms --image scene/common=samples/novelgame/background.png --image scene/sea=samples/novelgame/sea.png --image scene/shelf=samples/novelgame/shelf.png --image scene/lamp=samples/novelgame/lamp.png --out .test-novelgame/novelgame.warc` |
-| `rpgdemo` | gameplay v1 RPG sample with 2D/3D map, event, and battle modes | `cargo run -p wmfrontend --bin wmfrontend -- samples/rpgdemo` | `cargo run -p wmfrontend --bin wmautoui -- .test-rpgdemo/rpgdemo.warc --platform egui --choices east,forest,south,forward,turn_right,forward,check,end_demo --expect rpg-3d-ruins` | `cargo run -p wmtoolchain --bin wmtoolchain -- samples/rpgdemo/engine/main.wms --package rpgdemo --platform egui --ui samples/rpgdemo/ui/main.wms --loader samples/rpgdemo/loader/main.wms --image rpg/town=samples/rpgdemo/assets/town.png --image rpg/forest=samples/rpgdemo/assets/forest.png --image rpg/stone-event=samples/rpgdemo/assets/stone-event.png --image rpg/battle-slime=samples/rpgdemo/assets/battle-slime.png --image rpg/icons=samples/rpgdemo/assets/rpg-icons.png --image rpg/map-icons=samples/rpgdemo/assets/map-icons.png --image rpg/ruins-3d=samples/rpgdemo/assets/ruins-3d.png --out .test-rpgdemo/rpgdemo.warc` |
-| `automationrts` | automation / RTS state extension sample with jobs, resources, ticks, and units | `cargo run -p wmfrontend --bin wmfrontend -- samples/automationrts/main.wms --platform egui --font noto` | `cargo run -p wmfrontend --bin wmautoui -- .test-automationrts/automationrts.warc --platform egui --choices tick,build --expect automation-rts-built` | `cargo run -p wmtoolchain --bin wmtoolchain -- samples/automationrts/main.wms --package automationrts --platform egui --out .test-automationrts/automationrts.warc` |
-| `toolchainnovel` | packaged novel game for toolchain proof | `cargo run -p wmfrontend --bin wmfrontend -- samples/toolchainnovel/main.wms --platform egui --font noto --asset story/guide=samples/toolchainnovel/guide.txt --image ui/background=samples/uiimage.png` | `cargo run -p wmfrontend --bin wmautoui -- .test-toolchainnovel/toolchainnovel.warc --platform egui --choice repair --input lumen --expect signal-restored` | `cargo run -p wmtoolchain --bin wmtoolchain -- samples/toolchainnovel/main.wms --package toolchainnovel --platform egui --asset story/guide=samples/toolchainnovel/guide.txt --image ui/background=samples/uiimage.png --out .test-toolchainnovel/toolchainnovel.warc` |
-| `splitimport` | 分割スクリプト + nested import | `cargo run -p wmfrontend --bin wmfrontend -- samples/splitimport/main.wms --platform native` | - | `cargo run -p wmtoolchain --bin wmtoolchain -- samples/splitimport/main.wms --platform native` |
-
-## End-to-End Pipeline
-
-```bash
-# 1) build archive
-cargo run -p wmtoolchain --bin wmtoolchain -- samples/helloworld/main.wms --out releases/helloworld-cycle.warc
-
-# 2) run archive directly
-cargo run -p wmfrontend --bin wmfrontend -- releases/helloworld-cycle.warc --platform native
-```
-
-For the Writer-First toolchain proof, use the packaged novel sample:
+## Setup
 
 ```powershell
-New-Item -ItemType Directory -Force .test-toolchainnovel
-cargo run -p wmtoolchain --bin wmtoolchain -- samples/toolchainnovel/main.wms --package toolchainnovel --platform egui --asset story/guide=samples/toolchainnovel/guide.txt --image ui/background=samples/uiimage.png --out .test-toolchainnovel/toolchainnovel.warc
-cargo run -p wmfrontend --bin wmautoui -- .test-toolchainnovel/toolchainnovel.warc --platform egui --choice repair --input lumen --expect signal-restored
-cargo run -p wmfrontend --bin wmfrontend -- .test-toolchainnovel/toolchainnovel.warc --platform egui --font noto
+New-Item -ItemType Directory -Force .test-samples
 ```
 
-## Auto CLI UI Test (B12)
+## Basic Scripts
 
-AI などの自動実行環境で `recv()` 待ちを進めるために、`wmfrontend` には
-headless の自動応答 CLI が追加されています。
+```powershell
+cargo run -p wmfrontend --bin wmfrontend -- samples/helloworld/main.wms --platform native
 
-```bash
-# input を自動投入して戻り値を検証
-cargo run -p wmfrontend --bin wmautoui -- samples/inputlink/main.wms --input AI-INPUT --expect AI-INPUT
+cargo run -p wmfrontend --bin wmautoui -- samples/inputlink/main.wms `
+  --platform egui `
+  --input AI-INPUT `
+  --expect AI-INPUT `
+  --quiet
 
-# choice + input を自動応答
-cargo run -p wmfrontend --bin wmautoui -- samples/messagewindow/main.wms --choice north --input Mika
+cargo run -p wmfrontend --bin wmfrontend -- samples/workercomm/main.wms --platform native
 
-# chapter choice の自動進行
-cargo run -p wmfrontend --bin wmautoui -- samples/easynovel/main.wms --choice prologue --max-rounds 1024
+cargo run -p wmruntime --example worker_comm
 
-# branching novel ending
-New-Item -ItemType Directory -Force .test-novelgame
-cargo run -p wmtoolchain --bin wmtoolchain -- samples/novelgame/engine/main.wms --package novelgame --platform egui --ui samples/novelgame/ui/main.wms --loader samples/novelgame/loader/main.wms --image scene/common=samples/novelgame/background.png --image scene/sea=samples/novelgame/sea.png --image scene/shelf=samples/novelgame/shelf.png --image scene/lamp=samples/novelgame/lamp.png --out .test-novelgame/novelgame.warc
-cargo run -p wmfrontend --bin wmautoui -- .test-novelgame/novelgame.warc --platform egui --choice sea --expect ending-fog-harbor --expect-image-resource 101
+cargo run -p wmfrontend --bin wmautoui -- samples/splitimport/main.wms `
+  --platform egui `
+  --expect "split import ok" `
+  --quiet
+```
 
-# packaged toolchain novel route
-cargo run -p wmfrontend --bin wmautoui -- .test-toolchainnovel/toolchainnovel.warc --platform egui --choice repair --input lumen --expect signal-restored
+## Message UI
+
+```powershell
+cargo run -p wmfrontend --bin wmautoui -- samples/messagewindow/main.wms `
+  --platform egui `
+  --choice north `
+  --input Mika `
+  --quiet
+
+cargo run -p wmfrontend --bin wmautoui -- samples/engineworker/main.wms `
+  --platform egui `
+  --choice prologue `
+  --input Aki `
+  --quiet
+```
+
+## Asset / Image / Audio
+
+```powershell
+cargo run -p wmtoolchain --bin wmtoolchain -- samples/assetload/main.wms `
+  --package assetload `
+  --platform egui `
+  --asset data/payload@100=samples/assetload/payload.txt `
+  --out .test-samples/assetload.warc
+
+cargo run -p wmfrontend --bin wmautoui -- .test-samples/assetload.warc `
+  --platform egui `
+  --expect assetload-ok `
+  --quiet
+
+cargo run -p wmtoolchain --bin wmtoolchain -- samples/uiimage/main.wms `
+  --package uiimage `
+  --platform egui `
+  --image ui/background@100=samples/uiimage.png `
+  --out .test-samples/uiimage.warc
+
+cargo run -p wmfrontend --bin wmautoui -- .test-samples/uiimage.warc `
+  --platform egui `
+  --expect "UI image layout demo" `
+  --expect-image-resource 100 `
+  --quiet
+
+cargo run -p wmtoolchain --bin wmtoolchain -- samples/imageaudio/main.wms `
+  --package imageaudio `
+  --platform egui `
+  --image demo/sample@100=samples/audio_and_images/sample01.jpg `
+  --audio demo/chime@200=samples/audio_and_images/sample.wav `
+  --out .test-samples/imageaudio.warc
+
+cargo run -p wmfrontend --bin wmautoui -- .test-samples/imageaudio.warc `
+  --platform egui `
+  --expect-audio-resource 200 `
+  --quiet
+```
+
+## Novel / Game Samples
+
+```powershell
+cargo run -p wmtoolchain --bin wmtoolchain -- samples/easynovel/main.wms `
+  --package easynovel `
+  --platform egui `
+  --image ui/message_frame@100=samples/easynovel/message_frame.png `
+  --out .test-samples/easynovel.warc
+
+cargo run -p wmfrontend --bin wmautoui -- .test-samples/easynovel.warc `
+  --platform egui `
+  --choice prologue `
+  --quiet
+
+cargo run -p wmtoolchain --bin wmtoolchain -- samples/novelgame/engine/main.wms `
+  --package novelgame `
+  --platform egui `
+  --ui samples/novelgame/ui/main.wms `
+  --loader samples/novelgame/loader/main.wms `
+  --image scene/common@100=samples/novelgame/background.png `
+  --image scene/sea@101=samples/novelgame/sea.png `
+  --image scene/shelf@102=samples/novelgame/shelf.png `
+  --image scene/lamp@103=samples/novelgame/lamp.png `
+  --out .test-samples/novelgame.warc
+
+cargo run -p wmfrontend --bin wmautoui -- .test-samples/novelgame.warc `
+  --platform egui `
+  --choice sea `
+  --expect ending-fog-harbor `
+  --expect-image-resource 101 `
+  --quiet
+
+cargo run -p wmtoolchain --bin wmtoolchain -- samples/toolchainnovel/main.wms `
+  --package toolchainnovel `
+  --platform egui `
+  --asset story/guide@100=samples/toolchainnovel/guide.txt `
+  --image ui/background@101=samples/uiimage.png `
+  --out .test-samples/toolchainnovel.warc
+
+cargo run -p wmfrontend --bin wmautoui -- .test-samples/toolchainnovel.warc `
+  --platform egui `
+  --choice repair `
+  --input lumen `
+  --expect signal-restored `
+  --quiet
+```
+
+## Gameplay Samples
+
+```powershell
+cargo run -p wmtoolchain --bin wmtoolchain -- samples/automationrts/main.wms `
+  --package automationrts `
+  --platform egui `
+  --out .test-samples/automationrts.warc
+
+cargo run -p wmfrontend --bin wmautoui -- .test-samples/automationrts.warc `
+  --platform egui `
+  --choices tick,build `
+  --expect automation-rts-built `
+  --quiet
+
+cargo run -p wmtoolchain --bin wmtoolchain -- samples/rpgdemo/engine/main.wms `
+  --package rpgdemo `
+  --platform egui `
+  --ui samples/rpgdemo/ui/main.wms `
+  --loader samples/rpgdemo/loader/main.wms `
+  --image rpg/town-map@100=samples/rpgdemo/assets/town-map.png `
+  --image rpg/forest-map@101=samples/rpgdemo/assets/forest-map.png `
+  --image rpg/dungeon-map@102=samples/rpgdemo/assets/dungeon-map.png `
+  --image rpg/battle-slime@103=samples/rpgdemo/assets/battle-slime.png `
+  --image rpg/actor-icons@104=samples/rpgdemo/assets/actor-icons.png `
+  --image rpg/landmark-icons@105=samples/rpgdemo/assets/landmark-icons.png `
+  --image rpg/dungeon-view@106=samples/rpgdemo/assets/dungeon-view.png `
+  --audio rpg/stone-chime@203=samples/rpgdemo/assets/stone-chime.wav `
+  --audio rpg/battle-hit@204=samples/rpgdemo/assets/battle-hit.wav `
+  --out .test-samples/rpgdemo.warc
+
+cargo run -p wmfrontend --bin wmautoui -- .test-samples/rpgdemo.warc `
+  --platform egui `
+  --choices east,east,forest,south,south,forward,turn_right,forward,check,end_demo `
+  --expect rpg-dungeon-depth `
+  --quiet
+```
+
+## Interactive Launch
+
+GUI で触る場合は、project config を持つサンプルは directory 指定で起動できます。
+
+```powershell
+cargo run -p wmfrontend --bin wmfrontend -- samples/novelgame
+cargo run -p wmfrontend --bin wmfrontend -- samples/rpgdemo
+```
+
+## Cleanup
+
+```powershell
+Remove-Item -LiteralPath .test-samples -Recurse -Force
 ```
 
 ## Notes
 
-- `wmfrontend` は `<script.wms>` と `<archive.warc>` の両方を受け付けます。
-- `--demo` は script ファイル不要の組み込みデモです。
-- writer-first 契約に合わせ、choice/input は `recv()` 後に `state.get("ui.last_choice")` / `state.get("ui.last_input")` を読む実装を推奨します。
-- サンプル個別の挙動は各ディレクトリの `README.md` を参照してください。
+- `wmautoui` は script/archive の自動応答用です。asset/image/audio を渡す smoke は先に `wmtoolchain` で `.warc` を作ってから実行します。
+- `NAME@ID=PATH` は resource id を固定する書式です。省略時は従来どおり image/script-data が `100..`、audio が `200..` から自動採番されます。
+- サンプル個別の挙動は各ディレクトリの `README.md` も参照してください。

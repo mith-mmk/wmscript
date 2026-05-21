@@ -9,8 +9,8 @@ Source:
 export func main() {
     ext.message.clear();
     ext.message.log_clear();
-    ext.message.prompt("Type any text");
     ext.message.show("InputLink", "Enter text and submit to return it from script.");
+    ext.message.prompt("Type any text");
     recv();
     let value = state.get("ui.last_input");
     ext.message.prompt();
@@ -28,3 +28,4 @@ Run examples:
 
 - `cargo run -p wmfrontend --bin wmfrontend -- samples/inputlink/main.wms --platform native`
 - `cargo run -p wmruntime --example input_link`
+- `cargo run -p wmfrontend --bin wmautoui -- samples/inputlink/main.wms --platform egui --input AI-INPUT --expect AI-INPUT --quiet`

@@ -33,10 +33,10 @@ cargo run -p wmtoolchain --bin wmtoolchain -- samples/novelgame/engine/main.wms 
   --platform egui `
   --ui samples/novelgame/ui/main.wms `
   --loader samples/novelgame/loader/main.wms `
-  --image scene/common=samples/novelgame/background.png `
-  --image scene/sea=samples/novelgame/sea.png `
-  --image scene/shelf=samples/novelgame/shelf.png `
-  --image scene/lamp=samples/novelgame/lamp.png `
+  --image scene/common@100=samples/novelgame/background.png `
+  --image scene/sea@101=samples/novelgame/sea.png `
+  --image scene/shelf@102=samples/novelgame/shelf.png `
+  --image scene/lamp@103=samples/novelgame/lamp.png `
   --out .test-novelgame/novelgame.warc
 
 cargo run -p wmfrontend --bin wmautoui -- .test-novelgame/novelgame.warc --platform egui --choice sea --expect ending-fog-harbor --expect-image-resource 101

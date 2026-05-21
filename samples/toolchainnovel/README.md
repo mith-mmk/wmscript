@@ -30,8 +30,8 @@ New-Item -ItemType Directory -Force .test-toolchainnovel
 cargo run -p wmtoolchain --bin wmtoolchain -- samples/toolchainnovel/main.wms `
   --package toolchainnovel `
   --platform egui `
-  --asset story/guide=samples/toolchainnovel/guide.txt `
-  --image ui/background=samples/uiimage.png `
+  --asset story/guide@100=samples/toolchainnovel/guide.txt `
+  --image ui/background@101=samples/uiimage.png `
   --out .test-toolchainnovel/toolchainnovel.warc
 
 cargo run -p wmfrontend --bin wmautoui -- .test-toolchainnovel/toolchainnovel.warc `

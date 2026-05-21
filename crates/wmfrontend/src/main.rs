@@ -82,7 +82,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         for asset in &launch.assets {
             let payload = fs::read(&asset.path)?;
             let section_id = 10 + project.assets.len() as u32;
-            let resource_id = next_resource_id(&project, asset.resource_type);
+            let resource_id = asset
+                .resource_id
+                .unwrap_or_else(|| next_resource_id(&project, asset.resource_type));
             project = project.push_asset(match asset.resource_type {
                 ResourceType::Image => {
                     GameAsset::image(asset.name.clone(), section_id, resource_id, payload)
@@ -341,6 +343,7 @@ impl LaunchArgs {
                 name: asset.name,
                 path: base_dir.join(asset.path),
                 resource_type: asset.resource_type,
+                resource_id: asset.resource_id,
             }));
             if let Some(path) = loaded.middleware {
                 extra_scripts.push(CliScript {
@@ -399,6 +402,7 @@ struct CliAsset {
     name: String,
     path: PathBuf,
     resource_type: ResourceType,
+    resource_id: Option<u32>,
 }
 
 #[derive(Debug)]
@@ -437,6 +441,7 @@ struct ProjectConfigAsset {
     name: String,
     path: PathBuf,
     resource_type: ResourceType,
+    resource_id: Option<u32>,
 }
 
 #[derive(Debug)]
@@ -452,11 +457,25 @@ fn parse_asset_spec(
     let (name, path) = spec
         .split_once('=')
         .ok_or("asset must be specified as NAME=PATH")?;
+    let (name, resource_id) = parse_asset_name_and_resource_id(name)?;
     Ok(CliAsset {
-        name: name.to_owned(),
+        name,
         path: PathBuf::from(path),
         resource_type,
+        resource_id,
     })
+}
+
+fn parse_asset_name_and_resource_id(
+    name: &str,
+) -> Result<(String, Option<u32>), Box<dyn std::error::Error>> {
+    let Some((name, resource_id)) = name.rsplit_once('@') else {
+        return Ok((name.to_owned(), None));
+    };
+    if name.is_empty() {
+        return Err("asset name is empty".into());
+    }
+    Ok((name.to_owned(), Some(resource_id.parse()?)))
 }
 
 fn should_resolve_project_config(path: &Path) -> bool {
@@ -649,6 +668,7 @@ struct ProjectConfigAssetBuilder {
     name: Option<String>,
     path: Option<PathBuf>,
     resource_type: ResourceType,
+    resource_id: Option<u32>,
 }
 
 impl ProjectConfigAssetBuilder {
@@ -657,6 +677,7 @@ impl ProjectConfigAssetBuilder {
             name: None,
             path: None,
             resource_type,
+            resource_id: None,
         }
     }
 }
@@ -722,6 +743,7 @@ fn apply_asset_config_value(
     match key {
         "name" => asset.name = Some(value),
         "path" | "file" => asset.path = Some(PathBuf::from(value)),
+        "resource_id" | "resource-id" | "id" => asset.resource_id = Some(value.parse()?),
         other => return Err(format!("unknown asset config key: {other}").into()),
     }
     Ok(())
@@ -740,6 +762,7 @@ fn finish_config_asset(
         name,
         path,
         resource_type: asset.resource_type,
+        resource_id: asset.resource_id,
     });
     Ok(())
 }
@@ -810,7 +833,7 @@ fn next_resource_id(project: &GameProject, resource_type: ResourceType) -> u32 {
 
 fn print_usage() {
     eprintln!(
-        "usage: wmfrontend [--demo uiimage|image-audio|engineworker|messagewindow | <script.wms> | <archive.warc> | <project-without-extension> | --archive FILE] [--engine FILE] [--ui FILE] [--loader FILE] [--frontend FILE] [--middleware FILE] [--background FILE] [--package NAME] [--step-limit N] [--platform native|wasm|egui] [--font noto|default|mono] [--asset NAME=PATH] [--image NAME=PATH] [--audio NAME=PATH]"
+        "usage: wmfrontend [--demo uiimage|image-audio|engineworker|messagewindow | <script.wms> | <archive.warc> | <project-without-extension> | --archive FILE] [--engine FILE] [--ui FILE] [--loader FILE] [--frontend FILE] [--middleware FILE] [--background FILE] [--package NAME] [--step-limit N] [--platform native|wasm|egui] [--font noto|default|mono] [--asset NAME[@ID]=PATH] [--image NAME[@ID]=PATH] [--audio NAME[@ID]=PATH]"
     );
 }
 
@@ -853,6 +876,7 @@ path = "background.png"
 [[audio]]
 name = "bgm/town"
 path = "town-loop.wav"
+resource_id = 203
 "#,
         )
         .expect("parse toml config");
@@ -886,6 +910,7 @@ path = "town-loop.wav"
         assert_eq!(config.assets[0].resource_type, ResourceType::ScriptData);
         assert_eq!(config.assets[1].resource_type, ResourceType::Image);
         assert_eq!(config.assets[2].resource_type, ResourceType::Audio);
+        assert_eq!(config.assets[2].resource_id, Some(203));
     }
 
     #[test]
@@ -906,6 +931,7 @@ images:
 audio:
   - name: bgm/town
     path: town-loop.wav
+    resource_id: 203
 "#,
         )
         .expect("parse yaml config");
@@ -925,6 +951,7 @@ audio:
         assert_eq!(config.assets[0].resource_type, ResourceType::ScriptData);
         assert_eq!(config.assets[1].resource_type, ResourceType::Image);
         assert_eq!(config.assets[2].resource_type, ResourceType::Audio);
+        assert_eq!(config.assets[2].resource_id, Some(203));
     }
 
     #[test]
@@ -943,6 +970,26 @@ audio:
         assert_eq!(args.assets[0].name, "bgm/town");
         assert_eq!(args.assets[0].path, PathBuf::from("assets/town-loop.wav"));
         assert_eq!(args.assets[0].resource_type, ResourceType::Audio);
+        assert_eq!(args.assets[0].resource_id, None);
+    }
+
+    #[test]
+    fn parse_audio_cli_asset_with_explicit_resource_id() {
+        let args = CliArgs::parse(
+            [
+                "main.wms".to_owned(),
+                "--audio".to_owned(),
+                "rpg/stone-chime@203=assets/stone-chime.wav".to_owned(),
+            ]
+            .into_iter(),
+        )
+        .expect("parse args");
+
+        assert_eq!(args.assets.len(), 1);
+        assert_eq!(args.assets[0].name, "rpg/stone-chime");
+        assert_eq!(args.assets[0].path, PathBuf::from("assets/stone-chime.wav"));
+        assert_eq!(args.assets[0].resource_type, ResourceType::Audio);
+        assert_eq!(args.assets[0].resource_id, Some(203));
     }
 
     #[test]

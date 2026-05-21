@@ -15,49 +15,46 @@ name = "engine"
 entry = "engine/main.wms"
 
 [[image]]
-name = "rpg/town"
-path = "assets/town.png"
+name = "rpg/town-map"
+path = "assets/town-map.png"
+resource_id = 100
 
 [[image]]
-name = "rpg/forest"
-path = "assets/forest.png"
+name = "rpg/forest-map"
+path = "assets/forest-map.png"
+resource_id = 101
 
 [[image]]
-name = "rpg/stone-event"
-path = "assets/stone-event.png"
+name = "rpg/dungeon-map"
+path = "assets/dungeon-map.png"
+resource_id = 102
 
 [[image]]
 name = "rpg/battle-slime"
 path = "assets/battle-slime.png"
+resource_id = 103
 
 [[image]]
-name = "rpg/icons"
-path = "assets/rpg-icons.png"
+name = "rpg/actor-icons"
+path = "assets/actor-icons.png"
+resource_id = 104
 
 [[image]]
-name = "rpg/map-icons"
-path = "assets/map-icons.png"
+name = "rpg/landmark-icons"
+path = "assets/landmark-icons.png"
+resource_id = 105
 
 [[image]]
-name = "rpg/ruins-3d"
-path = "assets/ruins-3d.png"
-
-[[audio]]
-name = "rpg/town-loop"
-path = "assets/town-loop.wav"
-
-[[audio]]
-name = "rpg/forest-loop"
-path = "assets/forest-loop.wav"
-
-[[audio]]
-name = "rpg/dungeon-loop"
-path = "assets/dungeon-loop.wav"
+name = "rpg/dungeon-view"
+path = "assets/dungeon-view.png"
+resource_id = 106
 
 [[audio]]
 name = "rpg/stone-chime"
 path = "assets/stone-chime.wav"
+resource_id = 203
 
 [[audio]]
 name = "rpg/battle-hit"
 path = "assets/battle-hit.wav"
+resource_id = 204

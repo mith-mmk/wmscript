@@ -81,13 +81,24 @@ Runtime behavior:
 
 Run examples:
 
-- `cargo run -p wmfrontend --bin wmfrontend -- samples/easynovel/main.wms --platform egui --font noto --image ui/message_frame=samples/easynovel/message_frame.png`
-- `cargo run -p wmfrontend --bin wmfrontend -- samples/easynovel/main.wms --platform native --image ui/message_frame=samples/easynovel/message_frame.png`
+- `cargo run -p wmfrontend --bin wmfrontend -- samples/easynovel/main.wms --platform egui --font noto --image ui/message_frame@100=samples/easynovel/message_frame.png`
 - `cargo run -p wmruntime --example easynovel`
 
-
-
-
-
-
 The sample ships with `message_frame.png`. When launched through `wmfrontend`, the first `--image` asset gets resource id `100`, so the script can bind it directly with `ext.message.frame(100)`.
+
+Smoke:
+
+```powershell
+New-Item -ItemType Directory -Force .test-samples
+
+cargo run -p wmtoolchain --bin wmtoolchain -- samples/easynovel/main.wms `
+  --package easynovel `
+  --platform egui `
+  --image ui/message_frame@100=samples/easynovel/message_frame.png `
+  --out .test-samples/easynovel.warc
+
+cargo run -p wmfrontend --bin wmautoui -- .test-samples/easynovel.warc `
+  --platform egui `
+  --choice prologue `
+  --quiet
+```
