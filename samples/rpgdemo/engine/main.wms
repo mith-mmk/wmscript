@@ -153,12 +153,15 @@ export func main() {
                     "end_demo", "デモ終了"
                 );
             } else {
-                text.show("町区画", "石畳の路地が続いています。");
+                text.show("町区画", "石畳の路地が続いています。迷ったら広場か東門へ戻れます。");
                 text.choices_named(
                     "north", "北へ",
                     "south", "南へ",
                     "east", "東へ",
-                    "west", "西へ"
+                    "west", "西へ",
+                    "return_town", "広場へ戻る",
+                    "gate", "東門へ戻る",
+                    "end_demo", "デモ終了"
                 );
             }
             recv();
@@ -192,6 +195,21 @@ export func main() {
                 } else {
                     state.set("map.last_blocked", true);
                 }
+            }
+
+            if action == "north" || action == "south" || action == "east" || action == "west" {
+                let moved_x = state.get("map.x");
+                let moved_y = state.get("map.y");
+                state.set("map.path_ok", false);
+                if moved_y == 32 && moved_x >= 30 && moved_x <= 32 {
+                    state.set("map.path_ok", true);
+                }
+
+                if state.get("map.path_ok") == false {
+                    state.set("map.x", x);
+                    state.set("map.y", y);
+                    state.set("map.last_blocked", true);
+                }
             } else if action == "forest" {
                 state.set("map.current", "forest");
                 state.set("map.x", 2);
@@ -199,6 +217,14 @@ export func main() {
                 state.set("map.z", 0);
                 state.set("map.transition", "town_to_forest");
                 state.set("flag.map_switched", true);
+            } else if action == "return_town" {
+                state.set("map.x", 30);
+                state.set("map.y", 32);
+                state.set("map.transition", "town_return_to_plaza");
+            } else if action == "gate" {
+                state.set("map.x", 32);
+                state.set("map.y", 32);
+                state.set("map.transition", "town_return_to_gate");
             } else if action == "status" {
                 state.set("game.mode", "menu");
                 text.show(
@@ -258,7 +284,7 @@ export func main() {
             let slime_dx = 320 + 4 * 32 - forest_sx;
             let slime_dy = 32 + 32 * 32 - forest_sy;
             let stairs_dx = 320 + 2 * 32 - forest_sx;
-            let stairs_dy = 32 + 34 * 32 - forest_sy;
+            let stairs_dy = 32 + 33 * 32 - forest_sy;
             ext.image.draw_ext(landmark_icons, 64, 0, 64, 64, town_dx, town_dy, 32, 32, 0, 1);
             ext.image.draw_ext(landmark_icons, 128, 0, 64, 64, stone_dx, stone_dy, 32, 32, 0, 1);
             ext.image.draw_ext(landmark_icons, 192, 0, 64, 64, slime_dx, slime_dy, 32, 32, 0, 1);
@@ -279,6 +305,7 @@ export func main() {
                     "north", "北へ",
                     "east", "東へ",
                     "south", "南へ",
+                    "town", "町へ戻る",
                     "end_demo", "デモ終了"
                 );
             } else if x == 2 && y == 30 {
@@ -286,10 +313,22 @@ export func main() {
                 text.choices_named(
                     "south", "南へ",
                     "check", "石碑を調べる",
+                    "return_forest", "森入口へ戻る",
+                    "town", "町へ戻る",
+                    "end_demo", "デモ終了"
+                );
+            } else if x == 2 && y == 33 {
+                text.show("森の地下入口", "木の根の間に、地下遺跡へ降りる石段があります。");
+                text.choices_named(
+                    "north", "北へ",
+                    "south", "地下へ降りる",
+                    "return_forest", "森入口へ戻る",
+                    "town", "町へ戻る",
                     "end_demo", "デモ終了"
                 );
             } else if x == 4 && y == 32 {
                 state.set("game.mode", "battle");
+                state.set("battle.ended", false);
                 ui.background(103);
                 ext.image.draw_ext(battle_bg, 0, 0, 1280, 720, 0, 0, 1280, 720, 0, 1);
                 text.show("スライム", "森の小道でスライムが跳ねている。");
@@ -310,7 +349,7 @@ export func main() {
                     state.set("map.y", 32);
                     text.show("語り", "主人公は森の入口へ戻った。");
                     recv();
-                    return "rpg-retreat";
+                    state.set("battle.ended", true);
                 } else if battle1 == "potion" {
                     state.set("inventory.potion", 0);
                     state.set("actor.hero.hp", 30);
@@ -324,69 +363,79 @@ export func main() {
                     recv();
                 }
 
-                text.show("スライム", "まだ向かってくる。");
-                text.choices_named(
-                    "attack", "攻撃",
-                    "guard", "防御",
-                    "potion", "ポーション",
-                    "run", "逃げる"
-                );
-                recv();
-                let battle2 = state.get("ui.last_choice");
-                text.choices_named();
-                state.set("game.last_action", battle2);
-                if battle2 == "run" {
-                    state.set("map.x", 2);
-                    state.set("map.y", 32);
-                    text.show("語り", "主人公は無理をせず退いた。");
+                if state.get("battle.ended") == false {
+                    text.show("スライム", "まだ向かってくる。");
+                    text.choices_named(
+                        "attack", "攻撃",
+                        "guard", "防御",
+                        "potion", "ポーション",
+                        "run", "逃げる"
+                    );
                     recv();
-                    return "rpg-retreat";
-                } else if battle2 == "guard" {
-                    state.set("actor.hero.hp", 26);
-                    text.show("語り", "盾で体当たりを受け流した。");
-                    recv();
-                } else {
-                    ext.audio.playback(battle_hit, false);
-                    state.set("actor.slime.hp", 6);
-                    state.set("actor.hero.hp", 24);
-                    text.show("語り", "追撃が入った。スライム HP 6、主人公 HP 24。");
-                    recv();
+                    let battle2 = state.get("ui.last_choice");
+                    text.choices_named();
+                    state.set("game.last_action", battle2);
+                    if battle2 == "run" {
+                        state.set("map.x", 2);
+                        state.set("map.y", 32);
+                        text.show("語り", "主人公は無理をせず退いた。");
+                        recv();
+                        state.set("battle.ended", true);
+                    } else if battle2 == "guard" {
+                        state.set("actor.hero.hp", 26);
+                        text.show("語り", "盾で体当たりを受け流した。");
+                        recv();
+                    } else {
+                        ext.audio.playback(battle_hit, false);
+                        state.set("actor.slime.hp", 6);
+                        state.set("actor.hero.hp", 24);
+                        text.show("語り", "追撃が入った。スライム HP 6、主人公 HP 24。");
+                        recv();
+                    }
                 }
 
-                text.show("スライム", "あと少しだ。");
-                text.choices_named(
-                    "attack", "攻撃",
-                    "guard", "防御",
-                    "potion", "ポーション",
-                    "run", "逃げる"
-                );
-                recv();
-                let battle3 = state.get("ui.last_choice");
-                text.choices_named();
-                state.set("game.last_action", battle3);
-                if battle3 == "run" {
+                if state.get("battle.ended") == false {
+                    text.show("スライム", "あと少しだ。");
+                    text.choices_named(
+                        "attack", "攻撃",
+                        "guard", "防御",
+                        "potion", "ポーション",
+                        "run", "逃げる"
+                    );
+                    recv();
+                    let battle3 = state.get("ui.last_choice");
+                    text.choices_named();
+                    state.set("game.last_action", battle3);
+                    if battle3 == "run" {
+                        state.set("map.x", 2);
+                        state.set("map.y", 32);
+                        text.show("語り", "主人公は安全を優先した。");
+                        recv();
+                        state.set("battle.ended", true);
+                    }
+                }
+
+                if state.get("battle.ended") == false {
+                    ext.audio.playback(battle_hit, false);
+                    state.set("actor.slime.hp", 0);
+                    state.set("flag.slime_defeated", true);
+                    state.set("resource.gold", 20);
                     state.set("map.x", 2);
                     state.set("map.y", 32);
-                    text.show("語り", "主人公は安全を優先した。");
+                    text.show("語り", "スライムは森の奥へ逃げた。ゴールドは 20 になった。");
                     recv();
-                    return "rpg-retreat";
+                    state.set("battle.ended", true);
                 }
-                ext.audio.playback(battle_hit, false);
-                state.set("actor.slime.hp", 0);
-                state.set("flag.slime_defeated", true);
-                state.set("resource.gold", 20);
-                state.set("map.x", 2);
-                state.set("map.y", 32);
-                text.show("語り", "スライムは森の奥へ逃げた。ゴールドは 20 になった。");
-                recv();
-                return "rpg-victory";
             } else {
-                text.show("森の小道", "木々の間を細い道が抜けています。");
+                text.show("森の小道", "木々の間を細い道が抜けています。道を外れそうなら森入口へ戻れます。");
                 text.choices_named(
                     "north", "北へ",
                     "south", "南へ",
                     "east", "東へ",
-                    "west", "西へ"
+                    "west", "西へ",
+                    "return_forest", "森入口へ戻る",
+                    "town", "町へ戻る",
+                    "end_demo", "デモ終了"
                 );
             }
 
@@ -434,12 +483,35 @@ export func main() {
                     } else {
                         state.set("map.last_blocked", true);
                     }
+                }
+
+                if action == "north" || action == "south" || action == "east" || action == "west" {
+                    if state.get("map.current") == "forest" {
+                        let moved_x = state.get("map.x");
+                        let moved_y = state.get("map.y");
+                        state.set("map.path_ok", false);
+                        if moved_y == 32 && moved_x >= 1 && moved_x <= 4 {
+                            state.set("map.path_ok", true);
+                        } else if moved_x == 2 && moved_y >= 30 && moved_y <= 33 {
+                            state.set("map.path_ok", true);
+                        }
+
+                        if state.get("map.path_ok") == false {
+                            state.set("map.x", x);
+                            state.set("map.y", y);
+                            state.set("map.last_blocked", true);
+                        }
+                    }
                 } else if action == "town" {
                     state.set("map.current", "town");
                     state.set("map.x", 32);
                     state.set("map.y", 32);
                     state.set("map.transition", "forest_to_town");
                     state.set("flag.map_switched", true);
+                } else if action == "return_forest" {
+                    state.set("map.x", 2);
+                    state.set("map.y", 32);
+                    state.set("map.transition", "forest_return_to_entrance");
                 } else if action == "check" {
                     state.set("game.mode", "event");
                     state.set("event.current", "forest_stone");
@@ -526,6 +598,7 @@ export func main() {
                     "turn_left", "左を向く",
                     "turn_right", "右を向く",
                     "check", "周囲を調べる",
+                    "exit_dungeon", "森へ戻る",
                     "end_demo", "デモ終了"
                 );
             } else if x == 31 && z == 31 {
@@ -536,15 +609,19 @@ export func main() {
                     "turn_left", "左を向く",
                     "turn_right", "右を向く",
                     "check", "階段を調べる",
+                    "exit_dungeon", "森へ戻る",
                     "end_demo", "デモ終了"
                 );
             } else {
-                text.show("地下遺跡 通路", "正面の石壁に古い紋様が刻まれています。");
+                text.show("地下遺跡 通路", "正面の石壁に古い紋様が刻まれています。迷ったら森へ戻れます。");
                 text.choices_named(
                     "forward", "前へ",
                     "back", "後ろへ",
                     "turn_left", "左を向く",
-                    "turn_right", "右を向く"
+                    "turn_right", "右を向く",
+                    "check", "周囲を調べる",
+                    "exit_dungeon", "森へ戻る",
+                    "end_demo", "デモ終了"
                 );
             }
             recv();
@@ -605,6 +682,27 @@ export func main() {
                         state.set("map.last_blocked", true);
                     }
                 }
+            }
+
+            if action == "forward" || action == "back" {
+                let moved_x = state.get("map.x");
+                let moved_z = state.get("map.z");
+                state.set("map.path_ok", false);
+                if level == 1 {
+                    if (moved_x == 30 && moved_z == 30) || (moved_x == 30 && moved_z == 31) || (moved_x == 31 && moved_z == 31) {
+                        state.set("map.path_ok", true);
+                    }
+                } else if level == 2 {
+                    if moved_x >= 29 && moved_x <= 31 && moved_z >= 33 && moved_z <= 35 {
+                        state.set("map.path_ok", true);
+                    }
+                }
+
+                if state.get("map.path_ok") == false {
+                    state.set("map.x", x);
+                    state.set("map.z", z);
+                    state.set("map.last_blocked", true);
+                }
             } else if action == "turn_left" {
                 if facing == "north" {
                     state.set("map.facing", "west");
@@ -636,9 +734,22 @@ export func main() {
                     recv();
                 } else {
                     state.set("event.result", "dungeon-checked");
-                    text.show("地下遺跡", "壁の紋様を確認しました。");
+                    text.show("地下遺跡", "壁の紋様を確認しました。階段は入口から前へ進み、右を向いて一歩進んだ先です。");
                     recv();
                 }
+            } else if action == "exit_dungeon" {
+                state.set("map.current", "forest");
+                state.set("map.projection", "tile2d");
+                state.set("map.width", 64);
+                state.set("map.height", 64);
+                state.set("map.depth", 1);
+                state.set("map.x", 2);
+                state.set("map.y", 32);
+                state.set("map.z", 0);
+                state.set("map.facing", "north");
+                state.set("dungeon.level", 0);
+                state.set("map.transition", "dungeon_to_forest");
+                state.set("flag.map_switched", true);
             } else if action == "end_demo" {
                 if state.get("flag.dungeon_descended") {
                     return "rpg-dungeon-depth";

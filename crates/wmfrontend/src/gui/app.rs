@@ -18,10 +18,9 @@ impl eframe::App for ReportApp {
         )));
 
         if ctx.input(|input| input.key_pressed(egui::Key::Escape)) {
-            if self.runtime_menu_open {
-                self.close_runtime_view();
-            } else {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            match escape_action(self.runtime_menu_open) {
+                EscapeAction::CloseRuntimeMenu => self.close_runtime_view(),
+                EscapeAction::OpenRuntimeMenu => self.open_runtime_view(RuntimeView::Title),
             }
         }
         if ctx.input(|input| input.key_pressed(egui::Key::Space)) {

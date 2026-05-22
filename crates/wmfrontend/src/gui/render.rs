@@ -380,53 +380,66 @@ impl ReportApp {
                     ui.allocate_ui_at_rect(content_rect, |ui| {
                         ui.set_clip_rect(content_rect);
                         let row_height = 38.0 * scale.max(0.82);
-                        for choice in &choices {
-                            let (row_rect, response) = ui.allocate_exact_size(
-                                egui::vec2(ui.available_width().max(1.0), row_height),
-                                egui::Sense::click(),
-                            );
-                            let selected = self
-                                .selected_choice
-                                .as_deref()
-                                .is_some_and(|selected| selected == choice.id);
-                            let row_painter = ui.painter_at(row_rect);
-                            if selected {
-                                row_painter.rect_filled(
-                                    row_rect,
-                                    10.0 * scale.max(0.75),
-                                    choice_selected_fill,
-                                );
-                                row_painter.rect_stroke(
-                                    row_rect,
-                                    10.0 * scale.max(0.75),
-                                    egui::Stroke::new(1.0, choice_selected_stroke),
-                                    egui::StrokeKind::Inside,
-                                );
-                            }
-                            let label_color = if choice.enabled {
-                                choice_text_color
-                            } else {
-                                choice_text_color.gamma_multiply(0.35)
-                            };
-                            row_painter.text(
-                                row_rect.left_center() + egui::vec2(18.0 * scale.max(0.75), 0.0),
-                                egui::Align2::LEFT_CENTER,
-                                if selected { "▸" } else { "  " },
-                                egui::FontId::proportional((20.0 * scale).max(14.0)),
-                                choice_accent_color,
-                            );
-                            row_painter.text(
-                                row_rect.left_center() + egui::vec2(42.0 * scale.max(0.75), 0.0),
-                                egui::Align2::LEFT_CENTER,
-                                &choice.label,
-                                egui::FontId::proportional(body_text_size),
-                                label_color,
-                            );
-                            if response.clicked() && choice.enabled {
-                                self.apply_choice(choice);
-                            }
-                            ui.add_space(6.0 * scale.max(0.75));
-                        }
+                        egui::ScrollArea::vertical()
+                            .id_salt("choice_panel_choices")
+                            .auto_shrink([false, false])
+                            .max_height(content_rect.height())
+                            .show(ui, |ui| {
+                                for choice in &choices {
+                                    let (row_rect, response) = ui.allocate_exact_size(
+                                        egui::vec2(ui.available_width().max(1.0), row_height),
+                                        egui::Sense::click(),
+                                    );
+                                    let selected = self
+                                        .selected_choice
+                                        .as_deref()
+                                        .is_some_and(|selected| selected == choice.id);
+                                    let row_painter = ui.painter_at(row_rect);
+                                    if selected {
+                                        row_painter.rect_filled(
+                                            row_rect,
+                                            10.0 * scale.max(0.75),
+                                            choice_selected_fill,
+                                        );
+                                        row_painter.rect_stroke(
+                                            row_rect,
+                                            10.0 * scale.max(0.75),
+                                            egui::Stroke::new(1.0, choice_selected_stroke),
+                                            egui::StrokeKind::Inside,
+                                        );
+                                    }
+                                    let label_color = if choice.enabled {
+                                        choice_text_color
+                                    } else {
+                                        choice_text_color.gamma_multiply(0.35)
+                                    };
+                                    row_painter.text(
+                                        row_rect.left_center()
+                                            + egui::vec2(18.0 * scale.max(0.75), 0.0),
+                                        egui::Align2::LEFT_CENTER,
+                                        if selected { "▸" } else { "  " },
+                                        egui::FontId::proportional((20.0 * scale).max(14.0)),
+                                        choice_accent_color,
+                                    );
+                                    let label_rect = egui::Rect::from_min_max(
+                                        row_rect.min + egui::vec2(42.0 * scale.max(0.75), 0.0),
+                                        row_rect.max - egui::vec2(8.0 * scale.max(0.75), 0.0),
+                                    );
+                                    ui.put(
+                                        label_rect,
+                                        egui::Label::new(
+                                            egui::RichText::new(&choice.label)
+                                                .size(body_text_size)
+                                                .color(label_color),
+                                        )
+                                        .wrap(),
+                                    );
+                                    if response.clicked() && choice.enabled {
+                                        self.apply_choice(choice);
+                                    }
+                                    ui.add_space(6.0 * scale.max(0.75));
+                                }
+                            });
                     });
                 });
         }
@@ -600,9 +613,9 @@ impl ReportApp {
 
                         let badge_height = 28.0 * scale.max(0.8);
                         let speaker_width =
-                            ((speaker.chars().count() as f32 * speaker_text_size * 0.7)
-                                + 30.0 * scale.max(0.75))
-                            .clamp(96.0 * scale.max(0.75), inner_rect.width() * 0.55);
+                            ((speaker.chars().count() as f32 * speaker_text_size * 0.9)
+                                + 34.0 * scale.max(0.75))
+                            .clamp(96.0 * scale.max(0.75), inner_rect.width());
                         let (speaker_rect, _) = ui.allocate_exact_size(
                             egui::vec2(speaker_width, badge_height),
                             egui::Sense::hover(),
@@ -648,10 +661,13 @@ impl ReportApp {
                                     );
                                 } else {
                                     for line in &text_lines {
-                                        ui.label(
-                                            egui::RichText::new(line)
-                                                .size(body_text_size)
-                                                .color(text_color),
+                                        ui.add(
+                                            egui::Label::new(
+                                                egui::RichText::new(line)
+                                                    .size(body_text_size)
+                                                    .color(text_color),
+                                            )
+                                            .wrap(),
                                         );
                                     }
                                 }

@@ -103,6 +103,49 @@ fn explicit_choices_keep_choice_panel_visible() {
 }
 
 #[test]
+fn mixed_choices_do_not_consume_direction_keys() {
+    let choices = vec![choice("north"), choice("check"), choice("end_demo")];
+    assert!(direction_choice_for_key(&choices, egui::Key::ArrowUp).is_none());
+    assert!(direction_choice_for_key(&choices, egui::Key::W).is_none());
+}
+
+#[test]
+fn adjacent_choice_selection_cycles_all_enabled_choices() {
+    let mut disabled = choice("disabled");
+    disabled.enabled = false;
+    let choices = vec![
+        choice("north"),
+        choice("south"),
+        disabled,
+        choice("east"),
+        choice("west"),
+    ];
+
+    assert_eq!(
+        next_enabled_choice_id(&choices, None, 1).as_deref(),
+        Some("south")
+    );
+    assert_eq!(
+        next_enabled_choice_id(&choices, Some("south"), 1).as_deref(),
+        Some("east")
+    );
+    assert_eq!(
+        next_enabled_choice_id(&choices, Some("west"), 1).as_deref(),
+        Some("north")
+    );
+    assert_eq!(
+        next_enabled_choice_id(&choices, Some("north"), -1).as_deref(),
+        Some("west")
+    );
+}
+
+#[test]
+fn escape_toggles_runtime_menu_instead_of_closing_window() {
+    assert_eq!(escape_action(false), EscapeAction::OpenRuntimeMenu);
+    assert_eq!(escape_action(true), EscapeAction::CloseRuntimeMenu);
+}
+
+#[test]
 fn debug_shortcut_requires_alt_d() {
     assert!(!debug_shortcut_for_key(
         egui::Key::D,

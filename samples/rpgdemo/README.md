@@ -72,9 +72,13 @@ cargo run -p wmtoolchain --bin wmtoolchain -- samples/rpgdemo/engine/main.wms `
   --out .test-rpgdemo/rpgdemo.warc
 
 cargo run -p wmfrontend --bin wmautoui -- .test-rpgdemo/rpgdemo.warc --platform egui --choices east,east,forest,west,town,end_demo --expect rpg-map-switch
+cargo run -p wmfrontend --bin wmautoui -- .test-rpgdemo/rpgdemo.warc --platform egui --choices north,east,east,forest,west,town,end_demo --expect rpg-map-switch
 cargo run -p wmfrontend --bin wmautoui -- .test-rpgdemo/rpgdemo.warc --platform egui --choices east,east,forest,north,north,check,read,end_demo --expect rpg-stone-read --expect-audio-resource 203
-cargo run -p wmfrontend --bin wmautoui -- .test-rpgdemo/rpgdemo.warc --platform egui --choices east,east,forest,east,east,attack,attack,attack --expect rpg-victory --expect-audio-resource 204
+cargo run -p wmfrontend --bin wmautoui -- .test-rpgdemo/rpgdemo.warc --platform egui --choices east,east,forest,north,east,south,south,end_demo --expect rpg-map-switch
+cargo run -p wmfrontend --bin wmautoui -- .test-rpgdemo/rpgdemo.warc --platform egui --choices east,east,forest,east,east,attack,attack,attack,end_demo --expect rpg-victory --expect-audio-resource 204
 cargo run -p wmfrontend --bin wmautoui -- .test-rpgdemo/rpgdemo.warc --platform egui --choices east,east,forest,south,south,forward,turn_right,forward,check,end_demo --expect rpg-dungeon-depth
+cargo run -p wmfrontend --bin wmautoui -- .test-rpgdemo/rpgdemo.warc --platform egui --choices east,east,forest,south,south,forward,forward,turn_right,forward,check,end_demo --expect rpg-dungeon-depth
+cargo run -p wmfrontend --bin wmautoui -- .test-rpgdemo/rpgdemo.warc --platform egui --choices east,east,forest,south,south,forward,forward,exit_dungeon,end_demo --expect rpg-map-switch
 cargo run -p wmfrontend --bin wmautoui -- .test-rpgdemo/rpgdemo.warc --platform egui --choices status --expect rpg-status
 cargo run -p wmfrontend --bin wmautoui -- .test-rpgdemo/rpgdemo.warc --platform egui --choices inventory --expect rpg-inventory
 ```

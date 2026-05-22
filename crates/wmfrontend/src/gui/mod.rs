@@ -319,22 +319,8 @@ impl ReportApp {
 
     fn select_adjacent_choice(&mut self, delta: i32) {
         let choices = &self.report.ui_state.scene.message_window.choices;
-        let enabled = choices
-            .iter()
-            .filter(|choice| choice.enabled)
-            .cloned()
-            .collect::<Vec<_>>();
-        if enabled.is_empty() {
-            self.selected_choice = None;
-            return;
-        }
-        let current_index = self
-            .selected_choice
-            .as_deref()
-            .and_then(|selected| enabled.iter().position(|choice| choice.id == selected))
-            .unwrap_or(0) as i32;
-        let next_index = (current_index + delta).rem_euclid(enabled.len() as i32) as usize;
-        self.selected_choice = Some(enabled[next_index].id.clone());
+        self.selected_choice =
+            next_enabled_choice_id(choices, self.selected_choice.as_deref(), delta);
     }
 
     fn submit_player_input(&mut self) {
@@ -535,7 +521,17 @@ impl ReportApp {
             .collect::<BTreeMap<_, _>>();
         if self.report.ui_state.scene.message_window.choices.is_empty() {
             self.selected_choice = None;
-        } else if self.selected_choice.is_none() {
+        } else if match self.selected_choice.as_deref() {
+            Some(selected) => !self
+                .report
+                .ui_state
+                .scene
+                .message_window
+                .choices
+                .iter()
+                .any(|choice| choice.enabled && choice.id == selected),
+            None => true,
+        } {
             self.selected_choice = self
                 .report
                 .ui_state

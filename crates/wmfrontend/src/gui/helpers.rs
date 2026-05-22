@@ -47,6 +47,10 @@ pub(super) fn direction_choice_for_pressed_key(
 }
 
 pub(super) fn direction_choice_for_key(choices: &[UiChoice], key: egui::Key) -> Option<UiChoice> {
+    if !should_hide_choice_panel_for_movement(choices) {
+        return None;
+    }
+
     let ids: &[&str] = match key {
         egui::Key::ArrowUp | egui::Key::W => &["north", "forward"],
         egui::Key::ArrowDown | egui::Key::S => &["south", "back"],
@@ -74,6 +78,39 @@ pub(super) fn is_movement_choice_id(id: &str) -> bool {
         id,
         "north" | "south" | "east" | "west" | "forward" | "back" | "turn_left" | "turn_right"
     )
+}
+
+pub(super) fn next_enabled_choice_id(
+    choices: &[UiChoice],
+    selected: Option<&str>,
+    delta: i32,
+) -> Option<String> {
+    let enabled = choices
+        .iter()
+        .filter(|choice| choice.enabled)
+        .collect::<Vec<_>>();
+    if enabled.is_empty() {
+        return None;
+    }
+    let current_index = selected
+        .and_then(|selected| enabled.iter().position(|choice| choice.id == selected))
+        .unwrap_or(0) as i32;
+    let next_index = (current_index + delta).rem_euclid(enabled.len() as i32) as usize;
+    Some(enabled[next_index].id.clone())
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum EscapeAction {
+    CloseRuntimeMenu,
+    OpenRuntimeMenu,
+}
+
+pub(super) fn escape_action(runtime_menu_open: bool) -> EscapeAction {
+    if runtime_menu_open {
+        EscapeAction::CloseRuntimeMenu
+    } else {
+        EscapeAction::OpenRuntimeMenu
+    }
 }
 
 pub(super) fn debug_shortcut_pressed(ctx: &egui::Context) -> bool {
