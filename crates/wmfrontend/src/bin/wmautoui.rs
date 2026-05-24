@@ -73,7 +73,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         let message_state = runtime.message_window_state();
-        let payload = match select_auto_reply(&mut args, &message_state)? {
+        let rpg_state = runtime.rpg_ui_state();
+        let payload = match select_auto_reply(&mut args, &message_state, &rpg_state)? {
             AutoReply::Choice(choice) => {
                 if !args.quiet {
                     println!(
@@ -85,6 +86,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 runtime.set_state_value("ui.last_reply", Value::String(choice.id.clone()));
                 sent_choices += 1;
                 Value::String(choice.id)
+            }
+            AutoReply::RpgAction { id, label } => {
+                if !args.quiet {
+                    println!("[auto-ui] rpg id={id:?} label={label:?}");
+                }
+                runtime.set_state_value("ui.last_choice", Value::String(id.clone()));
+                runtime.set_state_value("ui.last_reply", Value::String(id.clone()));
+                sent_choices += 1;
+                Value::String(id)
             }
             AutoReply::Input { prompt, value } => {
                 if !args.quiet {
@@ -181,6 +191,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 #[derive(Debug, Clone, PartialEq)]
 enum AutoReply {
     Choice(wmruntime::MessageChoiceState),
+    RpgAction { id: String, label: String },
     Input { prompt: String, value: String },
     Advance,
 }
@@ -188,7 +199,14 @@ enum AutoReply {
 fn select_auto_reply(
     args: &mut CliArgs,
     message_state: &wmruntime::MessageWindowState,
+    rpg_state: &wmruntime::RpgUiState,
 ) -> Result<AutoReply, Box<dyn std::error::Error>> {
+    if rpg_state.map_controls.active()
+        && let Some(reply) = select_rpg_reply(args, rpg_state)
+    {
+        return Ok(reply);
+    }
+
     if !message_state.choices.is_empty() {
         let choice = select_choice(args, &message_state.choices)
             .ok_or("no enabled choice available for auto-ui")?;
@@ -207,6 +225,77 @@ fn select_auto_reply(
     }
 
     Ok(AutoReply::Advance)
+}
+
+fn select_rpg_reply(args: &mut CliArgs, rpg_state: &wmruntime::RpgUiState) -> Option<AutoReply> {
+    if let Some(wanted) = args.next_sequence_choice() {
+        if rpg_state
+            .map_controls
+            .directions
+            .iter()
+            .any(|direction| direction == &wanted)
+        {
+            return Some(AutoReply::RpgAction {
+                id: wanted.clone(),
+                label: wanted,
+            });
+        }
+        if let Some(action) = rpg_state
+            .actions
+            .iter()
+            .find(|action| action.enabled && (action.id == wanted || action.label == wanted))
+        {
+            return Some(AutoReply::RpgAction {
+                id: action.id.clone(),
+                label: action.label.clone(),
+            });
+        }
+        return Some(AutoReply::RpgAction {
+            id: wanted.clone(),
+            label: wanted,
+        });
+    }
+    if let Some(wanted) = args.choice.as_deref() {
+        if rpg_state
+            .map_controls
+            .directions
+            .iter()
+            .any(|direction| direction == wanted)
+        {
+            return Some(AutoReply::RpgAction {
+                id: wanted.to_owned(),
+                label: wanted.to_owned(),
+            });
+        }
+        if let Some(action) = rpg_state
+            .actions
+            .iter()
+            .find(|action| action.enabled && (action.id == wanted || action.label == wanted))
+        {
+            return Some(AutoReply::RpgAction {
+                id: action.id.clone(),
+                label: action.label.clone(),
+            });
+        }
+    }
+    rpg_state
+        .actions
+        .iter()
+        .find(|action| action.enabled)
+        .map(|action| AutoReply::RpgAction {
+            id: action.id.clone(),
+            label: action.label.clone(),
+        })
+        .or_else(|| {
+            rpg_state
+                .map_controls
+                .directions
+                .first()
+                .map(|direction| AutoReply::RpgAction {
+                    id: direction.clone(),
+                    label: direction.clone(),
+                })
+        })
 }
 
 fn select_choice(
@@ -413,7 +502,8 @@ mod tests {
             enabled: true,
         }];
 
-        let reply = select_auto_reply(&mut args, &state).expect("auto reply");
+        let reply = select_auto_reply(&mut args, &state, &wmruntime::RpgUiState::default())
+            .expect("auto reply");
 
         assert!(matches!(
             reply,
@@ -427,7 +517,8 @@ mod tests {
         let mut state = wmruntime::MessageWindowState::default();
         state.input_prompt = Some("合言葉".to_owned());
 
-        let reply = select_auto_reply(&mut args, &state).expect("auto reply");
+        let reply = select_auto_reply(&mut args, &state, &wmruntime::RpgUiState::default())
+            .expect("auto reply");
 
         assert_eq!(
             reply,
@@ -443,7 +534,8 @@ mod tests {
         let mut args = args_with_input_and_choice();
         let state = wmruntime::MessageWindowState::default();
 
-        let reply = select_auto_reply(&mut args, &state).expect("auto reply");
+        let reply = select_auto_reply(&mut args, &state, &wmruntime::RpgUiState::default())
+            .expect("auto reply");
 
         assert_eq!(reply, AutoReply::Advance);
     }
@@ -490,8 +582,10 @@ mod tests {
             },
         ];
 
-        let first = select_auto_reply(&mut args, &state).expect("first auto reply");
-        let second = select_auto_reply(&mut args, &state).expect("second auto reply");
+        let first = select_auto_reply(&mut args, &state, &wmruntime::RpgUiState::default())
+            .expect("first auto reply");
+        let second = select_auto_reply(&mut args, &state, &wmruntime::RpgUiState::default())
+            .expect("second auto reply");
 
         assert!(matches!(
             first,
@@ -501,5 +595,45 @@ mod tests {
             second,
             AutoReply::Choice(wmruntime::MessageChoiceState { id, .. }) if id == "attack"
         ));
+    }
+
+    #[test]
+    fn auto_reply_uses_rpg_map_sequence_before_message_choices() {
+        let mut args = args_with_input_and_choice();
+        args.choice_sequence = vec!["east".to_owned(), "status".to_owned()];
+        let mut rpg = wmruntime::RpgUiState::default();
+        rpg.map_controls = wmruntime::RpgMapControlsState {
+            projection: "tile2d".to_owned(),
+            directions: vec!["north".to_owned(), "east".to_owned()],
+        };
+        rpg.actions = vec![wmruntime::RpgActionState {
+            id: "status".to_owned(),
+            label: "ステータス".to_owned(),
+            enabled: true,
+        }];
+        let mut state = wmruntime::MessageWindowState::default();
+        state.choices = vec![wmruntime::MessageChoiceState {
+            id: "battle".to_owned(),
+            label: "戦う".to_owned(),
+            enabled: true,
+        }];
+
+        let first = select_auto_reply(&mut args, &state, &rpg).expect("first auto reply");
+        let second = select_auto_reply(&mut args, &state, &rpg).expect("second auto reply");
+
+        assert_eq!(
+            first,
+            AutoReply::RpgAction {
+                id: "east".to_owned(),
+                label: "east".to_owned()
+            }
+        );
+        assert_eq!(
+            second,
+            AutoReply::RpgAction {
+                id: "status".to_owned(),
+                label: "ステータス".to_owned()
+            }
+        );
     }
 }

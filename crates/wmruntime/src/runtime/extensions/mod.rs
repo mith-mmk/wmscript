@@ -6,6 +6,7 @@ mod image;
 mod llm;
 mod message;
 mod net;
+mod rpg;
 mod rts;
 mod scene;
 mod state;

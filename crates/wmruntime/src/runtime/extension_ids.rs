@@ -194,6 +194,19 @@ pub struct UiExtension {
     pub shift_fast_host_id: HostId,
 }
 
+/// Stable ids assigned to the RPG UI/input extension.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RpgExtension {
+    pub map_controls_ext_id: u32,
+    pub actions_ext_id: u32,
+    pub hud_ext_id: u32,
+    pub clear_ext_id: u32,
+    pub map_controls_host_id: HostId,
+    pub actions_host_id: HostId,
+    pub hud_host_id: HostId,
+    pub clear_host_id: HostId,
+}
+
 /// Stable ids assigned to the automation-game extension.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AutomationExtension {
@@ -242,6 +255,7 @@ pub struct StandardExtensions {
     pub image: ImageExtension,
     pub audio: AudioExtension,
     pub ui: UiExtension,
+    pub rpg: RpgExtension,
     pub vm: VmExtension,
     pub state: StateExtension,
     pub automation: AutomationExtension,

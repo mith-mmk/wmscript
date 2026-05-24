@@ -32,7 +32,20 @@ impl eframe::App for ReportApp {
             self.open_runtime_view(RuntimeView::Title);
         }
         let shortcut_keys_enabled = !ctx.wants_keyboard_input();
+        let rpg_map_active = self.report.ui_state.scene.rpg.map_mode_active();
+        let rpg_input_consumed = shortcut_keys_enabled
+            && (rpg_direction_for_pressed_key(&self.report.ui_state.scene.rpg, ctx)
+                .map(|direction| {
+                    self.apply_rpg_reply(&direction);
+                })
+                .is_some()
+                || rpg_action_for_pressed_number_key(&self.report.ui_state.scene.rpg.actions, ctx)
+                    .map(|action| {
+                        self.apply_rpg_action(&action);
+                    })
+                    .is_some());
         let direction_shortcut_consumed = shortcut_keys_enabled
+            && !rpg_input_consumed
             && direction_choice_for_pressed_key(
                 &self.report.ui_state.scene.message_window.choices,
                 ctx,
@@ -42,22 +55,31 @@ impl eframe::App for ReportApp {
             })
             .is_some();
         if !direction_shortcut_consumed
+            && !rpg_input_consumed
+            && !rpg_map_active
             && shortcut_keys_enabled
             && ctx.input(|input| input.key_pressed(egui::Key::ArrowUp))
         {
             self.select_adjacent_choice(-1);
         }
         if !direction_shortcut_consumed
+            && !rpg_input_consumed
+            && !rpg_map_active
             && shortcut_keys_enabled
             && ctx.input(|input| input.key_pressed(egui::Key::ArrowDown))
         {
             self.select_adjacent_choice(1);
         }
-        if ctx.input(|input| input.key_pressed(egui::Key::Enter))
+        if !rpg_input_consumed
+            && !rpg_map_active
+            && ctx.input(|input| input.key_pressed(egui::Key::Enter))
             && let Some(choice) = self.selected_or_first_choice()
         {
             self.apply_choice(&choice);
-        } else if ctx.input(|input| input.key_pressed(egui::Key::Enter)) {
+        } else if !rpg_input_consumed
+            && !rpg_map_active
+            && ctx.input(|input| input.key_pressed(egui::Key::Enter))
+        {
             let _ = self.advance_message();
         }
         if !direction_shortcut_consumed

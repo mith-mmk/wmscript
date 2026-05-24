@@ -376,6 +376,60 @@ impl Default for UiMessageWindowState {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiRpgAction {
+    pub id: String,
+    pub label: String,
+    pub enabled: bool,
+}
+
+impl UiRpgAction {
+    pub fn new(id: impl Into<String>, label: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            label: label.into(),
+            enabled: true,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct UiRpgMapControlsState {
+    pub projection: String,
+    pub directions: Vec<String>,
+}
+
+impl UiRpgMapControlsState {
+    pub fn active(&self) -> bool {
+        !self.directions.is_empty()
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct UiRpgHudState {
+    pub title: String,
+    pub body: String,
+}
+
+impl UiRpgHudState {
+    pub fn visible(&self) -> bool {
+        !self.title.is_empty() || !self.body.is_empty()
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct UiRpgState {
+    pub map_controls: UiRpgMapControlsState,
+    pub actions: Vec<UiRpgAction>,
+    pub hud: Option<UiRpgHudState>,
+}
+
+impl UiRpgState {
+    pub fn map_mode_active(&self) -> bool {
+        self.map_controls.active()
+    }
+}
+
 /// State of the active scene.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct UiSceneState {
@@ -384,6 +438,7 @@ pub struct UiSceneState {
     pub audio_playback: BTreeMap<u64, UiAudioPlaybackState>,
     pub layout: UiSceneLayoutState,
     pub message_window: UiMessageWindowState,
+    pub rpg: UiRpgState,
 }
 
 /// Layout used by the frontend to place in-game panels.
@@ -536,6 +591,7 @@ pub enum UiCommand {
     SetMessageSpeed(f32),
     SetMessageAuto(bool),
     SetMessageSkip(bool),
+    SetRpgState(UiRpgState),
     HideMessageWindow,
     ResetScene,
 }
@@ -693,6 +749,11 @@ impl<'a> UiContext<'a> {
     pub fn set_message_skip(&mut self, enabled: bool) {
         self.state.scene.message_window.skip_mode = enabled;
         self.emit(UiCommand::SetMessageSkip(enabled));
+    }
+
+    pub fn set_rpg_state(&mut self, rpg: UiRpgState) {
+        self.state.scene.rpg = rpg.clone();
+        self.emit(UiCommand::SetRpgState(rpg));
     }
 
     pub fn hide_message_window(&mut self) {

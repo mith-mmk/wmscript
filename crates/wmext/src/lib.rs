@@ -640,6 +640,19 @@ pub fn standard_extension_registry() -> Result<ExtensionRegistry> {
         ],
     )?;
     registry.register_extension(
+        "ext.rpg",
+        &[
+            ExtensionFunctionSpec::new("map_controls", 270, 1, 17, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("actions", 271, 0, 32, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("hud", 272, 2, 2, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+            ExtensionFunctionSpec::new("clear", 273, 0, 0, CAP_GUI)
+                .with_return_type(ExtValueType::Bool),
+        ],
+    )?;
+    registry.register_extension(
         "state",
         &[
             ExtensionFunctionSpec::new("save", 170, 1, 1, 0).with_return_type(ExtValueType::Bool),

@@ -198,6 +198,38 @@ pub struct UiPolicyState {
     pub shift_fast_enabled: bool,
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RpgActionState {
+    pub id: String,
+    pub label: String,
+    pub enabled: bool,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RpgMapControlsState {
+    pub projection: String,
+    pub directions: Vec<String>,
+}
+
+impl RpgMapControlsState {
+    pub fn active(&self) -> bool {
+        !self.directions.is_empty()
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RpgHudState {
+    pub title: String,
+    pub body: String,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RpgUiState {
+    pub map_controls: RpgMapControlsState,
+    pub actions: Vec<RpgActionState>,
+    pub hud: Option<RpgHudState>,
+}
+
 impl Default for MessageWindowState {
     fn default() -> Self {
         Self {
@@ -249,6 +281,7 @@ pub struct Runtime {
     scene_layout: Rc<RefCell<UiSceneLayoutState>>,
     message_window: Rc<RefCell<MessageWindowState>>,
     ui_policy: Rc<RefCell<UiPolicyState>>,
+    rpg_ui: Rc<RefCell<RpgUiState>>,
     audio_states: Rc<RefCell<BTreeMap<u64, AudioPlaybackState>>>,
     state_manager: Rc<RefCell<StateManager>>,
     checkpoints: Rc<RefCell<BTreeMap<u32, RuntimeCheckpoint>>>,
@@ -275,6 +308,7 @@ impl Runtime {
             scene_layout: Rc::new(RefCell::new(UiSceneLayoutState::default())),
             message_window: Rc::new(RefCell::new(MessageWindowState::default())),
             ui_policy: Rc::new(RefCell::new(UiPolicyState::default())),
+            rpg_ui: Rc::new(RefCell::new(RpgUiState::default())),
             audio_states: Rc::new(RefCell::new(BTreeMap::new())),
             state_manager: Rc::new(RefCell::new(StateManager::default())),
             checkpoints: Rc::new(RefCell::new(BTreeMap::new())),
@@ -334,6 +368,7 @@ impl Runtime {
             image: self.install_image_extension()?,
             audio: self.install_audio_extension()?,
             ui: self.install_ui_extension()?,
+            rpg: self.install_rpg_extension()?,
             vm: self.install_vm_extension()?,
             state: self.install_state_extension()?,
             automation: self.install_automation_extension()?,
@@ -411,6 +446,10 @@ impl Runtime {
         self.ui_policy.borrow().clone()
     }
 
+    pub fn rpg_ui_state(&self) -> RpgUiState {
+        self.rpg_ui.borrow().clone()
+    }
+
     pub fn set_message_speed(&self, speed: f32) {
         self.message_window.borrow_mut().text_speed = speed.max(0.0);
     }
@@ -452,6 +491,7 @@ impl Runtime {
                 scene_layout: self.scene_layout.borrow().clone(),
                 message_window: self.message_window.borrow().clone(),
                 ui_policy: self.ui_policy.borrow().clone(),
+                rpg_ui: self.rpg_ui.borrow().clone(),
                 debug_log: self.debug_log.borrow().clone(),
                 audio_states: self.audio_states.borrow().clone(),
                 state_manager: self.state_manager.borrow().clone(),
@@ -484,6 +524,7 @@ impl Runtime {
         *self.scene_layout.borrow_mut() = checkpoint.scene_layout;
         *self.message_window.borrow_mut() = checkpoint.message_window;
         *self.ui_policy.borrow_mut() = checkpoint.ui_policy;
+        *self.rpg_ui.borrow_mut() = checkpoint.rpg_ui;
         *self.debug_log.borrow_mut() = checkpoint.debug_log;
         *self.audio_states.borrow_mut() = checkpoint.audio_states;
         *self.state_manager.borrow_mut() = checkpoint.state_manager;

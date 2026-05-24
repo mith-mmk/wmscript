@@ -801,6 +801,88 @@ fn runtime_installs_and_executes_ui_policy_extension() {
 }
 
 #[test]
+fn runtime_installs_and_executes_rpg_ui_extension() {
+    let mut runtime = Runtime::new(RuntimeConfig::new(PlatformProfile::egui()));
+    let extension = runtime.install_rpg_extension().expect("install rpg");
+
+    assert_eq!(
+        runtime
+            .extension_registry()
+            .resolve_id("ext.rpg.map_controls"),
+        Ok(extension.map_controls_ext_id)
+    );
+    assert_eq!(
+        runtime.extension_registry().resolve_id("ext.rpg.actions"),
+        Ok(extension.actions_ext_id)
+    );
+    assert_eq!(
+        runtime
+            .host
+            .borrow_mut()
+            .call(
+                extension.map_controls_host_id,
+                &[
+                    Value::String("tile2d".to_owned()),
+                    Value::String("north".to_owned()),
+                    Value::String("east".to_owned()),
+                ],
+            )
+            .expect("map controls"),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        runtime
+            .host
+            .borrow_mut()
+            .call(
+                extension.actions_host_id,
+                &[
+                    Value::String("check".to_owned()),
+                    Value::String("調べる".to_owned()),
+                    Value::String("status".to_owned()),
+                    Value::String("ステータス".to_owned()),
+                ],
+            )
+            .expect("actions"),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        runtime
+            .host
+            .borrow_mut()
+            .call(
+                extension.hud_host_id,
+                &[
+                    Value::String("森の入口".to_owned()),
+                    Value::String("HP 30/30".to_owned()),
+                ],
+            )
+            .expect("hud"),
+        Value::Bool(true)
+    );
+
+    let rpg = runtime.rpg_ui_state();
+    assert_eq!(rpg.map_controls.projection, "tile2d");
+    assert_eq!(
+        rpg.map_controls.directions,
+        vec!["north".to_owned(), "east".to_owned()]
+    );
+    assert_eq!(rpg.actions[0].id, "check");
+    assert_eq!(rpg.hud.expect("hud").title, "森の入口");
+
+    assert_eq!(
+        runtime
+            .host
+            .borrow_mut()
+            .call(extension.clear_host_id, &[])
+            .expect("clear"),
+        Value::Bool(true)
+    );
+    assert!(!runtime.rpg_ui_state().map_controls.active());
+    assert!(runtime.rpg_ui_state().actions.is_empty());
+}
+
+#[test]
 fn runtime_installs_and_executes_automation_and_rts_extensions() {
     let mut runtime = Runtime::new(RuntimeConfig::new(PlatformProfile::native()));
     let automation = runtime
@@ -1275,6 +1357,7 @@ fn runtime_vm_save_and_load_restores_state() {
     let mut runtime = Runtime::new(RuntimeConfig::new(PlatformProfile::native()));
     let image = runtime.install_image_extension().expect("install image");
     let audio = runtime.install_audio_extension().expect("install audio");
+    let rpg = runtime.install_rpg_extension().expect("install rpg");
     let vm = runtime.install_vm_extension().expect("install vm");
     let archive = build_archive(
         "checkpoint-sample",
@@ -1361,6 +1444,35 @@ fn runtime_vm_save_and_load_restores_state() {
         runtime
             .host
             .borrow_mut()
+            .call(
+                rpg.map_controls_host_id,
+                &[
+                    Value::String("grid3d".to_owned()),
+                    Value::String("forward".to_owned()),
+                    Value::String("turn_right".to_owned()),
+                ]
+            )
+            .expect("rpg map before save"),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        runtime
+            .host
+            .borrow_mut()
+            .call(
+                rpg.actions_host_id,
+                &[
+                    Value::String("check".to_owned()),
+                    Value::String("Check".to_owned())
+                ]
+            )
+            .expect("rpg actions before save"),
+        Value::Bool(true)
+    );
+    assert_eq!(
+        runtime
+            .host
+            .borrow_mut()
             .call(vm.save_host_id, &[Value::Integer(7)])
             .expect("vm save"),
         Value::Bool(true)
@@ -1383,6 +1495,14 @@ fn runtime_vm_save_and_load_restores_state() {
         Value::Bool(true)
     );
 
+    assert_eq!(
+        runtime
+            .host
+            .borrow_mut()
+            .call(rpg.clear_host_id, &[])
+            .expect("rpg clear"),
+        Value::Bool(true)
+    );
     assert_eq!(
         runtime
             .host
@@ -1412,4 +1532,10 @@ fn runtime_vm_save_and_load_restores_state() {
             .expect("audio status after load"),
         Value::Integer(2)
     );
+    assert_eq!(runtime.rpg_ui_state().map_controls.projection, "grid3d");
+    assert_eq!(
+        runtime.rpg_ui_state().map_controls.directions,
+        vec!["forward".to_owned(), "turn_right".to_owned()]
+    );
+    assert_eq!(runtime.rpg_ui_state().actions[0].id, "check");
 }

@@ -13,6 +13,7 @@ impl Runtime {
         let scene_layout = self.scene_layout.clone();
         let message_window = self.message_window.clone();
         let ui_policy = self.ui_policy.clone();
+        let rpg_ui = self.rpg_ui.clone();
         let audio_states = self.audio_states.clone();
         let state_manager = self.state_manager.clone();
         let checkpoints = self.checkpoints.clone();
@@ -34,6 +35,7 @@ impl Runtime {
                             scene_layout: scene_layout.borrow().clone(),
                             message_window: message_window.borrow().clone(),
                             ui_policy: ui_policy.borrow().clone(),
+                            rpg_ui: rpg_ui.borrow().clone(),
                             debug_log: debug_log.borrow().clone(),
                             audio_states: audio_states.borrow().clone(),
                             state_manager: state_manager.borrow().clone(),
@@ -54,6 +56,7 @@ impl Runtime {
         let scene_layout = self.scene_layout.clone();
         let message_window = self.message_window.clone();
         let ui_policy = self.ui_policy.clone();
+        let rpg_ui = self.rpg_ui.clone();
         let audio_states = self.audio_states.clone();
         let audio_backend = self.audio_backend.clone();
         let state_manager = self.state_manager.clone();
@@ -75,6 +78,7 @@ impl Runtime {
                 *scene_layout.borrow_mut() = checkpoint.scene_layout;
                 *message_window.borrow_mut() = checkpoint.message_window;
                 *ui_policy.borrow_mut() = checkpoint.ui_policy;
+                *rpg_ui.borrow_mut() = checkpoint.rpg_ui;
                 *debug_log.borrow_mut() = checkpoint.debug_log;
                 *audio_states.borrow_mut() = checkpoint.audio_states;
                 *state_manager.borrow_mut() = checkpoint.state_manager;

@@ -273,6 +273,7 @@ impl ReportApp {
     pub(super) fn draw_scene_overlays(&mut self, ctx: &egui::Context, stage_rect: egui::Rect) {
         let layout = self.report.ui_state.scene.layout.clone();
         let message = self.report.ui_state.scene.message_window.clone();
+        let rpg = self.report.ui_state.scene.rpg.clone();
         let choices = message.choices.clone();
         let input_prompt = message.input_prompt.clone();
         let visible = message.visible;
@@ -320,6 +321,114 @@ impl ReportApp {
         let (choice_order, input_order, message_order) = Self::scene_overlay_orders(&layout);
 
         let choice_rect = Self::scale_scene_rect(layout.choice_panel, canvas_rect, scale);
+        if rpg.map_mode_active() {
+            if let Some(hud) = rpg.hud.as_ref().filter(|hud| hud.visible()) {
+                let hud_width = (canvas_rect.width() * 0.34).clamp(300.0, 520.0);
+                let hud_rect = egui::Rect::from_min_size(
+                    canvas_rect.min + egui::vec2(18.0 * scale.max(0.75), 18.0 * scale.max(0.75)),
+                    egui::vec2(hud_width, 86.0 * scale.max(0.82)),
+                );
+                egui::Area::new(egui::Id::new("rpg_hud"))
+                    .order(egui::Order::Foreground)
+                    .fixed_pos(hud_rect.min)
+                    .show(ctx, |ui| {
+                        let (panel_rect, _) =
+                            ui.allocate_exact_size(hud_rect.size(), egui::Sense::hover());
+                        let painter = ui.painter_at(panel_rect);
+                        painter.rect_filled(
+                            panel_rect,
+                            10.0 * scale.max(0.75),
+                            egui::Color32::from_rgba_premultiplied(6, 12, 20, 208),
+                        );
+                        painter.rect_stroke(
+                            panel_rect,
+                            10.0 * scale.max(0.75),
+                            egui::Stroke::new(1.0, choice_panel_stroke),
+                            egui::StrokeKind::Inside,
+                        );
+                        let inner = panel_rect
+                            .shrink2(egui::vec2(14.0 * scale.max(0.75), 10.0 * scale.max(0.75)));
+                        ui.allocate_ui_at_rect(inner, |ui| {
+                            ui.label(
+                                egui::RichText::new(&hud.title)
+                                    .size((16.0 * scale).max(12.0))
+                                    .color(choice_accent_color),
+                            );
+                            ui.add_space(4.0 * scale.max(0.75));
+                            ui.add(
+                                egui::Label::new(
+                                    egui::RichText::new(&hud.body)
+                                        .size((14.0 * scale).max(11.0))
+                                        .color(choice_text_color),
+                                )
+                                .wrap(),
+                            );
+                        });
+                    });
+            }
+
+            if !rpg.actions.is_empty() {
+                egui::Area::new(egui::Id::new("rpg_action_panel"))
+                    .order(choice_order)
+                    .fixed_pos(choice_rect.min)
+                    .show(ctx, |ui| {
+                        let panel_size = egui::vec2(
+                            choice_rect.width(),
+                            (72.0 + 42.0 * rpg.actions.len() as f32)
+                                .min(choice_rect.height().max(120.0)),
+                        );
+                        let (panel_rect, _) =
+                            ui.allocate_exact_size(panel_size, egui::Sense::hover());
+                        let painter = ui.painter_at(panel_rect);
+                        painter.rect_filled(
+                            panel_rect,
+                            14.0 * scale.max(0.75),
+                            choice_panel_fill.gamma_multiply(0.92),
+                        );
+                        painter.rect_stroke(
+                            panel_rect,
+                            14.0 * scale.max(0.75),
+                            egui::Stroke::new((1.5 * scale).max(1.0), choice_panel_stroke),
+                            egui::StrokeKind::Inside,
+                        );
+                        let content_rect = panel_rect
+                            .shrink2(egui::vec2(24.0 * scale.max(0.75), 18.0 * scale.max(0.75)));
+                        ui.allocate_ui_at_rect(content_rect, |ui| {
+                            ui.label(
+                                egui::RichText::new(if locale_is_ja {
+                                    "アクション"
+                                } else {
+                                    "ACTIONS"
+                                })
+                                .size((14.0 * scale).max(11.0))
+                                .color(choice_accent_color),
+                            );
+                            ui.add_space(8.0 * scale.max(0.75));
+                            egui::ScrollArea::vertical()
+                                .id_salt("rpg_action_panel_actions")
+                                .auto_shrink([false, false])
+                                .max_height((content_rect.height() - 28.0).max(1.0))
+                                .show(ui, |ui| {
+                                    for (index, action) in rpg.actions.iter().enumerate() {
+                                        let label = format!("{}. {}", index + 1, action.label);
+                                        let response = ui.add_sized(
+                                            [ui.available_width().max(1.0), 34.0 * scale.max(0.82)],
+                                            egui::Button::new(
+                                                egui::RichText::new(label)
+                                                    .size(body_text_size)
+                                                    .color(choice_text_color),
+                                            ),
+                                        );
+                                        if response.clicked() && action.enabled {
+                                            self.apply_rpg_action(action);
+                                        }
+                                        ui.add_space(4.0 * scale.max(0.75));
+                                    }
+                                });
+                        });
+                    });
+            }
+        }
         if visible && !choices.is_empty() && !hide_choice_panel {
             egui::Area::new(egui::Id::new("choice_panel"))
                 .order(choice_order)

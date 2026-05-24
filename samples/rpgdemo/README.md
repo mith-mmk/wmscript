@@ -7,7 +7,7 @@ event mode / battle mode の操作デモです。固定分岐のテキストア�
 - `engine/main.wms` は町 64x64 map、森 64x64 map、地下遺跡 grid3d map、石碑 event、スライム battle を担当します。
 - `ui/main.wms` は既存ノベルゲームエンジンの message / choice UI を RPG 用に設定します。
 - `loader/main.wms` は image `100..106` と SE audio `203..204` だけを preload します。
-- map mode は `text.choices_named(...)` の方向 ID を使います。GUI では矢印キー/WASD が同じ choice id に変換され、方向だけの移動画面では選択パネルを閉じます。
+- map mode は `ext.rpg.map_controls(...)` / `ext.rpg.actions(...)` / `ext.rpg.hud(...)` を使います。方向キー/WASD は常に移動、クリック/数字キーはアクション、会話/戦闘の選択だけ `text.choices_named(...)` を使います。
 - BGM は同梱しません。壊れた deterministic loop は削除済みで、実 BGM は DAW 書き出し音源を外部指定して package してください。
 
 ## Gameplay Keys
@@ -72,15 +72,12 @@ cargo run -p wmtoolchain --bin wmtoolchain -- samples/rpgdemo/engine/main.wms `
   --out .test-rpgdemo/rpgdemo.warc
 
 cargo run -p wmfrontend --bin wmautoui -- .test-rpgdemo/rpgdemo.warc --platform egui --choices east,east,forest,west,town,end_demo --expect rpg-map-switch
-cargo run -p wmfrontend --bin wmautoui -- .test-rpgdemo/rpgdemo.warc --platform egui --choices north,east,east,forest,west,town,end_demo --expect rpg-map-switch
-cargo run -p wmfrontend --bin wmautoui -- .test-rpgdemo/rpgdemo.warc --platform egui --choices east,east,forest,north,north,check,read,end_demo --expect rpg-stone-read --expect-audio-resource 203
-cargo run -p wmfrontend --bin wmautoui -- .test-rpgdemo/rpgdemo.warc --platform egui --choices east,east,forest,north,east,south,south,end_demo --expect rpg-map-switch
+cargo run -p wmfrontend --bin wmautoui -- .test-rpgdemo/rpgdemo.warc --platform egui --choices east,east,forest,north,check,read,end_demo --expect rpg-stone-read --expect-audio-resource 203
 cargo run -p wmfrontend --bin wmautoui -- .test-rpgdemo/rpgdemo.warc --platform egui --choices east,east,forest,east,east,attack,attack,attack,end_demo --expect rpg-victory --expect-audio-resource 204
 cargo run -p wmfrontend --bin wmautoui -- .test-rpgdemo/rpgdemo.warc --platform egui --choices east,east,forest,south,south,forward,turn_right,forward,check,end_demo --expect rpg-dungeon-depth
-cargo run -p wmfrontend --bin wmautoui -- .test-rpgdemo/rpgdemo.warc --platform egui --choices east,east,forest,south,south,forward,forward,turn_right,forward,check,end_demo --expect rpg-dungeon-depth
-cargo run -p wmfrontend --bin wmautoui -- .test-rpgdemo/rpgdemo.warc --platform egui --choices east,east,forest,south,south,forward,forward,exit_dungeon,end_demo --expect rpg-map-switch
-cargo run -p wmfrontend --bin wmautoui -- .test-rpgdemo/rpgdemo.warc --platform egui --choices status --expect rpg-status
-cargo run -p wmfrontend --bin wmautoui -- .test-rpgdemo/rpgdemo.warc --platform egui --choices inventory --expect rpg-inventory
+cargo run -p wmfrontend --bin wmautoui -- .test-rpgdemo/rpgdemo.warc --platform egui --choices east,east,forest,south,south,exit_dungeon,end_demo --expect rpg-map-switch
+cargo run -p wmfrontend --bin wmautoui -- .test-rpgdemo/rpgdemo.warc --platform egui --choices status,end_demo --expect rpg-map-idle
+cargo run -p wmfrontend --bin wmautoui -- .test-rpgdemo/rpgdemo.warc --platform egui --choices inventory,end_demo --expect rpg-map-idle
 ```
 
 ## DAW BGM Slots

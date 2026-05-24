@@ -66,6 +66,121 @@ pub(super) fn direction_choice_for_key(choices: &[UiChoice], key: egui::Key) -> 
     })
 }
 
+pub(super) fn rpg_direction_for_pressed_key(
+    rpg: &wmui::UiRpgState,
+    ctx: &egui::Context,
+) -> Option<String> {
+    for key in [
+        egui::Key::ArrowUp,
+        egui::Key::W,
+        egui::Key::ArrowDown,
+        egui::Key::S,
+        egui::Key::ArrowLeft,
+        egui::Key::A,
+        egui::Key::ArrowRight,
+        egui::Key::D,
+    ] {
+        if ctx.input(|input| input.key_pressed(key))
+            && let Some(direction) = rpg_direction_for_key(rpg, key)
+        {
+            return Some(direction);
+        }
+    }
+    None
+}
+
+pub(super) fn rpg_direction_for_key(rpg: &wmui::UiRpgState, key: egui::Key) -> Option<String> {
+    if !rpg.map_controls.active() {
+        return None;
+    }
+    let ids: &[&str] = match key {
+        egui::Key::ArrowUp | egui::Key::W => {
+            if rpg.map_controls.projection == "grid3d" {
+                &["forward", "north"]
+            } else {
+                &["north", "forward"]
+            }
+        }
+        egui::Key::ArrowDown | egui::Key::S => {
+            if rpg.map_controls.projection == "grid3d" {
+                &["back", "south"]
+            } else {
+                &["south", "back"]
+            }
+        }
+        egui::Key::ArrowLeft | egui::Key::A => {
+            if rpg.map_controls.projection == "grid3d" {
+                &["turn_left", "west"]
+            } else {
+                &["west", "turn_left"]
+            }
+        }
+        egui::Key::ArrowRight | egui::Key::D => {
+            if rpg.map_controls.projection == "grid3d" {
+                &["turn_right", "east"]
+            } else {
+                &["east", "turn_right"]
+            }
+        }
+        _ => return None,
+    };
+    ids.iter()
+        .find(|id| {
+            rpg.map_controls
+                .directions
+                .iter()
+                .any(|direction| direction == **id)
+        })
+        .map(|id| (*id).to_owned())
+}
+
+pub(super) fn rpg_action_for_number_key(
+    actions: &[wmui::UiRpgAction],
+    key: egui::Key,
+) -> Option<wmui::UiRpgAction> {
+    let index = match key {
+        egui::Key::Num1 => 0,
+        egui::Key::Num2 => 1,
+        egui::Key::Num3 => 2,
+        egui::Key::Num4 => 3,
+        egui::Key::Num5 => 4,
+        egui::Key::Num6 => 5,
+        egui::Key::Num7 => 6,
+        egui::Key::Num8 => 7,
+        egui::Key::Num9 => 8,
+        _ => return None,
+    };
+    actions
+        .iter()
+        .filter(|action| action.enabled)
+        .nth(index)
+        .cloned()
+}
+
+pub(super) fn rpg_action_for_pressed_number_key(
+    actions: &[wmui::UiRpgAction],
+    ctx: &egui::Context,
+) -> Option<wmui::UiRpgAction> {
+    for key in [
+        egui::Key::Num1,
+        egui::Key::Num2,
+        egui::Key::Num3,
+        egui::Key::Num4,
+        egui::Key::Num5,
+        egui::Key::Num6,
+        egui::Key::Num7,
+        egui::Key::Num8,
+        egui::Key::Num9,
+    ] {
+        if ctx.input(|input| input.key_pressed(key))
+            && let Some(action) = rpg_action_for_number_key(actions, key)
+        {
+            return Some(action);
+        }
+    }
+    None
+}
+
 pub(super) fn should_hide_choice_panel_for_movement(choices: &[UiChoice]) -> bool {
     !choices.is_empty()
         && choices

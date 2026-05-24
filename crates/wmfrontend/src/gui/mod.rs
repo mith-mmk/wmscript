@@ -305,6 +305,23 @@ impl ReportApp {
         self.send_user_reply(Value::String(choice.id.clone()));
     }
 
+    fn apply_rpg_reply(&mut self, id: &str) {
+        self.selected_choice = None;
+        self.report
+            .runtime
+            .set_state_value("ui.last_choice", Value::String(id.to_owned()));
+        self.report
+            .runtime
+            .set_state_value("ui.last_reply", Value::String(id.to_owned()));
+        self.send_user_reply(Value::String(id.to_owned()));
+    }
+
+    fn apply_rpg_action(&mut self, action: &wmui::UiRpgAction) {
+        if action.enabled {
+            self.apply_rpg_reply(&action.id);
+        }
+    }
+
     fn selected_or_first_choice(&self) -> Option<UiChoice> {
         let choices = &self.report.ui_state.scene.message_window.choices;
         if let Some(selected) = self.selected_choice.as_deref()
@@ -505,6 +522,7 @@ impl ReportApp {
         self.report.ui_state.scene.message_window =
             crate::to_ui_message_window_state(runtime_message);
         self.report.ui_state.scene.layout = self.report.runtime.scene_layout_state();
+        self.report.ui_state.scene.rpg = crate::to_ui_rpg_state(self.report.runtime.rpg_ui_state());
         self.report.ui_state.scene.draw_calls = self
             .report
             .runtime

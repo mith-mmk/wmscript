@@ -16,16 +16,17 @@ use wmplatform::PlatformProfile;
 use wmruntime::{
     AudioPlaybackState as RuntimeAudioPlaybackState, IconSheetState, ImageDrawState,
     ImageSourceRect, MessageChoiceState as RuntimeMessageChoiceState,
-    MessageWindowState as RuntimeMessageWindowState, Runtime, SharedAudioBackend,
-    create_default_audio_backend,
+    MessageWindowState as RuntimeMessageWindowState, RpgActionState as RuntimeRpgActionState,
+    RpgHudState as RuntimeRpgHudState, RpgMapControlsState as RuntimeRpgMapControlsState,
+    RpgUiState as RuntimeRpgUiState, Runtime, SharedAudioBackend, create_default_audio_backend,
 };
 use wmtoolchain::{
     BuildArtifact, ExecutionReport, GameProject, Toolchain, ToolchainConfig, ToolchainError,
 };
 use wmui::{
     UiApp, UiAudioPlaybackState, UiBackend, UiChoice, UiCommand, UiContext, UiError, UiEvent,
-    UiIconSheet, UiImageDrawCall, UiImageRect, UiImageSlot, UiImageSource, UiLogLevel, UiSession,
-    UiState, UiTheme,
+    UiIconSheet, UiImageDrawCall, UiImageRect, UiImageSlot, UiImageSource, UiLogLevel, UiRpgAction,
+    UiRpgHudState, UiRpgMapControlsState, UiRpgState, UiSession, UiState, UiTheme,
 };
 use wmvm::{RunOutcome, Value};
 
@@ -218,6 +219,12 @@ impl UiBackend for ConsoleBackend {
             UiCommand::SetMessageSpeed(speed) => println!("[ui] message speed: {speed}"),
             UiCommand::SetMessageAuto(enabled) => println!("[ui] message auto: {enabled}"),
             UiCommand::SetMessageSkip(enabled) => println!("[ui] message skip: {enabled}"),
+            UiCommand::SetRpgState(rpg) => println!(
+                "[ui] rpg: projection={} directions={} actions={}",
+                rpg.map_controls.projection,
+                rpg.map_controls.directions.len(),
+                rpg.actions.len()
+            ),
             UiCommand::HideMessageWindow => println!("[ui] hide message window"),
             UiCommand::ResetScene => println!("[ui] reset scene"),
         }
@@ -305,6 +312,7 @@ impl UiApp for FrontendApp {
                 let runtime_message = self.runtime.message_window_state();
                 let ui_message = to_ui_message_window_state(runtime_message);
                 ctx.set_scene_layout(self.runtime.scene_layout_state());
+                ctx.set_rpg_state(to_ui_rpg_state(self.runtime.rpg_ui_state()));
                 ctx.set_message_speed(ui_message.text_speed);
                 ctx.set_message_auto(ui_message.auto_mode);
                 ctx.set_message_skip(ui_message.skip_mode);
@@ -424,6 +432,7 @@ fn report_ui_state(
     state.window.close_requested = true;
     state.scene.layout = runtime.scene_layout_state();
     state.scene.message_window = to_ui_message_window_state(runtime.message_window_state());
+    state.scene.rpg = to_ui_rpg_state(runtime.rpg_ui_state());
     if !state.scene.message_window.visible
         && let Some(story_text) = final_story_text(execution)
     {
@@ -584,6 +593,36 @@ fn to_ui_message_window_state(state: RuntimeMessageWindowState) -> wmui::UiMessa
         auto_mode: state.auto_mode,
         skip_mode: state.skip_mode,
         style: state.style,
+    }
+}
+
+fn to_ui_rpg_state(state: RuntimeRpgUiState) -> UiRpgState {
+    UiRpgState {
+        map_controls: to_ui_rpg_map_controls(state.map_controls),
+        actions: state.actions.into_iter().map(to_ui_rpg_action).collect(),
+        hud: state.hud.map(to_ui_rpg_hud),
+    }
+}
+
+fn to_ui_rpg_map_controls(state: RuntimeRpgMapControlsState) -> UiRpgMapControlsState {
+    UiRpgMapControlsState {
+        projection: state.projection,
+        directions: state.directions,
+    }
+}
+
+fn to_ui_rpg_action(action: RuntimeRpgActionState) -> UiRpgAction {
+    UiRpgAction {
+        id: action.id,
+        label: action.label,
+        enabled: action.enabled,
+    }
+}
+
+fn to_ui_rpg_hud(hud: RuntimeRpgHudState) -> UiRpgHudState {
+    UiRpgHudState {
+        title: hud.title,
+        body: hud.body,
     }
 }
 

@@ -4,6 +4,23 @@ fn choice(id: &str) -> UiChoice {
     UiChoice::new(id, id)
 }
 
+fn rpg_state(projection: &str, directions: &[&str], actions: &[&str]) -> wmui::UiRpgState {
+    wmui::UiRpgState {
+        map_controls: wmui::UiRpgMapControlsState {
+            projection: projection.to_owned(),
+            directions: directions
+                .iter()
+                .map(|direction| (*direction).to_owned())
+                .collect(),
+        },
+        actions: actions
+            .iter()
+            .map(|action| wmui::UiRpgAction::new(*action, *action))
+            .collect(),
+        hud: None,
+    }
+}
+
 #[test]
 fn direction_keys_map_to_2d_choices() {
     let choices = vec![
@@ -64,6 +81,51 @@ fn direction_keys_map_to_grid3d_choices() {
             .as_deref(),
         Some("turn_left")
     );
+}
+
+#[test]
+fn rpg_map_controls_map_arrows_and_wasd_to_movement_ids() {
+    let tile = rpg_state("tile2d", &["north", "south", "east", "west"], &[]);
+    assert_eq!(
+        rpg_direction_for_key(&tile, egui::Key::ArrowUp).as_deref(),
+        Some("north")
+    );
+    assert_eq!(
+        rpg_direction_for_key(&tile, egui::Key::D).as_deref(),
+        Some("east")
+    );
+
+    let grid = rpg_state(
+        "grid3d",
+        &["forward", "back", "turn_left", "turn_right"],
+        &[],
+    );
+    assert_eq!(
+        rpg_direction_for_key(&grid, egui::Key::W).as_deref(),
+        Some("forward")
+    );
+    assert_eq!(
+        rpg_direction_for_key(&grid, egui::Key::ArrowLeft).as_deref(),
+        Some("turn_left")
+    );
+}
+
+#[test]
+fn rpg_action_panel_uses_number_keys_for_actions() {
+    let rpg = rpg_state("tile2d", &["north"], &["check", "status", "inventory"]);
+    assert_eq!(
+        rpg_action_for_number_key(&rpg.actions, egui::Key::Num1)
+            .map(|action| action.id)
+            .as_deref(),
+        Some("check")
+    );
+    assert_eq!(
+        rpg_action_for_number_key(&rpg.actions, egui::Key::Num3)
+            .map(|action| action.id)
+            .as_deref(),
+        Some("inventory")
+    );
+    assert!(rpg_action_for_number_key(&rpg.actions, egui::Key::Num4).is_none());
 }
 
 #[test]
