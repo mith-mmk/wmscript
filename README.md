@@ -48,6 +48,7 @@ cargo run -p wmfrontend --bin wmfrontend -- releases/helloworld-cycle.warc --pla
 - Samples run catalog: [samples/README.md](samples/README.md)
 - Toolchain CLI guide: [crates/wmtoolchain/README.md](crates/wmtoolchain/README.md)
 - Language/API surface: [functions.md](functions.md)
+- LLM documentation pack: [docs/llm/README.md](docs/llm/README.md)
 - Japanese language/API surface: [function.ja.md](function.ja.md)
 - Specs: [SPEC](SPEC)
 - Project status: [todo.md](todo.md)

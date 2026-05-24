@@ -15,10 +15,10 @@ first RPG, simulation, automation, and RTS samples. It does not add VM opcodes.
 
 ## v1 State Keys
 
-Gameplay v1 uses stable string keys in `state.*` so existing frontends can run
-gameplay samples without a dedicated `ext.rpg.*` or `ext.sim.*` namespace.
-Automation and RTS helper extensions are thin state mutators over these same
-keys; they do not own separate runtime state.
+Gameplay v1 uses stable string keys in `state.*` for game logic. RPG map UI uses
+the small `ext.rpg.*` input/HUD extension so map movement is not coupled to
+conversation choices. Automation and RTS helper extensions are thin state
+mutators over these same keys; they do not own separate gameplay state.
 
 | Key | Meaning |
 | --- | --- |
@@ -55,7 +55,7 @@ keys; they do not own separate runtime state.
 
 Map mode is the standard v1 surface for RPG field movement, 2D simulation
 boards, and automation-game work areas. It still uses `state.*` and normal
-message replies; no `ext.rpg.*` or `ext.sim.*` namespace is introduced.
+message replies for accepted input. RPG map UI is declared through `ext.rpg.*`.
 `ext.automation.*` and `ext.rts.*` remain state-key helpers rather than a
 separate gameplay state model.
 
@@ -76,11 +76,29 @@ separate gameplay state model.
 | `map.return_mode` | Mode to restore after map-triggered event or battle sequences. |
 | `dungeon.level` | Optional dungeon floor/depth marker for grid-style RPG maps. |
 
-2D map choices use stable ids such as `north`, `south`, `east`, `west`,
-`check`, `menu`, `status`, and `inventory`. Grid-style 3D choices use `forward`,
-`back`, `turn_left`, `turn_right`, and `check`. Frontends may bind keys or
-gestures to these same choice ids, but scripts should continue to read the
-result through `state.get("ui.last_choice")` after `recv()`.
+2D map controls use stable ids such as `north`, `south`, `east`, and `west`.
+Grid-style 3D controls use `forward`, `back`, `turn_left`, and `turn_right`.
+Map actions use ids such as `check`, `menu`, `status`, and `inventory`.
+Frontends write the accepted id to `ui.last_choice` and `ui.last_reply`, so
+scripts continue to read the result through `state.get("ui.last_choice")` after
+`recv()`.
+
+## RPG UI/Input Extension
+
+`ext.rpg.*` is intentionally limited to map input and small HUD state. Movement
+rules, map bounds, battle calculations, and event results stay in script logic.
+
+| API | Meaning |
+| --- | --- |
+| `ext.rpg.map_controls(projection, dir...)` | Enables RPG map mode input. `projection` is `tile2d` or `grid3d`; directions are accepted movement ids. |
+| `ext.rpg.actions(id, label, ...)` | Sets map-mode non-movement actions. Arguments are id/label pairs and are shown in the action panel. |
+| `ext.rpg.hud(title, body)` | Sets the small map HUD text. |
+| `ext.rpg.clear()` | Clears map controls, actions, and HUD state. |
+
+When map controls are active, Arrow/WASD input is movement-first. Action panel
+items are selected by click or number keys `1..9`. `text.choices_named(...)`
+remains the conversation/event/battle choice surface and is not used for RPG map
+movement.
 
 ## Event Mode
 
