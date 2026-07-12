@@ -1,0 +1,15 @@
+[package]
+name = "v2-rts"
+version = "0.2.0"
+entry = "src/main.wms"
+
+[game]
+tick_hz = 20
+seed = 33
+save_compat_version = 1
+
+[target]
+default = "egui"
+
+[capabilities]
+allow = ["gui", "storage"]

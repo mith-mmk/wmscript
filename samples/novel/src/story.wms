@@ -1,0 +1,3 @@
+func chapter_title() -> string {
+    return "The Lighthouse at Midnight";
+}

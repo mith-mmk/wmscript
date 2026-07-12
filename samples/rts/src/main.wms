@@ -1,0 +1,36 @@
+component Unit persistent {
+    team: int,
+    x: int,
+    y: int,
+    health: int,
+}
+
+resource Economy persistent {
+    wood: int = 10,
+    ore: int = 0,
+}
+
+event ProductionTick {
+    amount: int,
+}
+
+system production(event: ProductionTick) {
+    ui.say("RTS system", "Production event dispatched.");
+    return;
+}
+
+on start {
+    let worker: int = world.spawn();
+    let scout: int = world.spawn();
+    world.set(worker, "Unit", Unit { team: 1, x: 4, y: 4, health: 12 });
+    world.set(scout, "Unit", Unit { team: 1, x: 6, y: 5, health: 8 });
+    emit ProductionTick { amount: 1 };
+    ui.say("RTS", "Two units are ready for fixed-tick commands.");
+    return;
+}
+
+test func unit_schema_compiles() {
+    let unit = Unit { team: 1, x: 0, y: 0, health: 10 };
+    core.assert(unit.health == 10, "unit health mismatch");
+    return;
+}

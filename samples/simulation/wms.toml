@@ -1,0 +1,15 @@
+[package]
+name = "v2-simulation"
+version = "0.2.0"
+entry = "src/main.wms"
+
+[game]
+tick_hz = 10
+seed = 44
+save_compat_version = 1
+
+[target]
+default = "headless"
+
+[capabilities]
+allow = ["storage"]

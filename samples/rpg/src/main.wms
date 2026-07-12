@@ -1,0 +1,35 @@
+component Position persistent {
+    x: int,
+    y: int,
+}
+
+component Health persistent {
+    current: int,
+    maximum: int,
+}
+
+event Move {
+    entity: int,
+    dx: int,
+    dy: int,
+}
+
+system movement(event: Move) {
+    ui.say("RPG system", "Move event dispatched.");
+    return;
+}
+
+on start {
+    let hero: int = world.spawn();
+    world.set(hero, "Position", Position { x: 4, y: 7 });
+    world.set(hero, "Health", Health { current: 30, maximum: 30 });
+    emit Move { entity: 1, dx: 1, dy: 0 };
+    ui.say("RPG", "Hero spawned on the deterministic map.");
+    return;
+}
+
+test func hero_schema_compiles() {
+    let position = Position { x: 1, y: 2 };
+    core.assert(position.x == 1, "position x mismatch");
+    return;
+}

@@ -1,7 +1,0 @@
-export func main() {
-    asset.preload(100);
-    asset.preload(101);
-    asset.preload(102);
-    asset.preload(103);
-    return "loader-ready";
-}

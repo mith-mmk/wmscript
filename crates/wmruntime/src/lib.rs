@@ -3,6 +3,7 @@
 //! Headless runtime wrapper for WML programs and archives.
 
 mod audio_backend;
+pub mod game;
 mod runtime;
 
 pub use audio_backend::{

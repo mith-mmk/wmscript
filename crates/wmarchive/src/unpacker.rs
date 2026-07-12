@@ -19,7 +19,7 @@ impl ArchiveBundle {
             let bytes = archive
                 .section_bytes(section.id)
                 .ok_or(ArchiveError::BrokenLayout)?;
-            sections.push(BundleSection::new(section.clone(), bytes.to_vec()));
+            sections.push(BundleSection::new(*section, bytes.to_vec()));
         }
         Ok(Self { manifest, sections })
     }

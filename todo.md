@@ -1,529 +1,126 @@
-# todoリスト
-  - \- [ ] の補完面倒なので各項目に入れてください
-　- 実装が終わったらステータスを変更してください 
-　- [+] コード実装が最終テスト未完のもの
-　- [*] 実装途中のもの
-　- [x] テストが完了し、動作チェックが終わったもの（人間がチェック）
-　- [-] 実装を見合わせたもの/issue送りにしたもの（人間がチェック）
-　- 仕様書はSPEC/の下にあり
-　- 問題点や曖昧な仕様はissue.mdで管理
-
-# カレント
-- [+] ツールチェーン用のサンプルノベルゲームの作成
-- [+] first target: Writer-First 仕様固定 + Toolchain 実証（egui/native 導線）
-  - [+] 必須契約5点を SPEC に反映
-    - recv()/message progression 契約
-    - ui.last_choice / ui.last_input / ui.last_reply の標準化
-    - state.save/load と ext.vm.save/load の責務分離
-    - worker 間 input routing 契約
-    - platform capability matrix（egui/wasm/native）
-  - [+] script + assets -> compile -> archive/package -> runtime/frontend 実行の導線を一本化
-  - [+] samples/easynovel と samples/messagewindow を契約準拠で再検証
-- [*] next phase 準備
-  - [+] B3. wasm ui smoke（wmfrontend wasm32 check）
-  - [*] C4-2. WEB配信最適化（assets の分割配信 + manifest + ロード最適化）
-  - [ ] D3. core engine 切り出し + DSL 風高レベル API
-
-# 実装
-0. Crate分割
-    - [+] .gitignoreの整理
-    - [+] Workflowの作成
-    - [+] 以下のcrateの作成 cargo new
-    - [+] buildチェーンの作成(releasesに保管)
-    - [+] VMにwasmとeguiの実装で異なる部分を吸収可能なモジュールを実装
-
-0.1 仕様変更
- - [+] 拡張子.wmlを.wmsへ
- - [+] WMLScriptをWMScriptへ
- - [+] 名称をすべてそれに合わせる
-
-
-1. 実行系 (crate wmvm, crate.ioに公開予定)
-```
-wmvm
-├─ core
-├─ scheduler
-├─ memory / GC
-├─ verifier
-```
-
-1. ホスト統合系（Engine Bridge,  crate.ioに公開予定）
-wmhost
-├─ HostAPI
-├─ ResourceManager
-├─ StateManager
-├─ Audio/Image/UI
-├─ AsyncIO
-
-1. コンパイラ系（Script Toolchain, githubのみ, npmかも）
-
-wmcompiler
-├─ parser
-├─ resolver (import解決)
-├─ IR
-├─ optimizer
-├─ bytecode_gen
-├─ symbol_table
-
-4. バイトコード変換系（低レイヤ,  crate.ioに公開予定）
-wmbytecode
-├─ encoder   ← (IR → bytecode)
-├─ decoder   ← (bytecode → Op)
-├─ verifier
-├─ disassembler（任意）
-
-5. アーカイブ系（Distribution,  crate.ioに公開予定）
-wmarchive
-├─ archiver
-├─ unarchiver
-├─ signer
-├─ verifier
-├─ manifest_builder
-
-6. リソース系（Asset Pipeline）
-wmresource
-├─ resource_id_resolver
-├─ asset_builder
-├─ compression
-├─ encoding (image/audio)
-
-
-# 完成形
-Runtime
- ├─ wmvm
- └─ wmhost
-
-Toolchain
- ├─ wmcompiler
- ├─ wmbytecode
- ├─ wmarchive
- └─ wmresource
-
-
-```
-
-
-
-1. 仕様書リファクタ
-1.1 ドキュメント構造分割
-
-  仕様を以下の単位に分割
- - [+] 言語仕様（WMScript）
- - [+] VM仕様
- - [+] バイトコード仕様
- - [+] アーカイブ仕様
- - [+] ホストAPI仕様
- - [+] 各仕様に責務コメント追加（何を定義するか明記）
- - [+] 各仕様間の依存関係を明文化（例：VM→バイトコード）
-
-1.2 相互リンク整理
-
- 命令セット ↔ VM実行モデルのリンク追加
-
- API ↔ CALL_HOST仕様のリンク追加
-
- package / worker ↔ scheduler のリンク追加
-
-1.3 仕様検証（抜け・矛盾チェック）
-
- init/update/on_messageの呼び出し順の明文化
-
- worker lifecycle（spawn→run→destroy）の定義
-
- メモリ解放タイミング（handle含む）の定義
-
- エラー時の挙動（nil/return）の統一
-
- import解決とID割当のフロー明確化
-
-1.4 TODO整理
-
- - 整理方針
-   - 上流から下流へ並べる
-   - 1項目は1成果物に絞る
-   - 各TODOに「入力」「出力」「完了条件」を付与する
- - 実装順のバックログ
-   - [ ] 仕様固定の最終確認
-     - 入力: `SPEC/language.md`, `SPEC/vm.md`, `SPEC/op.md`, `SPEC/hostapi.md`, `SPEC/resource.md`, `SPEC/archive.md`, `SPEC/scheduler.md`
-     - 出力: 仕様間リンクと依存関係が明文化された状態
-     - 完了条件: 仕様の矛盾が `SPEC/issue.md` に切り出され、実装前提が確定する
-   - [+] VMコア最小型の定義
-     - 入力: `SPEC/vm.md`, `SPEC/op.md`
-     - 出力: `Value`, `Stack`, `Frame`, `VmConfig`, `Vm`
-     - 完了条件: 型定義だけで `cargo check` が通り、VMの骨格が共有できる
-   - [+] バイトコードデコード層
-     - 入力: opcode表、bytecode buffer
-     - 出力: `Op` enum への decode 関数、little endian 読み取りヘルパ
-     - 完了条件: invalid opcode / eof / endian の単体テストが揃う
-   - [+] VM実行ループ
-     - 入力: `Op`, `Vm`, `HostRegistry`
-     - 出力: `run_frame`、`CALL/RETURN/JUMP/CALL_HOST` の実装
-     - 完了条件: 基本命令列の実行テストが通る
-   - [+] worker と scheduler
-     - 入力: `Vm`, message queue, sleep/request state
-     - 出力: worker state machine、step budget scheduler
-     - 完了条件: `spawn/run/destroy` と `yield/sleep/recv` の遷移が確認できる
-   - [+] Host API ブリッジ
-     - 入力: host_id table、capability table
-     - 出力: host dispatch、権限制御、mock interface
-     - 完了条件: `CALL_HOST` のモックテストが書ける
-   - [+] Verifier
-     - 入力: bytecode module、func table、const table、jump targets、host_id table
-     - 出力: 検証結果、エラー分類
-     - 完了条件: 不正 opcode / 範囲外 jump / 無効 host_id を検出できる
-   - [+] VMテスト
-     - 入力: 命令列、VM状態、host mock
-     - 出力: opcode 単体テスト、実行テスト、worker テスト
-     - 完了条件: `cargo test --workspace` が安定して通る
-   - [+] Ext API 基盤
-     - 入力: host registry、namespace policy
-     - 出力: ext_id 割当、namespace 管理
-     - 完了条件: `ext.*` の名前解決がコンパイル時 ID に落ちる
-   - [+] コンパイラ基盤
-     - 入力: AST/IR 方針、import 解決規則
-     - 出力: parser、resolver、IR の骨格
-     - 完了条件: 静的 import 解決と symbol table の流れが作れる
-   - [+] アーカイブ / リソース基盤
-     - 入力: manifest、section table、resource id policy
-     - 出力: archive encode/decode、verify、resource handle の橋渡し
-     - 完了条件: bundle load までの経路が仕様で閉じる
-   - [+] UI / サンプル / ランタイム
-     - 入力: host UI/audio/image API、VM と compiler の成果物
-     - 出力: サンプルスクリプト、総合サンプル、runtime wrapper
-     - 完了条件: end-to-end の最小例が説明できる
-
-1. VM実装
-2.1 外部公開API（crate）
-
- [+] VM生成API
-
- [+] Vm::new(config)
-
- [+] 実行API
-
- [+] vm.run_frame(step_limit)
-
- [+] worker操作（send / recv）
-
- [+] send / recv
-
- [+] time 時間コントロールAPI(wait キー待ち or 時間待ち /tick/sleep)
-
- asset/stateアクセスAPI
-
-2.2 内部コア構造
-
- [+] Value enum実装（int/float/string/handleなど）
-
- [+] Stack構造
-
- [+] Frame構造
-
- [+] VM struct（stack / frames / heap / pc）
-
-2.3 デコーダ
-
- [+] バイトコード → Op enum変換
-
- [+] little endian読み込み統一
-
- [+] 命令長テーブル or decode内管理
-
-2.4 実行ループ
-
- [+] match dispatchループ実装
-
- [+] CALL / RETURN処理
-
- [+] CALL_HOST処理
-
- [+] JUMP系処理
-
- [+] stack操作安全チェック（debug）
-
-2.5 ワーカーモデル
-
- [+] workerインスタンス分離
-
- [+] メッセージキュー実装
-
- [+] 状態管理（running/waiting/sleeping）
-
-2.6 スケジューラ
-
- [+] 協調スケジューリング
-
- [+] yield対応
-
- [+] sleep対応
-
- [+] step制限
-
-2.7 Host API
-
- [+] host_idテーブル
-
- [+] call_hostディスパッチ
-
- [+] capabilityチェック
-
-2.8 WebAssembly対応
-
- スレッド非依存設計（worker仮想化）
-
- async bridge（JS連携）
-
- メモリ制約対応
-
-1. VMテスト
-3.1 命令テスト
-
- [+] 全opcode単体テスト
-
- [+] stack挙動テスト
-
- [+] jump整合性テスト
-
-3.2 実行テスト
-
- [+] 関数呼び出し
-
- 再帰制限確認
-
- エラーケース
-
-3.3 ワーカー
-
- [+] send/recvテスト
-
- 非同期動作確認
-
-4. VM Extender（ext API）
-4.1 拡張基盤
-
- [+] extension登録API
-
- [+] ext_id割当
-
- [+] namespace管理
-
-4.2 サンプル実装
-
- ext.ffmpeg.*
-
- decode
-
- encode
-
- stream
-
-5. スクリプトサンプル
-
- [+] Hello World
-
- [+] input連動スクリプト
-
- [+] worker通信サンプル
-
- [+] assetロード例
-
- [+] easynovel
- [+] toolchainnovel
-
-6. スクリプトコンパイラ
-6.1 フロントエンド
-
- [+] parser
-
- [+] AST生成
-
-6.2 中間処理
-
- [+] import解決
-
- [+] シンボル解決
-
- [+] 型タグ付け
-
-6.3 バックエンド
-
- [+] IR生成
-
- [+] 最適化
-
- [+] bytecode生成
-
- [+] ID割当
-
-7. 逆コンパイラ
-
- bytecode → IR
-
- IR → script復元
-
- シンボル再構築
-
-8. アーカイバ
-8.1 基本
-
- [+] bundle構造生成
-
- [+] manifest生成
- [+] compile済みmoduleを archive に格納して .warc 単体起動を可能化
- [+] streaming reader で archive を section 単位ロード可能化
-
- ネットワークダウンロードに対応するためのファイル配置の最適化
-
-
-8.2 セキュリティ
-
- [+] ハッシュ生成
-
- [+] 署名処理
-
- [+] 鍵管理
-
-9. 逆アーカイバ
-
- [+] bundle展開
-
- [+] 署名検証
-
- [+] integrityチェック
-
-10. UI実装
-10.1 共通層
-
- [+] UI抽象レイヤ
-
- [+] メッセージウィンドウ / 画像スロットのUI状態
- [+] text log / backlog制御
-
-10.2 egui
-
- [+] 描画
- [+] 画像ロード
- [+] 入力
- [+] 音声再生バックエンド
- [+] auto / skip進行制御
- [+] scene.reset で message window と描画済みゲーム画面を初期化
- [+] image.release で解放済み handle の描画状態を除去
-
-10.3 WebGL
-
- レンダリング
-
- JS bridge
-
-10.4 paintcore+WML実装 環境非依存
-- https://github.com/mith-mmk/wasm-paint
-
-11. ext APIサンプル
-
- [+] ext.fs
-
- [+] ext.net // ネットワークダウンロード, ネットワークアクセス
-
- [+] ext.debug
-
- [+] ext.llm  llama-cpp +  0.6B-0.8Bの軽量LLM([qwen3](https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/blob/main/Qwen3.5-0.8B-Q8_0.gguf))で人工無能
-
-- [+] ext.image
-  - [+] ext.image.load
-  - [+] ext.image.draw # affine transration + effects
-  - [ ] ext.image.clear # effect
-
- [+] ext.audio
-
- [+] ext.vm(save, load)
-
- [+] state.save/load
-
- [+] ext.automation / ext.rts (自動化ゲーム・RTS resource/job/tick/unit state)
-
- [+] ext.image.draw
-
- [+] ext.image.draw_part/draw_ext
-
- [+] ext.image.set_icon_sheet/draw_icon
-
- [+] ext.audio.playback
-
- [+] ext.message
-
-12. 総合サンプル
-12.1 フロント
- [+] メニューUI（セーブ/ロード）
- [+] image/audioデモ
-
-12.2 スクリプト
- [+] 分岐スクリプト
- [+] image/audioスクリプト
-
-12.3 バックエンド
- [+] タイマー
-
-12.4 リソース
- [+] ダミー画像
- [+] UI素材
-
-12.5 結合テスト
- [+] 全フロー通し実行
- [+] セーブ/ロード整合確認
-
-```
-依存関係（重要）
-仕様 → VM → コンパイラ → アーカイバ
-             ↓
-          テスト
-             ↓
-        サンプル/UI
-```
-
-13.2.  ランタイムの作成
-    - [+] ランタイムは素のランタイムと有料ランタイムを作る
-
-14. first target: Writer-First 仕様固定 + Toolchain 実証
-  - [+] A. 契約固定（writer が frontend script に専念できる状態を作る）
-    - [+] A1. recv()/message progression 契約を SPEC に固定
-    - [+] A2. input return ABI（ui.last_choice/ui.last_input/ui.last_reply）を標準化
-    - [+] A3. save/load layering（state と vm）を固定
-    - [+] A4. worker 間 input routing を固定
-    - [+] A5. platform capability matrix（egui/wasm/native）を固定
-  - [*] B. 実装基盤（既存実装の整理）
-    - [+] B1. UI Customize API
-    - [+] B2. egui ui
-    - [+] B3. wasm ui（first target は smoke レベル）
-      - [+] wmfrontend を wasm32-unknown-unknown で cargo check
-      - [+] native eframe window 起動を wasm target から分離
-      - [ ] browser bootstrap / WebGL rendering は C4-2 / D3 側で継続
-    - [+] B4. message / choice / input
-    - [+] B5. message speed / auto / skip
-    - [+] B6. back log
-    - [+] B7. save/load
-    - [+] B8. 画像表示 / 音楽
-    - [+] B9. back log effect
-    - [+] B10. opening/ending
-    - [+] B11. 言語切り替え
-    - [+] B12. 全自動テスト用CLI UI (AIによる動作確認のため)
-      - [+] choice/input routing 回帰テスト
-  - [+] C. Toolchain 実証（script + assets -> demo 実行）
-    - [+] C1. スクリプト分割コンパイルと import 運用を固定
-    - [+] C2. archive/package を通した起動手順を固定
-    - [+] C3. samples で end-to-end 実証（messagewindow/easynovel）
-    - [+] C4-1. wmsruntime <packeddata> で直接起動可能に（script + assets を .warc にまとめて起動）
-    - [+] C4-1a. samples/toolchainnovel で script + asset の .warc 化と archive 直接起動の導線を追加
-      - [+] 日本語本文 + choice/input/save 契約
-      - [+] text asset + image asset 同梱
-      - [+] wmautoui archive 直接実行で確認
-    - [*] C4-2. WEB配信最適化 （assets の 分割配信 + manifest + ロード最適化）
-      - [+] 未決事項を SPEC/issue.md に切り出し
-      - [+] single .warc + HTTP range / section fetch 方針の仕様化
-      - [+] manifest の外部 section URL / cache key / digest 検証設計
-      - [+] wmarchive manifest に external section location を追加
-      - [+] wmtoolchain asset から external section location を生成
-      - [+] samples/toolchainnovel を Web 配信 smoke corpus 化
-  - [ ] D. next phase へ分離
-    - [ ] D1. 音声(lip sync)
-    - [ ] D2. text 2 script(toolchain) (md -> wms script toolchain)
-    - [ ] D3. core engine 切り出し + DSL 風 API
+# WMScript v2 実装 TODO
+
+## ステータス
+
+- `[ ]`: 未着手
+- `[*]`: 実装中
+- `[+]`: コード実装済み・最終確認前
+- `[x]`: テストと人間による動作確認が完了
+- `[-]`: 実装見合わせ、`SPEC/issue.md`へ移動
+
+各項目は上から順に実行し、「完了条件」を満たすまで次へ進まない。
+
+## 1. VM三層の固定
+
+- [+] `wmvm`・`wmbytecode`・`wmverifier`のbaseline固定
+  - 入力: 現行公開API、bytecode v1、既存118テスト
+  - 出力: VM公開APIとbinary codecのgolden回帰テスト
+  - 完了条件: 三crateの実装を変更せず`cargo test --workspace`が通る
+
+## 2. v2仕様
+
+- [+] 言語・型・task/event/system仕様
+  - 入力: `SPEC/language.md`、`SPEC/vm.md`、`SPEC/op.md`
+  - 出力: v2構文、型規則、待機可能性、VM lowering契約
+  - 完了条件: VM/opcode追加なしで全構文のlowering先が定義される
+- [+] world・固定tick・save仕様
+  - 入力: `SPEC/gameplay.md`、`SPEC/scheduler.md`、`SPEC/hostapi.md`
+  - 出力: entity/component/resource/event、決定順序、永続化境界
+  - 完了条件: 同一seedと入力列から同一状態になる規則が定義される
+- [+] project・WARC v2・legacy仕様
+  - 入力: `SPEC/archive.md`、既存WARC v1
+  - 出力: `wms.toml`とWARC v2、v1読込専用経路
+  - 完了条件: v2生成とv1読込の責務が分離される
+
+## 3. コンパイラ
+
+- [+] lexer・parser・diagnostic
+  - 入力: v2言語仕様
+  - 出力: span付きtoken、AST、複数diagnostic
+  - 完了条件: 全宣言・式・制御構文の正常系と異常系テストが通る
+- [+] resolver・型検査・typed IR
+  - 入力: AST、標準モジュールsignature
+  - 出力: 解決済みsymbol、推論済み型、typed IR
+  - 完了条件: 型不一致、未知symbol、待機禁止位置をcompile errorにできる
+- [+] VM bytecode lowering
+  - 入力: typed IR、bytecode v1
+  - 出力: `wmvm::Program`、task再開状態、event entry table
+  - 完了条件: VM三層を変更せず関数・構造体・collection・taskが実行できる
+
+## 4. ゲームランタイム
+
+- [+] Worldとイベントキュー
+  - 入力: component/resource/event schema
+  - 出力: Entity ID、型付きcomponent store、resource、FIFO event queue
+  - 完了条件: queryとevent配信が常に決定的な順序になる
+- [+] 固定tick・乱数・save/load
+  - 入力: `tick_hz`、seed、永続schema
+  - 出力: fixed-step scheduler、seed RNG、永続snapshot
+  - 完了条件: replayとsave/load round-tripで同じworld状態になる
+- [+] 標準portとmodule
+  - 入力: runtime capability
+  - 出力: input/render/audio/storage port、標準module dispatch
+  - 完了条件: headlessとeguiが同じruntime coreを利用できる
+
+## 5. Project・配布・CLI
+
+- [+] `wms.toml`
+  - 入力: project仕様
+  - 出力: strict manifest loader、相対path解決、asset ID検査
+  - 完了条件: 未知key、重複ID、不正pathをdiagnosticにできる
+- [+] WARC v2とlegacy v1
+  - 入力: v2 manifest、bytecode v1、既存WARC v1
+  - 出力: v2 writer/reader、隔離されたv1 reader
+  - 完了条件: v2 round-tripと生成したv1 fixtureのlegacy実行が通る
+- [+] 統一`wms` CLI
+  - 入力: compiler、runtime、project、archive
+  - 出力: `new/check/build/run/test/package/legacy run`
+  - 完了条件: 全commandが同じ`wms.toml`とdiagnostic形式を使う
+
+## 6. 実行adapter
+
+- [+] headless runner
+  - 入力: GameRuntime、scripted input
+  - 出力: deterministic reportとtest runner
+  - 完了条件: GUIなしで全サンプルを最後まで検証できる
+- [+] egui adapter
+  - 入力: render/input/audio port
+  - 出力: 対話用window
+  - 完了条件: headlessと同じ入力列で同じworld/resultになる
+
+## 7. サンプルと文書
+
+- [+] ノベルゲーム
+  - 入力: task/await、ui、save
+  - 出力: 選択分岐を持つ最小project
+  - 完了条件: check/test/run/package/package-runが通る
+- [+] RPG
+  - 入力: entity/component、map、event
+  - 出力: 移動と戦闘を持つ最小project
+  - 完了条件: check/test/run/package/package-runが通る
+- [+] RTS
+  - 入力: system、fixed tick、command event
+  - 出力: unitと生産を持つ最小project
+  - 完了条件: check/test/run/package/package-runが通る
+- [+] シミュレーション
+  - 入力: agent、時間、seed RNG、save
+  - 出力: 再現可能な最小project
+  - 完了条件: check/test/run/package/package-runが通る
+- [+] 利用文書
+  - 入力: 確定したCLIと言語
+  - 出力: README、language guide、4sample guide
+  - 完了条件: 文書記載commandがE2Eで検証される
+
+## 8. 最終ゲート
+
+- [+] 全検証
+  - 入力: 全成果物
+  - 出力: fmt/check/test/doc/WASM/sample E2E結果
+  - 完了条件: `cargo fmt --all --check`、`cargo check --workspace`、`cargo test --workspace`、`cargo doc --no-deps`、WASM compile check、4sample E2Eがすべて成功する
+
+## 9. 次期項目
+
+- [ ] Web browser bootstrapと描画adapter
+  - 入力: WASM境界仕様、GameRuntime port
+  - 出力: browser runner
+  - 完了条件: headlessと同一replay結果をbrowserで再現できる

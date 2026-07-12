@@ -14,6 +14,7 @@ mod ir;
 mod lowering;
 mod parser;
 mod symbol;
+pub mod v2;
 
 pub use ast::{FunctionDecl, ImportDecl, LetDecl, ModuleAst, ModuleItem};
 pub use compiler::Compiler;

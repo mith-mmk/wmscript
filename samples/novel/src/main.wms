@@ -1,0 +1,27 @@
+import "story.wms" as story;
+
+resource StoryProgress persistent {
+    chapter: int = 0,
+    route: string = "",
+}
+
+enum Route { Harbor, Library }
+
+task prologue() -> string {
+    let title: string = story.chapter_title();
+    ui.say("Guide", title);
+    let route: string = await input.choice(["harbor", "library"]);
+    save.store(1);
+    return route;
+}
+
+on start {
+    await prologue();
+    return;
+}
+
+test func schema_is_available() {
+    let progress = StoryProgress { chapter: 0, route: "harbor" };
+    core.assert(progress.chapter == 0, "chapter must start at zero");
+    return;
+}

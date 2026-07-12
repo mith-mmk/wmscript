@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/wms",
     "crates/wmarchive",
     "crates/wmbytecode",
     "crates/wmcompiler",

@@ -9,6 +9,7 @@ mod security;
 mod streaming;
 mod types;
 mod unpacker;
+mod v2;
 
 pub use builder::Archive;
 pub use builder::*;
@@ -18,6 +19,7 @@ pub use security::*;
 pub use streaming::*;
 pub use types::*;
 pub use unpacker::*;
+pub use v2::*;
 
 use wmplatform::PlatformProfile;
 

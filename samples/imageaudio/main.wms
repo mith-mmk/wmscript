@@ -1,6 +1,0 @@
-export func main() {
-    return ext.audio.playback(
-        ext.audio.load(200),
-        ext.image.draw(ext.image.load(100), 48, 48)
-    );
-}

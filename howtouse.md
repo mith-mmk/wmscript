@@ -1,28 +1,24 @@
-# How To Use
+# WMScript v2 Project Guide
 
-このページは導線だけを持つ軽量版です。実行コマンドの正本は `samples/README.md` です。
+Every project has one `wms.toml` and one entry source.
 
-## Start Here
+```toml
+[package]
+name = "my-game"
+version = "0.1.0"
+entry = "src/main.wms"
 
-1. Workspace overview: [README.md](README.md)
-2. Samples run catalog: [samples/README.md](samples/README.md)
-3. Toolchain CLI: [crates/wmtoolchain/README.md](crates/wmtoolchain/README.md)
-4. Language/API surface: [functions.md](functions.md)
+[game]
+tick_hz = 60
+seed = 1
+save_compat_version = 1
 
-## Quick Commands
+[target]
+default = "headless"
 
-```bash
-# headless script run for AI/CI verification
-cargo run -p wmfrontend --bin wmautoui -- samples/inputlink/main.wms --input AI-INPUT --expect AI-INPUT
-
-# GUI run (when display environment is available)
-cargo run -p wmfrontend --bin wmfrontend -- samples/messagewindow/main.wms --platform egui --font noto
-
-# build package
-cargo run -p wmtoolchain -- samples/helloworld/main.wms --out releases/helloworld-cycle.warc
-
-# run package
-cargo run -p wmfrontend --bin wmfrontend -- releases/helloworld-cycle.warc --platform native
+[capabilities]
+allow = []
 ```
 
-
+Unknown keys, duplicate asset IDs/names, absolute paths, and parent traversal are errors.
+Use `wms check`, `wms test`, `wms run`, and `wms package` for every project.

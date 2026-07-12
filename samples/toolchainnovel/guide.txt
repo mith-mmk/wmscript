@@ -1,9 +1,0 @@
-三番線の信号 ガイド資料
-
-このテキストファイルは、wmtoolchain で resource 100 として意図的に同梱します。
-背景画像は resource 101 として同じ archive に入ります。
-このサンプルでは script と asset をまとめた archive 生成を確認します。
-
-保守カード:
-- 行動: 継電器を直す
-- 合言葉: lumen

@@ -6,32 +6,27 @@ use wmvm::Value;
 fn toolchainnovel_project() -> GameProject {
     GameProject::new(
         "toolchainnovel",
-        "samples/toolchainnovel/main.wms",
-        include_str!("../../../../samples/toolchainnovel/main.wms"),
+        "legacy/toolchainnovel.wms",
+        r#"export func main() { return "legacy-novel"; }"#,
     )
     .push_asset(GameAsset::new(
         "story/guide",
         10,
         100,
         ResourceType::ScriptData,
-        include_bytes!("../../../../samples/toolchainnovel/guide.txt").to_vec(),
+        b"legacy guide".to_vec(),
     ))
     .push_asset(
-        GameAsset::image(
-            "ui/background",
-            11,
-            101,
-            include_bytes!("../../../../samples/uiimage.png").to_vec(),
-        )
-        .with_external_location("assets/uiimage.png", "sha256:toolchainnovel-bg", 1),
+        GameAsset::image("ui/background", 11, 101, b"legacy image".to_vec())
+            .with_external_location("assets/uiimage.png", "sha256:toolchainnovel-bg", 1),
     )
 }
 
 fn automationrts_project() -> GameProject {
     GameProject::new(
         "automationrts",
-        "samples/automationrts/main.wms",
-        include_str!("../../../../samples/automationrts/main.wms"),
+        "legacy/automationrts.wms",
+        r#"export func main() { return "legacy-rts"; }"#,
     )
 }
 

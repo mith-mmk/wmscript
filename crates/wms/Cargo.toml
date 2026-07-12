@@ -1,0 +1,15 @@
+[package]
+name = "wms"
+version = "0.2.0"
+edition = "2024"
+
+[dependencies]
+wmarchive = { path = "../wmarchive" }
+wmbytecode = { path = "../wmbytecode" }
+wmcompiler = { path = "../wmcompiler" }
+wmfrontend = { path = "../wmfrontend" }
+wmhost = { path = "../wmhost" }
+wmplatform = { path = "../wmplatform" }
+wmruntime = { path = "../wmruntime" }
+wmtoolchain = { path = "../wmtoolchain" }
+wmvm = { path = "../wmvm" }

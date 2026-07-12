@@ -1,0 +1,33 @@
+component Agent persistent {
+    energy: int,
+    activity: string,
+}
+
+resource Calendar persistent {
+    day: int = 1,
+    tick: int = 0,
+}
+
+event Simulate {
+    ticks: int,
+}
+
+system simulation_step(event: Simulate) {
+    let tick: int = time.tick();
+    return;
+}
+
+on start {
+    let agent: int = world.spawn();
+    let energy: int = random.int(60, 100);
+    world.set(agent, "Agent", Agent { energy: 80, activity: "work" });
+    emit Simulate { ticks: 1 };
+    save.store(1);
+    return;
+}
+
+test func seeded_agent_compiles() {
+    let agent = Agent { energy: 80, activity: "rest" };
+    core.assert(agent.energy == 80, "agent energy mismatch");
+    return;
+}

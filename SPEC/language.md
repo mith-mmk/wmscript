@@ -1,62 +1,101 @@
-# WMScript 言語仕様
+# WMScript v2 言語仕様
 
-## 責務
-- モジュール、パッケージ、バンドルの構造を定義する。
-- 文法、型、式、制御構文、組み込み API の見え方を定義する。
-- import 解決、シンボル解決、ID 割当の静的ルールを定義する。
-- 実行モデルとして `init -> update -> on_message` の呼び出し順を定義する。
+## 責務と固定境界
 
-## 依存
-- 実行モデルは [SPEC/vm.md](vm.md) に依存する。
-- 命令セットは [SPEC/op.md](op.md) に依存する。
-- `CALL_HOST` の公開境界は [SPEC/hostapi.md](hostapi.md) に依存する。
-- `worker` と `package` の実行単位は [SPEC/scheduler.md](scheduler.md) に依存する。
-- 文字列・アセットの分離は [SPEC/resource.md](resource.md) と [SPEC/archive.md](archive.md) に依存する。
+WMScript v2はノベルゲーム、RPG、RTS、シミュレーションを同じ言語と実行モデルで記述するための段階的静的型付き言語である。コンパイラはすべての構文をbytecode v1へ変換し、`wmvm`、`wmbytecode`、`wmverifier`の変更を要求してはならない。
 
-## 仕様検証メモ
-- `init` はモジュール初期化時に一度だけ呼ぶ。
-- `update` は協調スケジューリングのフレーム単位で呼ぶ。
-- `on_message` は受信キューにメッセージが入った時のみ呼ぶ。
-- `spawn -> run -> destroy` の worker lifecycle を前提にする。
-- handle の解放は参照カウントまたは所有権消失時に host 側で回収する。
-- エラーは例外にせず `nil` / status table / code で返す。
-- import 解決と ID 割当はコンパイル時に完結させる。
+## モジュール
 
-## Writer-First 契約（first target）
+- source extensionは`.wms`、project entryは`wms.toml`で指定する。
+- `import "path" as name;`はcompile時だけ解決する。dynamic importはない。
+- top-levelには`struct`、`enum`、`component`、`resource`、`event`、`func`、`task`、`system`、`on`、`test func`を宣言できる。
+- import graphの循環、重複宣言、非公開symbol参照はcompile errorとする。
 
-本節は writer が frontend script に専念できる最小契約を定義する。
-低レイヤの同期実装詳細は [SPEC/scheduler.md](scheduler.md) と [SPEC/hostapi.md](hostapi.md) を参照する。
+## 型
 
-### 1. recv()/message progression 契約
-- `recv()` は「入力待機点」であり、次のいずれかで復帰する。
-	- ユーザーによる advance（決定/クリック/タップ）
-	- choice の確定
-	- input prompt の submit
-	- auto 進行の待機条件成立
-- `ext.message.auto(true)` の待機は同一 time 基準を使う。time 基準の定義は [SPEC/scheduler.md](scheduler.md) に従う。
-- `ext.message.skip(true)` の対象範囲は runtime 設定で read-only / all を切替可能とし、profile ごとの差分は実装定義とする。
+標準型は`nil`、`bool`、`int`、`float`、`string`、`handle`、`any`、`Array<T>`、`Option<T>`である。
 
-### 2. input return ABI（標準キー）
-- frontend 入力結果は `state` の以下キーに正規化して公開する。
-	- `ui.last_choice`: `string | nil`
-	- `ui.last_input`: `string | nil`
-	- `ui.last_reply`: `table | nil`
-- `ui.last_reply` の最小構造:
-	- `kind`: `"advance" | "choice" | "input" | "auto"`
-	- `choice`: `string | nil`
-	- `input`: `string | nil`
-- 同一 `recv()` 復帰サイクルで有効な最新値のみを保証する。履歴管理は script 側（例: backlog）で行う。
+- `struct`、`component`、`resource`、payload付き`event`は固定fieldを持つrecordとして型検査する。
+- `enum`はvariant tagと任意payloadを持つ。
+- local bindingは初期値から推論できる。公開関数parameter、公開return、永続component/resource fieldは明示型を必須とする。
+- `any`から具体型への暗黙narrowingを禁止する。typed host APIを利用して具体型を取得する。
+- `nil`は`Option<T>`または`any`だけに代入できる。
+- `int`から`float`だけを安全な暗黙数値変換とする。
 
-### 3. platform capability matrix（script 観点）
+VM loweringではArrayを`Value::Array`、recordをcompile時に割り当てた`u16` field IDを持つ`Value::Table`、enumをtag fieldとpayload fieldを持つTableへ変換する。
 
-| capability | native | egui | wasm |
-|---|---|---|---|
-| gui | yes | yes | yes |
-| input | yes | yes | yes |
-| audio | yes | yes | profile dependent |
-| file_system | yes | yes | no |
-| network | yes | yes | profile dependent |
-| async_io | yes | yes | profile dependent |
+## 宣言
 
-- コンパイラは対象 profile が未対応 capability を要求した `ext.*` 呼び出しを拒否してよい。
-- matrix の詳細は host 実装ごとに [SPEC/hostapi.md](hostapi.md) で上書き可能だが、ここで定義する最小制約を破ってはならない。
+```wms
+component Position persistent {
+    x: int,
+    y: int,
+}
+
+resource Clock persistent {
+    tick: int = 0,
+}
+
+event Move {
+    entity: int,
+    dx: int,
+    dy: int,
+}
+
+enum Direction { North, East, South, West }
+```
+
+- `persistent`を付けたcomponent/resourceだけがsave対象になる。
+- transient型からpersistent型への参照は禁止する。
+- Entity IDはscript上`int`、runtime上は単調増加する`u64`として扱う。
+
+## 関数、task、system
+
+- `func`: 同期関数。`await`、`yield`、event waitは禁止。
+- `task`: 中断可能関数。`await`を使用でき、コンパイラが再開状態機械へ変換する。
+- `system`: fixed tickまたはeventからruntimeが呼ぶ同期関数。副作用はWorld、event emit、標準portだけに限定し、`await`を禁止する。
+- `on start|tick|input|message|save|load`: runtime entry handler。handler bodyはtaskと同じ待機規則を持つ。
+- `test func`: headless runnerだけが検出して実行する同期test entry。
+
+```wms
+task intro() -> string {
+    ui.say("Guide", "Choose a route");
+    let route = await input.choice(["north", "south"]);
+    return route;
+}
+
+system movement(event: Move) {
+    let position = world.get<Position>(event.entity);
+    position.x = position.x + event.dx;
+    position.y = position.y + event.dy;
+    world.set(event.entity, position);
+}
+
+on start {
+    await intro();
+}
+```
+
+## 文と式
+
+- bindingと代入: `let name = expr;`、`let name: Type = expr;`、`target = expr;`
+- 制御: `if/else`、`match`、`while`、`for name in expr`、`break`、`continue`、`return`
+- expression: literal、array/record constructor、field/index、unary、binary、call、`await`
+- `&&`と`||`はshort circuitする。比較は互換型間だけ許可する。
+- array反復はindex昇順、world queryはEntity ID昇順、matchはsource記述順に評価する。
+
+## 待機のlowering
+
+- `await input.*`と`await message.*`は継続状態保存後に`Recv`を発行する。
+- `await time.sleep(ticks)`は継続状態保存後に`Sleep`を発行する。
+- `await game.next_tick()`は継続状態保存後に`Yield`を発行する。
+- VM frame、local stack、program counterを継続状態として保持し、再開時に同じcall frameを継続する。
+- systemとfunc内の`await`はcompile errorであり、暗黙blockingは禁止する。
+
+## 標準モジュール
+
+`core`、`game`、`world`、`time`、`random`、`input`、`scene`、`ui`、`audio`、`asset`、`save`を予約済み標準moduleとする。新sourceから`ext.*`と文字列key形式の`state.*`は参照できない。これらはWARC v1 legacy runtimeだけが提供する。
+
+## 診断
+
+diagnosticはcode、severity、message、source path、UTF-8 byte span、補助labelを持つ。parserは回復可能な位置で同期し、一度の`check`で複数diagnosticを返す。未知symbol、型不一致、永続化不能型、待機禁止、capability不足はpackage生成前に拒否する。
