@@ -9,6 +9,12 @@ cargo run -p wms -- run samples/novel --target headless --inputs harbor
 cargo run -p wms -- package samples/novel
 ```
 
+For a quick interactive smoke test, run the default novel demo:
+
+```powershell
+cargo run -p wms -- demo
+```
+
 Repeat the same commands for `rpg`, `rts`, and `simulation`. Generated files are
 written below each project's `.test-wms/` directory, which is covered by the
 repository `.gitignore` through the `.test*` rule.

@@ -58,6 +58,7 @@ fn execute(args: Vec<String>) -> Result<(), String> {
             Ok(())
         }
         "run" => run_command(&args[1..]),
+        "demo" => demo_command(&args[1..]),
         "test" => test_command(args.get(1)),
         "legacy" if args.get(1).map(String::as_str) == Some("run") => {
             let path = args.get(2).ok_or_else(usage)?;
@@ -104,6 +105,30 @@ fn run_command(args: &[String]) -> Result<(), String> {
         project.name, report.rounds, report.value
     );
     Ok(())
+}
+
+fn demo_command(args: &[String]) -> Result<(), String> {
+    let run_args = demo_run_args(args);
+    run_command(&run_args)
+}
+
+fn demo_run_args(args: &[String]) -> Vec<String> {
+    let has_project = args.first().is_some_and(|value| !value.starts_with("--"));
+    let mut run_args = Vec::with_capacity(args.len() + 4);
+    run_args.push(
+        args.first()
+            .filter(|value| !value.starts_with("--"))
+            .cloned()
+            .unwrap_or_else(|| "samples/novel".to_owned()),
+    );
+    run_args.extend(args.iter().skip(usize::from(has_project)).cloned());
+    if option(&run_args, "--target").is_none() {
+        run_args.extend(["--target".to_owned(), "egui".to_owned()]);
+    }
+    if option(&run_args, "--inputs").is_none() {
+        run_args.extend(["--inputs".to_owned(), "harbor".to_owned()]);
+    }
+    run_args
 }
 
 fn test_command(path: Option<&String>) -> Result<(), String> {
@@ -159,7 +184,7 @@ fn option_path(args: &[String], name: &str) -> Option<PathBuf> {
     option(args, name).map(PathBuf::from)
 }
 fn usage() -> String {
-    "usage: wms new <dir> | check [project] | build [project] [--out file] | run [project|v2.warc] [--target headless|egui] [--inputs a,b] | test [project] | package [project] [--out file] | legacy run <v1.warc>".to_owned()
+    "usage: wms new <dir> | check [project] | build [project] [--out file] | run [project|v2.warc] [--target headless|egui] [--inputs a,b] | demo [project] [--target headless|egui] [--inputs a,b] | test [project] | package [project] [--out file] | legacy run <v1.warc>".to_owned()
 }
 
 #[cfg(test)]
@@ -169,5 +194,25 @@ mod tests {
     fn option_parser_is_order_independent() {
         let args = vec!["game".to_owned(), "--target".to_owned(), "egui".to_owned()];
         assert_eq!(option(&args, "--target"), Some("egui"));
+    }
+
+    #[test]
+    fn demo_defaults_to_novel_egui_and_harbor() {
+        assert_eq!(
+            demo_run_args(&[]),
+            vec!["samples/novel", "--target", "egui", "--inputs", "harbor"]
+        );
+    }
+
+    #[test]
+    fn demo_preserves_project_and_explicit_options() {
+        let args = vec![
+            "samples/rpg".to_owned(),
+            "--target".to_owned(),
+            "headless".to_owned(),
+            "--inputs".to_owned(),
+            "north".to_owned(),
+        ];
+        assert_eq!(demo_run_args(&args), args);
     }
 }

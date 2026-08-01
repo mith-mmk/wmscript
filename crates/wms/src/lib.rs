@@ -60,13 +60,34 @@ pub fn run_legacy_archive(path: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::{Path, PathBuf};
     use wmtoolchain::GameProject;
+
+    struct TestFixtureDir(PathBuf);
+
+    impl TestFixtureDir {
+        fn new() -> Self {
+            let path =
+                std::env::temp_dir().join(format!(".test-wms-legacy-{}", std::process::id()));
+            let _ = fs::remove_dir_all(&path);
+            fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TestFixtureDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
 
     #[test]
     fn generated_v1_archive_runs_only_through_legacy_adapter() {
-        let root = std::path::PathBuf::from(format!(".test-wms-legacy-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&root).unwrap();
+        let root = TestFixtureDir::new();
         let profile = PlatformProfile::native();
         let toolchain = Toolchain::new(ToolchainConfig::new(profile));
         let project = GameProject::new(
@@ -75,11 +96,10 @@ mod tests {
             r#"export func main() { return "legacy-ok"; }"#,
         );
         let build = toolchain.build_project(&project).unwrap();
-        let path = root.join("legacy-v1.warc");
+        let path = root.path().join("legacy-v1.warc");
         fs::write(&path, &build.archive).unwrap();
         assert_eq!(detect_format(&build.archive).unwrap(), ArchiveFormat::V1);
         assert!(run_archive(&path, Target::Headless, Vec::new()).is_err());
         run_legacy_archive(&path).unwrap();
-        fs::remove_dir_all(&root).unwrap();
     }
 }

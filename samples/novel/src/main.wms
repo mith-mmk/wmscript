@@ -12,6 +12,11 @@ task prologue() -> string {
     ui.say("Guide", title);
     let route: string = await input.choice(["harbor", "library"]);
     save.store(1);
+    if route == "harbor" {
+        ui.say("Guide", "Route saved: harbor.");
+    } else {
+        ui.say("Guide", "Route saved: library.");
+    }
     return route;
 }
 

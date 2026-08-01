@@ -14,6 +14,12 @@ cargo run -p wms -- run .test-my-game --target headless
 cargo run -p wms -- package .test-my-game
 ```
 
+Run the interactive novel demo with one command:
+
+```powershell
+cargo run -p wms -- demo
+```
+
 Existing WARC v1 files are isolated behind:
 
 ```powershell
